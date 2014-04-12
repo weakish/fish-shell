@@ -547,6 +547,7 @@ public:
     void lock(void);
     void unlock(void);
     scoped_lock(pthread_mutex_t &mutex);
+    scoped_lock(const pthread_mutex_t &mutex);
     ~scoped_lock();
 };
 

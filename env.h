@@ -69,12 +69,6 @@ struct config_paths_t
 void env_init(const struct config_paths_t *paths = NULL);
 
 /**
-   Destroy environment variable data
-*/
-void env_destroy();
-
-
-/**
    Set the value of the environment variable whose name matches key to val.
 
    Memory policy: All keys and values are copied, the parameters can and should be freed by the caller afterwards

@@ -2210,6 +2210,12 @@ scoped_lock::scoped_lock(pthread_mutex_t &mutex) : lock_obj(&mutex), locked(fals
     this->lock();
 }
 
+scoped_lock::scoped_lock(const pthread_mutex_t &mutex) : lock_obj(const_cast<pthread_mutex_t *>(&mutex)), locked(false)
+{
+    this->lock();
+}
+
+
 scoped_lock::~scoped_lock()
 {
     if (locked) this->unlock();
