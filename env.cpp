@@ -71,13 +71,10 @@
 #define FISH_HELPDIR_VAR L"__fish_help_dir"
 #define FISH_BIN_DIR L"__fish_bin_dir"
 
-/**
-   At init, we read all the environment variables from this array.
-*/
+/* At init, we read all the environment variables from this array. */
 extern char **environ;
-/**
-   This should be the same thing as \c environ, but it is possible only one of the two work...
-*/
+
+/* This should be the same thing as \c environ, but it is possible only one of the two work... */
 extern char **__environ;
 
 /**
@@ -182,6 +179,7 @@ class env_stack_t
     const null_terminated_array_t<char> &get_export_array() const;
 };
 
+/* The stack associated with the main thread of execution */
 static env_stack_t *main_stack;
 
 /* Helper class for storing constant strings, without needing to wrap them in a wcstring */
