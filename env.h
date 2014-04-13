@@ -163,57 +163,105 @@ public:
     {
         return !(*this == s);
     }
-
-
 };
+
+class environment_t
+{
+    private:
+    // No copying
+    environment_t(const environment_t &);
+    environment_t &operator=(const environment_t &);
+    
+    public:
+    virtual env_var_t get(const wcstring &key) const = 0;
+    environment_t();
+    virtual ~environment_t();
+};
+
+/* Class representing a function variable stack */
+struct env_node_t;
+class env_stack_t : public environment_t
+{
+    /** Bottom node on the function stack */
+    env_node_t * const global;
+    
+    /** Top node on the function stack */
+    env_node_t *top;
+    
+    pthread_mutex_t lock;
+
+    env_node_t *get_node(const wcstring &key);
+    
+    /* Returns the next scope to search in order, respecting the new_scope flag, or NULL if we're done. */
+    env_node_t *next_scope(env_node_t *scope);
+    const env_node_t *next_scope(const env_node_t *scope) const;
+    
+    bool try_remove(env_node_t *n, const wchar_t *key, int var_mode);
+    bool local_scope_exports(env_node_t *n) const;
+    void get_exported(const env_node_t *n, std::map<wcstring, wcstring> &h) const;
+    
+    null_terminated_array_t<char> export_array;
+    
+    public:
+    env_stack_t();
+    virtual ~env_stack_t();
+    
+    int set(const wcstring &key, const wchar_t *val, int var_mode);
+    
+    /**
+       Remove environemnt variable
+
+       \param key The name of the variable to remove
+       \param mode should be ENV_USER if this is a remove request from the user, 0 otherwise. If this is a user request, read-only variables can not be removed. The mode may also specify the scope of the variable that should be erased.
+
+       \return zero if the variable existed, and non-zero if the variable did not exist
+    */
+    int remove(const wcstring &key, int var_mode);
+    
+    env_var_t get(const wcstring &key) const;
+    
+    /**
+       Returns true if the specified key exists. This can't be reliably done
+       using env_get, since env_get returns null for 0-element arrays
+
+       \param key The name of the variable to remove
+       \param mode the scope to search in. All scopes are searched if unset
+    */
+    bool exist(const wchar_t *key, int mode) const;
+    
+    /** Push the variable stack. Used for implementing local variables for functions and for-loops. */
+    void push(bool new_scope);
+    
+    /** Pop the variable stack. Used for implementing local variables for functions and for-loops. */
+    void pop();
+    
+    /** Returns all variable names. */
+    wcstring_list_t get_names(int flags) const;
+    
+    void update_export_array_if_necessary(bool recalc);
+    const null_terminated_array_t<char> &get_export_array() const;
+    
+    static const env_stack_t &empty();
+};
+
 
 /** Gets the variable with the specified name, or env_var_t::missing_var if it does not exist. */
 env_var_t env_get_string(const wcstring &key);
 
-/**
-   Returns true if the specified key exists. This can't be reliably done
-   using env_get, since env_get returns null for 0-element arrays
-
-   \param key The name of the variable to remove
-   \param mode the scope to search in. All scopes are searched if unset
-*/
-bool env_exist(const wchar_t *key, int mode);
-
-/**
-   Remove environemnt variable
-
-   \param key The name of the variable to remove
-   \param mode should be ENV_USER if this is a remove request from the user, 0 otherwise. If this is a user request, read-only variables can not be removed. The mode may also specify the scope of the variable that should be erased.
-
-   \return zero if the variable existed, and non-zero if the variable did not exist
-*/
-int env_remove(const wcstring &key, int mode);
-
-/**
-  Push the variable stack. Used for implementing local variables for functions and for-loops.
-*/
-void env_push(bool new_scope);
-
-/**
-  Pop the variable stack. Used for implementing local variables for functions and for-loops.
-*/
-void env_pop();
+env_var_t env_get_from_main(const wcstring &key);
 
 /** Returns an array containing all exported variables in a format suitable for execv. */
 const char * const * env_export_arr(bool recalc);
 
-/**
-  Returns all variable names.
-*/
-wcstring_list_t env_get_names(int flags);
 
 /** Update the PWD variable directory */
 int env_set_pwd();
 
 /* Returns the PWD with a terminating slash */
-wcstring env_get_pwd_slash();
+class env_vars_snapshot_t;
+wcstring env_get_pwd_slash(const env_vars_snapshot_t &snapshot);
 
-class env_vars_snapshot_t
+class env_vars_snapshot_t : public environment_t
 {
     std::map<wcstring, wcstring> vars;
     bool is_current() const;

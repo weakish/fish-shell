@@ -136,7 +136,7 @@ const parse_node_t *parse_execution_context_t::infinite_recursive_statement_in_j
         /* Ok, this is an undecorated plain statement. Get and expand its command */
         wcstring cmd;
         tree.command_for_plain_statement(plain_statement, src, &cmd);
-        expand_one(cmd, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES, NULL);
+        expand_one(cmd, *this->parser, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES, NULL);
 
         if (cmd == forbidden_function_name)
         {
@@ -441,7 +441,7 @@ parse_execution_result_t parse_execution_context_t::run_for_statement(const pars
     /* Get the variable name: `for var_name in ...`. We expand the variable name. It better result in just one. */
     const parse_node_t &var_name_node = *get_child(header, 1, parse_token_type_string);
     wcstring for_var_name = get_source(var_name_node);
-    if (! expand_one(for_var_name, 0, NULL))
+    if (! expand_one(for_var_name, *this->parser, 0, NULL))
     {
         report_error(var_name_node, FAILED_EXPANSION_VARIABLE_NAME_ERR_MSG, for_var_name.c_str());
         return parse_execution_errored;
@@ -515,7 +515,7 @@ parse_execution_result_t parse_execution_context_t::run_switch_statement(const p
     /* Expand it. We need to offset any errors by the position of the string */
     std::vector<completion_t> switch_values_expanded;
     parse_error_list_t errors;
-    int expand_ret = expand_string(switch_value, switch_values_expanded, EXPAND_NO_DESCRIPTIONS, &errors);
+    int expand_ret = expand_string(switch_value, *this->parser, switch_values_expanded, EXPAND_NO_DESCRIPTIONS, &errors);
     parse_error_offset_source_start(&errors, switch_value_node.source_start);
 
     switch (expand_ret)
@@ -746,7 +746,6 @@ void parse_execution_context_t::handle_command_not_found(const wcstring &cmd_str
         const wcstring name_str = wcstring(cmd, equals_ptr - cmd); //variable name, up to the =
         const wcstring val_str = wcstring(equals_ptr + 1); //variable value, past the =
 
-
         const parse_node_tree_t::parse_node_list_t args = tree.find_nodes(statement_node, symbol_argument, 1);
 
         if (! args.empty())
@@ -847,7 +846,7 @@ parse_execution_result_t parse_execution_context_t::populate_plain_process(job_t
     assert(got_cmd);
 
     /* Expand it as a command. Return an error on failure. */
-    bool expanded = expand_one(cmd, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES, NULL);
+    bool expanded = expand_one(cmd, *this->parser, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES, NULL);
     if (! expanded)
     {
         report_error(statement, ILLEGAL_CMD_ERR_MSG, cmd.c_str());
@@ -868,7 +867,7 @@ parse_execution_result_t parse_execution_context_t::populate_plain_process(job_t
     if (process_type == EXTERNAL || process_type == INTERNAL_EXEC)
     {
         /* Determine the actual command. This may be an implicit cd. */
-        bool has_command = path_get_path(cmd, &path_to_external_command);
+        bool has_command = path_get_path(cmd, &path_to_external_command, parser->vars());
 
         /* If there was no command, then we care about the value of errno after checking for it, to distinguish between e.g. no file vs permissions problem */
         const int no_cmd_err_code = errno;
@@ -966,7 +965,8 @@ wcstring_list_t parse_execution_context_t::determine_arguments(const parse_node_
         /* Expand this string */
         std::vector<completion_t> arg_expanded;
         parse_error_list_t errors;
-        int expand_ret = expand_string(arg_str, arg_expanded, EXPAND_NO_DESCRIPTIONS, &errors);
+        int expand_ret = expand_string(arg_str, *this->parser, arg_expanded, EXPAND_NO_DESCRIPTIONS, &errors);
+        
         parse_error_offset_source_start(&errors, arg_node.source_start);
         switch (expand_ret)
         {
@@ -1034,7 +1034,7 @@ bool parse_execution_context_t::determine_io_chain(const parse_node_t &statement
         enum token_type redirect_type = tree.type_for_redirection(redirect_node, src, &source_fd, &target);
 
         /* PCA: I can't justify this EXPAND_SKIP_VARIABLES flag. It was like this when I got here. */
-        bool target_expanded = expand_one(target, no_exec ? EXPAND_SKIP_VARIABLES : 0, NULL);
+        bool target_expanded = expand_one(target, *this->parser, no_exec ? EXPAND_SKIP_VARIABLES : 0, NULL);
         if (! target_expanded || target.empty())
         {
             /* Should improve this error message */

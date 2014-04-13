@@ -816,7 +816,7 @@ bool reader_expand_abbreviation_in_command(const wcstring &cmdline, size_t curso
         assert(matching_cmd_node->type == parse_token_type_string);
         const wcstring token = matching_cmd_node->get_source(subcmd);
         wcstring abbreviation;
-        if (expand_abbreviation(token, &abbreviation))
+        if (expand_abbreviation(token, env_vars_snapshot_t::current(), &abbreviation))
         {
             /* There was an abbreviation! Replace the token in the full command. Maintain the relative position of the cursor. */
             if (output != NULL)
@@ -1395,8 +1395,8 @@ struct autosuggestion_context_t
     size_t cursor_pos;
     history_search_t searcher;
     file_detection_context_t detector;
-    const wcstring working_directory;
-    const env_vars_snapshot_t vars;
+    const env_vars_snapshot_t var_snapshot;
+    const env_stack_t * const var_stack;
     const unsigned int generation_count;
 
     autosuggestion_context_t(history_t *history, const wcstring &term, size_t pos) :
@@ -1404,8 +1404,8 @@ struct autosuggestion_context_t
         cursor_pos(pos),
         searcher(*history, term, HISTORY_SEARCH_TYPE_PREFIX),
         detector(history),
-        working_directory(env_get_pwd_slash()),
-        vars(env_vars_snapshot_t::highlighting_keys),
+        var_snapshot(env_vars_snapshot_t::highlighting_keys),
+        var_stack(&parser_t::principal_parser().vars()),
         generation_count(s_generation_count)
     {
     }
@@ -1428,6 +1428,8 @@ struct autosuggestion_context_t
         {
             return 0;
         }
+        
+        const wcstring working_directory = env_get_pwd_slash(var_snapshot);
 
         while (! reader_thread_job_is_stale() && searcher.go_backwards())
         {
@@ -1437,7 +1439,7 @@ struct autosuggestion_context_t
             if (item.str().find('\n') != wcstring::npos)
                 continue;
 
-            if (autosuggest_validate_from_history(item, detector, working_directory, vars))
+            if (autosuggest_validate_from_history(item, detector, working_directory, var_snapshot))
             {
                 /* The command autosuggestion was handled specially, so we're done */
                 this->autosuggestion = searcher.current_string();
@@ -1451,7 +1453,7 @@ struct autosuggestion_context_t
 
         /* Try handling a special command like cd */
         wcstring special_suggestion;
-        if (autosuggest_suggest_special(search_string, working_directory, special_suggestion))
+        if (autosuggest_suggest_special(search_string, working_directory, *var_stack, &special_suggestion))
         {
             this->autosuggestion = special_suggestion;
             return 1;
@@ -1476,7 +1478,7 @@ struct autosuggestion_context_t
 
         /* Try normal completions */
         std::vector<completion_t> completions;
-        complete(search_string, completions, COMPLETION_REQUEST_AUTOSUGGESTION);
+        complete(search_string, completions, var_stack, COMPLETION_REQUEST_AUTOSUGGESTION);
         if (! completions.empty())
         {
             const completion_t &comp = completions.at(0);
@@ -2459,7 +2461,7 @@ bool reader_get_selection(size_t *start, size_t *len)
 
 #define ENV_CMD_DURATION L"CMD_DURATION"
 
-void set_env_cmd_duration(struct timeval *after, struct timeval *before)
+static void set_env_cmd_duration(struct timeval *after, struct timeval *before, parser_t &parser)
 {
     time_t secs = after->tv_sec - before->tv_sec;
     suseconds_t usecs = after->tv_usec - before->tv_usec;
@@ -2473,7 +2475,7 @@ void set_env_cmd_duration(struct timeval *after, struct timeval *before)
 
     if (secs < 1)
     {
-        env_remove(ENV_CMD_DURATION, 0);
+        parser.vars().remove(ENV_CMD_DURATION, 0);
     }
     else
     {
@@ -2497,7 +2499,7 @@ void set_env_cmd_duration(struct timeval *after, struct timeval *before)
         {
             swprintf(buf, 16, L"%.1fh", secs / 3600.0);
         }
-        env_set(ENV_CMD_DURATION, buf, ENV_EXPORT);
+        parser.vars().set(ENV_CMD_DURATION, buf, ENV_EXPORT);
     }
 }
 
@@ -2521,7 +2523,7 @@ void reader_run_command(parser_t &parser, const wcstring &cmd)
     job_reap(1);
 
     gettimeofday(&time_after, NULL);
-    set_env_cmd_duration(&time_after, &time_before);
+    set_env_cmd_duration(&time_after, &time_before, parser);
 
     term_steal();
 
@@ -2662,7 +2664,7 @@ void reader_set_exit_on_interrupt(bool i)
     data->exit_on_interrupt = i;
 }
 
-void reader_import_history_if_necessary(void)
+void reader_import_history_if_necessary(const environment_t &vars)
 {
     /* Import history from bash, etc. if our current history is empty */
     if (data->history && data->history->is_empty())
@@ -2671,7 +2673,7 @@ void reader_import_history_if_necessary(void)
         */
         const env_var_t var = env_get_string(L"HISTFILE");
         wcstring path = (var.missing() ? L"~/.bash_history" : var);
-        expand_tilde(path);
+        expand_tilde(path, vars);
         FILE *f = wfopen(path, "r");
         if (f)
         {
@@ -2923,9 +2925,9 @@ static int read_i(void)
     reader_set_test_function(&reader_shell_test);
     reader_set_allow_autosuggesting(true);
     reader_set_expand_abbreviations(true);
-    reader_import_history_if_necessary();
 
     parser_t &parser = parser_t::principal_parser();
+    reader_import_history_if_necessary(parser.vars());
 
     data->prev_end_loop=0;
 
@@ -3302,7 +3304,8 @@ const wchar_t *reader_readline(void)
                     const wcstring buffcpy = wcstring(cmdsub_begin, token_end);
 
                     //fprintf(stderr, "Complete (%ls)\n", buffcpy.c_str());
-                    data->complete_func(buffcpy, comp, COMPLETION_REQUEST_DEFAULT | COMPLETION_REQUEST_DESCRIPTIONS | COMPLETION_REQUEST_FUZZY_MATCH);
+                    const env_stack_t *var_stack = &parser_t::principal_parser().vars();
+                    data->complete_func(buffcpy, comp, var_stack, COMPLETION_REQUEST_DEFAULT | COMPLETION_REQUEST_DESCRIPTIONS | COMPLETION_REQUEST_FUZZY_MATCH);
 
                     /* Munge our completions */
                     sort_and_make_unique(comp);

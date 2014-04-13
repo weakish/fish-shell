@@ -133,6 +133,7 @@ enum
 #define ARRAY_BOUNDS_ERR _(L"Array index out of bounds")
 
 class parser_t;
+class environment_t;
 
 /**
    Perform various forms of expansion on in, such as tilde expansion
@@ -146,11 +147,15 @@ class parser_t;
 
    \param input The parameter to expand
    \param output The list to which the result will be appended.
+   \param vars The variables to expand against.
    \param flag Specifies if any expansion pass should be skipped. Legal values are any combination of EXPAND_SKIP_CMDSUBST EXPAND_SKIP_VARIABLES and EXPAND_SKIP_WILDCARDS
    \param errors Resulting errors, or NULL to ignore
    \return One of EXPAND_OK, EXPAND_ERROR, EXPAND_WILDCARD_MATCH and EXPAND_WILDCARD_NO_MATCH. EXPAND_WILDCARD_NO_MATCH and EXPAND_WILDCARD_MATCH are normal exit conditions used only on strings containing wildcards to tell if the wildcard produced any matches.
 */
-__warn_unused int expand_string(const wcstring &input, std::vector<completion_t> &output, expand_flags_t flags, parse_error_list_t *errors);
+
+/* There are two variants. The one that takes a parser uses that parser to expand command substitutions. The one that takes an environment cannot perform command substitutions. */
+__warn_unused int expand_string(const wcstring &input, const environment_t &vars, std::vector<completion_t> &output, expand_flags_t flags, parse_error_list_t *errors);
+__warn_unused int expand_string(const wcstring &input, parser_t &parser, std::vector<completion_t> &output, expand_flags_t flags, parse_error_list_t *errors);
 
 
 /**
@@ -159,11 +164,13 @@ __warn_unused int expand_string(const wcstring &input, std::vector<completion_t>
    names.
 
    \param inout_str The parameter to expand in-place
+   \param vars Variables to use during expansion
    \param flag Specifies if any expansion pass should be skipped. Legal values are any combination of EXPAND_SKIP_CMDSUBST EXPAND_SKIP_VARIABLES and EXPAND_SKIP_WILDCARDS
    \param errors Resulting errors, or NULL to ignore
    \return Whether expansion succeded
 */
-bool expand_one(wcstring &inout_str, expand_flags_t flags, parse_error_list_t *errors = NULL);
+bool expand_one(wcstring &string, const environment_t &vars, expand_flags_t flags, parse_error_list_t *errors = NULL);
+bool expand_one(wcstring &string, parser_t &parser, expand_flags_t flags, parse_error_list_t *errors = NULL);
 
 /**
    Convert the variable value to a human readable form, i.e. escape things, handle arrays, etc. Suitable for pretty-printing. The result must be free'd!
@@ -176,11 +183,13 @@ wcstring expand_escape_variable(const wcstring &in);
    Perform tilde expansion and nothing else on the specified string, which is modified in place.
 
    \param input the string to tilde expand
+   \param vars variables from which to determine home directory
 */
-void expand_tilde(wcstring &input);
+class environment_t;
+void expand_tilde(wcstring &input, const environment_t &vars);
 
 /** Perform the opposite of tilde expansion on the string, which is modified in place */
-wcstring replace_home_directory_with_tilde(const wcstring &str);
+wcstring replace_home_directory_with_tilde(const wcstring &str, const environment_t &vars);
 
 /**
    Test if the specified argument is clean, i.e. it does not contain
@@ -196,25 +205,14 @@ wcstring replace_home_directory_with_tilde(const wcstring &str);
 int expand_is_clean(const wchar_t *in);
 
 /**
-   Perform error reporting for a syntax error related to the variable
-   expansion beginning at the specified character of the specified
-   token. This function will call the error function with an
-   explanatory string about what is wrong with the specified token.
-
-   \param token The token containing the error
-   \param token_pos The position where the expansion begins
-   \param error_pos The position on the line to report to the error function.
-*/
-void expand_variable_error(parser_t &parser, const wcstring &token, size_t token_pos, int error_pos);
-
-/**
    Testing function for getting all process names.
 */
 std::vector<wcstring> expand_get_all_process_names(void);
 
 /** Abbreviation support. Expand src as an abbreviation, returning true if one was found, false if not. If result is not-null, returns the abbreviation by reference. */
 #define USER_ABBREVIATIONS_VARIABLE_NAME L"fish_user_abbreviations"
-bool expand_abbreviation(const wcstring &src, wcstring *output);
+class env_vars_snapshot_t;
+bool expand_abbreviation(const wcstring &src, const env_vars_snapshot_t &vars, wcstring *output);
 
 /* Terrible hacks */
 bool fish_xdm_login_hack_hack_hack_hack(std::vector<std::string> *cmds, int argc, const char * const *argv);

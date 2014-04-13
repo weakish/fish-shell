@@ -108,11 +108,11 @@ rgb_color_t highlight_get_color(highlight_spec_t highlight, bool is_background);
 /** Given a command 'str' from the history, try to determine whether we ought to suggest it by specially recognizing the command.
     Returns true if we validated the command. If so, returns by reference whether the suggestion is valid or not.
 */
-bool autosuggest_validate_from_history(const history_item_t &item, file_detection_context_t &detector, const wcstring &working_directory, const env_vars_snapshot_t &vars);
+bool autosuggest_validate_from_history(const history_item_t &item, file_detection_context_t &detector, const wcstring &working_directory, const environment_t &vars);
 
 /** Given the command line contents 'str', return via reference a suggestion by specially recognizing the command. The suggestion is escaped. Returns true if we recognized the command (even if we couldn't think of a suggestion for it).
 */
-bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_directory, wcstring &outString);
+bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_directory, const environment_t &vars, wcstring *out_suggestion);
 
 /* Tests whether the specified string cpath is the prefix of anything we could cd to. directories is a list of possible parent directories (typically either the working directory, or the cdpath). This does I/O!
 
@@ -127,7 +127,7 @@ enum
     PATH_EXPAND_TILDE = 1 << 1
 };
 typedef unsigned int path_flags_t;
-bool is_potential_path(const wcstring &const_path, const wcstring_list_t &directories, path_flags_t flags, wcstring *out_path = NULL);
+bool is_potential_path(const wcstring &const_path, const environment_t &vars, const wcstring_list_t &directories, path_flags_t flags, wcstring *out_path = NULL);
 
 #endif
 

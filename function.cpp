@@ -208,12 +208,12 @@ int function_exists(const wcstring &cmd)
     return loaded_functions.find(cmd) != loaded_functions.end();
 }
 
-int function_exists_no_autoload(const wcstring &cmd, const env_vars_snapshot_t &vars)
+int function_exists_no_autoload(const wcstring &cmd)
 {
     if (parser_keywords_is_reserved(cmd))
         return 0;
     scoped_lock lock(functions_lock);
-    return loaded_functions.find(cmd) != loaded_functions.end() || function_autoloader.can_load(cmd, vars);
+    return loaded_functions.find(cmd) != loaded_functions.end() || function_autoloader.can_load(cmd);
 }
 
 bool function_remove_ignore_autoload(const wcstring &name)

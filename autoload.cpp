@@ -80,7 +80,8 @@ int autoload_t::load(const wcstring &cmd, bool reload)
     CHECK_BLOCK(0);
     ASSERT_IS_MAIN_THREAD();
 
-    env_var_t path_var = env_get_string(env_var_name);
+    /* We don't yet have per-context functions, so we always use the main one */
+    env_var_t path_var = env_get_from_main(env_var_name);
 
     /*
       Do we know where to look?
@@ -124,9 +125,10 @@ int autoload_t::load(const wcstring &cmd, bool reload)
     return res;
 }
 
-bool autoload_t::can_load(const wcstring &cmd, const env_vars_snapshot_t &vars)
+bool autoload_t::can_load(const wcstring &cmd)
 {
-    const env_var_t path_var = vars.get(env_var_name);
+    /* We don't yet have per-context functions or completions, so we always use the main one */
+    const env_var_t path_var = env_get_from_main(env_var_name);
     if (path_var.missing_or_empty())
         return false;
 
