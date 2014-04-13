@@ -30,6 +30,7 @@
 #include "env.h"
 #include "exec.h"
 #include "path.h"
+#include "parser.h"
 
 /**
    Maximum entries in killring
@@ -60,7 +61,7 @@ static int has_xsel()
     static signed char res=-1;
     if (res < 0)
     {
-        res = !! path_get_path(L"xsel", NULL);
+        res = !! path_get_path(L"xsel", NULL, parser_t::principal_parser().vars());
     }
 
     return res;

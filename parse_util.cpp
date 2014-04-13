@@ -1302,7 +1302,7 @@ parser_test_error_bits_t parse_util_detect_errors(const wcstring &buff_src, pars
                 if (node_tree.command_for_plain_statement(node, buff_src, &command))
                 {
                     // Check that we can expand the command
-                    if (! expand_one(command, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS, NULL))
+                    if (! expand_one(command, env_stack_t::empty(), EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS, NULL))
                     {
                         // TODO: leverage the resulting errors
                         errored = append_syntax_error(&parse_errors, node, ILLEGAL_CMD_ERR_MSG, command.c_str());

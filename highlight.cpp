@@ -145,7 +145,7 @@ bool fs_is_case_insensitive(const wcstring &path, int fd, case_sensitivity_cache
 
    We expect the path to already be unescaped.
 */
-bool is_potential_path(const wcstring &const_path, const wcstring_list_t &directories, path_flags_t flags, wcstring *out_path)
+bool is_potential_path(const wcstring &const_path, const environment_t &vars, const wcstring_list_t &directories, path_flags_t flags, wcstring *out_path)
 {
     ASSERT_IS_BACKGROUND_THREAD();
 
@@ -156,7 +156,7 @@ bool is_potential_path(const wcstring &const_path, const wcstring_list_t &direct
 
     wcstring path(const_path);
     if (flags & PATH_EXPAND_TILDE)
-        expand_tilde(path);
+        expand_tilde(path, vars);
 
     //  debug( 1, L"%ls -> %ls ->%ls", path, tilde, unescaped );
 
@@ -298,7 +298,7 @@ bool is_potential_path(const wcstring &const_path, const wcstring_list_t &direct
 
 
 /* Given a string, return whether it prefixes a path that we could cd into. Return that path in out_path. Expects path to be unescaped. */
-static bool is_potential_cd_path(const wcstring &path, const wcstring &working_directory, path_flags_t flags, wcstring *out_path)
+static bool is_potential_cd_path(const wcstring &path, const environment_t &vars, const wcstring &working_directory, path_flags_t flags, wcstring *out_path)
 {
     wcstring_list_t directories;
 
@@ -325,7 +325,7 @@ static bool is_potential_cd_path(const wcstring &path, const wcstring &working_d
     }
 
     /* Call is_potential_path with all of these directories */
-    bool result = is_potential_path(path, directories, flags | PATH_REQUIRE_DIR, out_path);
+    bool result = is_potential_path(path, vars, directories, flags | PATH_REQUIRE_DIR, out_path);
 #if 0
     if (out_path)
     {
@@ -336,7 +336,7 @@ static bool is_potential_cd_path(const wcstring &path, const wcstring &working_d
 }
 
 /* Given a plain statement node in a parse tree, get the command and return it, expanded appropriately for commands. If we succeed, return true. */
-bool plain_statement_get_expanded_command(const wcstring &src, const parse_node_tree_t &tree, const parse_node_t &plain_statement, wcstring *out_cmd)
+static bool plain_statement_get_expanded_command(const wcstring &src, const parse_node_tree_t &tree, const parse_node_t &plain_statement, const environment_t &vars, wcstring *out_cmd)
 {
     assert(plain_statement.type == symbol_plain_statement);
     bool result = false;
@@ -346,7 +346,7 @@ bool plain_statement_get_expanded_command(const wcstring &src, const parse_node_
     if (tree.command_for_plain_statement(plain_statement, src, &cmd))
     {
         /* Try expanding it. If we cannot, it's an error. */
-        if (expand_one(cmd, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS))
+        if (expand_one(cmd, vars, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS))
         {
             /* Success, return the expanded string by reference */
             out_cmd->swap(cmd);
@@ -424,7 +424,7 @@ static bool has_expand_reserved(const wcstring &str)
 }
 
 /* Parse a command line. Return by reference the last command, and the last argument to that command (as a copied node), if any. This is used by autosuggestions */
-static bool autosuggest_parse_command(const wcstring &buff, wcstring *out_expanded_command, parse_node_t *out_last_arg)
+static bool autosuggest_parse_command(const wcstring &buff, const environment_t &vars, wcstring *out_expanded_command, parse_node_t *out_last_arg)
 {
     bool result = false;
 
@@ -436,7 +436,7 @@ static bool autosuggest_parse_command(const wcstring &buff, wcstring *out_expand
     const parse_node_t *last_statement = parse_tree.find_last_node_of_type(symbol_plain_statement, NULL);
     if (last_statement != NULL)
     {
-        if (plain_statement_get_expanded_command(buff, parse_tree, *last_statement, out_expanded_command))
+        if (plain_statement_get_expanded_command(buff, parse_tree, *last_statement, vars, out_expanded_command))
         {
             /* We got it */
             result = true;
@@ -453,7 +453,7 @@ static bool autosuggest_parse_command(const wcstring &buff, wcstring *out_expand
 }
 
 /* We have to return an escaped string here */
-bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_directory, wcstring &out_suggestion)
+bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_directory, const environment_t &vars, wcstring *out_suggestion)
 {
     if (str.empty())
         return false;
@@ -463,7 +463,7 @@ bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_di
     /* Parse the string */
     wcstring parsed_command;
     parse_node_t last_arg_node(token_type_invalid);
-    if (! autosuggest_parse_command(str, &parsed_command, &last_arg_node))
+    if (! autosuggest_parse_command(str, vars, &parsed_command, &last_arg_node))
         return false;
 
     bool result = false;
@@ -475,7 +475,7 @@ bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_di
 
         /* We always return true because we recognized the command. This prevents us from falling back to dumber algorithms; for example we won't suggest a non-directory for the cd command. */
         result = true;
-        out_suggestion.clear();
+        out_suggestion->clear();
 
         /* Unescape the parameter */
         wcstring unescaped_dir;
@@ -487,17 +487,17 @@ bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_di
 
         /* Big hack to avoid expanding a tilde inside quotes */
         path_flags_t path_flags = (quote == L'\0') ? PATH_EXPAND_TILDE : 0;
-        if (unescaped && is_potential_cd_path(unescaped_dir, working_directory, path_flags, &suggested_path))
+        if (unescaped && is_potential_cd_path(unescaped_dir, vars, working_directory, path_flags, &suggested_path))
         {
             /* Note: this looks really wrong for strings that have an "unescapable" character in them, e.g. a \t, because parse_util_escape_string_with_quote will insert that character */
             wcstring escaped_suggested_path = parse_util_escape_string_with_quote(suggested_path, quote);
 
             /* Return it */
-            out_suggestion = str;
-            out_suggestion.erase(last_arg_node.source_start);
-            if (quote != L'\0') out_suggestion.push_back(quote);
-            out_suggestion.append(escaped_suggested_path);
-            if (quote != L'\0') out_suggestion.push_back(quote);
+            out_suggestion->assign(str);
+            out_suggestion->erase(last_arg_node.source_start);
+            if (quote != L'\0') out_suggestion->push_back(quote);
+            out_suggestion->append(escaped_suggested_path);
+            if (quote != L'\0') out_suggestion->push_back(quote);
         }
     }
     else
@@ -507,7 +507,7 @@ bool autosuggest_suggest_special(const wcstring &str, const wcstring &working_di
     return result;
 }
 
-bool autosuggest_validate_from_history(const history_item_t &item, file_detection_context_t &detector, const wcstring &working_directory, const env_vars_snapshot_t &vars)
+bool autosuggest_validate_from_history(const history_item_t &item, file_detection_context_t &detector, const wcstring &working_directory, const environment_t &vars)
 {
     ASSERT_IS_BACKGROUND_THREAD();
 
@@ -516,14 +516,14 @@ bool autosuggest_validate_from_history(const history_item_t &item, file_detectio
     /* Parse the string */
     wcstring parsed_command;
     parse_node_t last_arg_node(token_type_invalid);
-    if (! autosuggest_parse_command(item.str(), &parsed_command, &last_arg_node))
+    if (! autosuggest_parse_command(item.str(), vars, &parsed_command, &last_arg_node))
         return false;
 
     if (parsed_command == L"cd" && last_arg_node.type == symbol_argument && last_arg_node.has_source())
     {
         /* We can possibly handle this specially */
         wcstring dir = last_arg_node.get_source(item.str());
-        if (expand_one(dir, EXPAND_SKIP_CMDSUBST))
+        if (expand_one(dir, vars, EXPAND_SKIP_CMDSUBST))
         {
             handled = true;
             bool is_help = string_prefixes_string(dir, L"--help") || string_prefixes_string(dir, L"-h");
@@ -557,11 +557,11 @@ bool autosuggest_validate_from_history(const history_item_t &item, file_detectio
     {
         bool cmd_ok = false;
 
-        if (path_get_path(parsed_command, NULL))
+        if (path_get_path(parsed_command, NULL, vars))
         {
             cmd_ok = true;
         }
-        else if (builtin_exists(parsed_command) || function_exists_no_autoload(parsed_command, vars))
+        else if (builtin_exists(parsed_command) || function_exists_no_autoload(parsed_command))
         {
             cmd_ok = true;
         }
@@ -1023,7 +1023,7 @@ void highlighter_t::color_argument(const parse_node_t &node)
 }
 
 // Indicates whether the source range of the given node forms a valid path in the given working_directory
-static bool node_is_potential_path(const wcstring &src, const parse_node_t &node, const wcstring &working_directory)
+static bool node_is_potential_path(const wcstring &src, const parse_node_t &node, const environment_t &vars, const wcstring &working_directory)
 {
     if (! node.has_source())
         return false;
@@ -1039,7 +1039,7 @@ static bool node_is_potential_path(const wcstring &src, const parse_node_t &node
             token.at(0) = L'~';
 
         const wcstring_list_t working_directory_list(1, working_directory);
-        result = is_potential_path(token, working_directory_list, PATH_EXPAND_TILDE);
+        result = is_potential_path(token, vars, working_directory_list, PATH_EXPAND_TILDE);
     }
     return result;
 }
@@ -1055,7 +1055,7 @@ void highlighter_t::color_arguments(const parse_node_t &list_node)
         if (parent != NULL)
         {
             wcstring cmd_str;
-            if (plain_statement_get_expanded_command(this->buff, this->parse_tree, *parent, &cmd_str))
+            if (plain_statement_get_expanded_command(this->buff, this->parse_tree, *parent, vars, &cmd_str))
             {
                 cmd_is_cd = (cmd_str == L"cd");
             }
@@ -1075,10 +1075,10 @@ void highlighter_t::color_arguments(const parse_node_t &list_node)
         {
             /* Mark this as an error if it's not 'help' and not a valid cd path */
             wcstring param = child->get_source(this->buff);
-            if (expand_one(param, EXPAND_SKIP_CMDSUBST))
+            if (expand_one(param, vars, EXPAND_SKIP_CMDSUBST))
             {
                 bool is_help = string_prefixes_string(param, L"--help") || string_prefixes_string(param, L"-h");
-                if (! is_help && this->io_ok && ! is_potential_cd_path(param, working_directory, PATH_EXPAND_TILDE, NULL))
+                if (! is_help && this->io_ok && ! is_potential_cd_path(param, vars, working_directory, PATH_EXPAND_TILDE, NULL))
                 {
                     this->color_node(*child, highlight_spec_error);
                 }
@@ -1122,7 +1122,7 @@ void highlighter_t::color_redirection(const parse_node_t &redirection_node)
                 /* I/O is disallowed, so we don't have much hope of catching anything but gross errors. Assume it's valid. */
                 target_is_valid = true;
             }
-            else if (! expand_one(target, EXPAND_SKIP_CMDSUBST))
+            else if (! expand_one(target, vars, EXPAND_SKIP_CMDSUBST))
             {
                 /* Could not be expanded */
                 target_is_valid = false;
@@ -1273,11 +1273,11 @@ static bool command_is_valid(const wcstring &cmd, enum parse_statement_decoratio
 
     /* Functions */
     if (! is_valid && function_ok)
-        is_valid = function_exists_no_autoload(cmd, vars);
+        is_valid = function_exists_no_autoload(cmd);
 
     /* Abbreviations */
     if (! is_valid && abbreviation_ok)
-        is_valid = expand_abbreviation(cmd, NULL);
+        is_valid = expand_abbreviation(cmd, vars, NULL);
 
     /* Regular commands */
     if (! is_valid && command_ok)
@@ -1387,7 +1387,7 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
                         wcstring cmd(buff, cmd_node->source_start, cmd_node->source_length);
 
                         /* Try expanding it. If we cannot, it's an error. */
-                        bool expanded = expand_one(cmd, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS);
+                        bool expanded = expand_one(cmd, vars, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS);
                         if (expanded && ! has_expand_reserved(cmd))
                         {
                             is_valid_cmd = command_is_valid(cmd, decoration, working_directory, vars);
@@ -1444,7 +1444,7 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
             if (this->cursor_pos >= node.source_start && this->cursor_pos - node.source_start <= node.source_length)
             {
                 /* See if this is a valid path */
-                if (node_is_potential_path(buff, node, working_directory))
+                if (node_is_potential_path(buff, node, vars, working_directory))
                 {
                     /* It is, underline it. */
                     for (size_t i=node.source_start; i < node.source_start + node.source_length; i++)
@@ -1465,8 +1465,8 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
 
 void highlight_shell(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const env_vars_snapshot_t &vars)
 {
-    /* Do something sucky and get the current working directory on this background thread. This should really be passed in. */
-    const wcstring working_directory = env_get_pwd_slash();
+    /* Get the working directory */
+    const wcstring working_directory = env_get_pwd_slash(vars);
 
     /* Highlight it! */
     highlighter_t highlighter(buff, pos, vars, working_directory, true /* can do IO */);
@@ -1475,8 +1475,8 @@ void highlight_shell(const wcstring &buff, std::vector<highlight_spec_t> &color,
 
 void highlight_shell_no_io(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const env_vars_snapshot_t &vars)
 {
-    /* Do something sucky and get the current working directory on this background thread. This should really be passed in. */
-    const wcstring working_directory = env_get_pwd_slash();
+    /* Get the working directory */
+    const wcstring working_directory = env_get_pwd_slash(vars);
 
     /* Highlight it! */
     highlighter_t highlighter(buff, pos, vars, working_directory, false /* no IO allowed */);

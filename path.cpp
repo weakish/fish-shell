@@ -131,96 +131,12 @@ static bool path_get_path_core(const wcstring &cmd, wcstring *out_path, const en
     return false;
 }
 
-bool path_get_path(const wcstring &cmd, wcstring *out_path, const env_vars_snapshot_t &vars)
+bool path_get_path(const wcstring &cmd, wcstring *out_path, const environment_t &vars)
 {
     return path_get_path_core(cmd, out_path, vars.get(L"PATH"));
 }
 
-bool path_get_path(const wcstring &cmd, wcstring *out_path)
-{
-    return path_get_path_core(cmd, out_path, env_get_string(L"PATH"));
-}
-
-bool path_get_cdpath_string(const wcstring &dir_str, wcstring &result, const env_var_t &cdpath)
-{
-    wchar_t *res = 0;
-    int err = ENOENT;
-    bool success = false;
-
-    const wchar_t *const dir = dir_str.c_str();
-    if (dir[0] == L'/'|| (wcsncmp(dir, L"./", 2)==0))
-    {
-        struct stat buf;
-        if (wstat(dir, &buf) == 0)
-        {
-            if (S_ISDIR(buf.st_mode))
-            {
-                result = dir_str;
-                success = true;
-            }
-            else
-            {
-                err = ENOTDIR;
-            }
-
-        }
-    }
-    else
-    {
-
-        wcstring path = L".";
-
-        // Respect CDPATH
-        env_var_t cdpath = env_get_string(L"CDPATH");
-        if (! cdpath.missing_or_empty())
-        {
-            path = cdpath.c_str();
-        }
-
-        wcstokenizer tokenizer(path, ARRAY_SEP_STR);
-        wcstring next_path;
-        while (tokenizer.next(next_path))
-        {
-            expand_tilde(next_path);
-            if (next_path.size() == 0) continue;
-
-            wcstring whole_path = next_path;
-            append_path_component(whole_path, dir);
-
-            struct stat buf;
-            if (wstat(whole_path, &buf) == 0)
-            {
-                if (S_ISDIR(buf.st_mode))
-                {
-                    result = whole_path;
-                    success = true;
-                    break;
-                }
-                else
-                {
-                    err = ENOTDIR;
-                }
-            }
-            else
-            {
-                if (lwstat(whole_path, &buf) == 0)
-                {
-                    err = EROTTEN;
-                }
-            }
-        }
-    }
-
-
-    if (!success)
-    {
-        errno = err;
-    }
-
-    return res;
-}
-
-bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, const env_vars_snapshot_t &env_vars)
+bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, const environment_t &vars)
 {
     int err = ENOENT;
     if (dir.empty())
@@ -252,7 +168,7 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
     else
     {
         // Respect CDPATH
-        env_var_t path = env_vars.get(L"CDPATH");
+        env_var_t path = vars.get(L"CDPATH");
         if (path.missing_or_empty())
             path = L"."; //We'll change this to the wd if we have one
 
@@ -267,7 +183,7 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
                 // TODO: if nxt_path starts with ./ we need to replace the . with the wd
                 nxt_path = wd;
             }
-            expand_tilde(nxt_path);
+            expand_tilde(nxt_path, vars);
 
 //      debug( 2, L"woot %ls\n", expanded_path.c_str() );
 
@@ -309,7 +225,7 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
 bool path_can_be_implicit_cd(const wcstring &path, wcstring *out_path, const wchar_t *wd, const env_vars_snapshot_t &vars)
 {
     wcstring exp_path = path;
-    expand_tilde(exp_path);
+    expand_tilde(exp_path, vars);
 
     bool result = false;
     if (string_prefixes_string(L"/", exp_path) ||

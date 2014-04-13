@@ -41,7 +41,7 @@ struct builtin_script_t
 };
 
 struct builtin_script_t;
-class env_vars_snapshot_t;
+class environment_t;
 
 /**
   A class that represents a path from which we can autoload, and the autoloaded contents.
@@ -129,7 +129,7 @@ public:
     void unload_all();
 
     /** Check whether the given command could be loaded, but do not load it. */
-    bool can_load(const wcstring &cmd, const env_vars_snapshot_t &vars);
+    bool can_load(const wcstring &cmd);
 
 };
 

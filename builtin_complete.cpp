@@ -504,7 +504,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                 recursion_level++;
 
                 std::vector<completion_t> comp;
-                complete(do_complete_param, comp, COMPLETION_REQUEST_DEFAULT);
+                complete(do_complete_param, comp, &parser.vars(), COMPLETION_REQUEST_DEFAULT);
 
                 for (size_t i=0; i< comp.size() ; i++)
                 {

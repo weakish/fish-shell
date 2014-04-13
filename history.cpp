@@ -1753,7 +1753,7 @@ bool file_detection_context_t::paths_are_valid(const path_list_t &paths)
 
 file_detection_context_t::file_detection_context_t(history_t *hist, history_identifier_t ident) :
     history(hist),
-    working_directory(env_get_pwd_slash()),
+    working_directory(env_get_pwd_slash(env_vars_snapshot_t::current())),
     history_item_identifier(ident)
 {
 }

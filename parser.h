@@ -12,6 +12,7 @@
 #include "event.h"
 #include "function.h"
 #include "parse_tree.h"
+#include "env.h"
 #include <vector>
 
 /**
@@ -235,8 +236,9 @@ class parse_execution_context_t;
 class parser_t
 {
     friend class parse_execution_context_t;
+    friend env_var_t env_get_from_main(const wcstring &key);
 private:
-    enum parser_type_t parser_type;
+    const enum parser_type_t parser_type;
 
     /** Whether or not we output errors */
     const bool show_errors;
@@ -255,6 +257,9 @@ private:
 
     /** The jobs associated with this parser */
     job_list_t my_job_list;
+    
+    /** Variables in the execution stack */
+    env_stack_t variable_stack;
 
     /** The list of blocks, allocated with new. It's our responsibility to delete these */
     std::vector<block_t *> block_stack;
@@ -282,6 +287,10 @@ private:
        type FUNCTION_CALL.
     */
     const wchar_t *is_function() const;
+    
+    wcstring user_presentable_path(const wcstring &path) const;
+    
+    static const environment_t &principal_environment();
 
 public:
 
@@ -321,7 +330,7 @@ public:
       \param arg_src String to evaluate as an argument list
       \param output List to insert output into
     */
-    void expand_argument_list(const wcstring &arg_src, std::vector<completion_t> &output);
+    void expand_argument_list(const wcstring &arg_src, const environment_t &vars, std::vector<completion_t> *output);
 
     /**
        Returns a string describing the current parser pisition in the format 'FILENAME (line LINE_NUMBER): LINE'.
@@ -352,6 +361,16 @@ public:
     job_list_t &job_list()
     {
         return my_job_list;
+    }
+    
+    env_stack_t &vars()
+    {
+        return variable_stack;
+    }
+    
+    const env_stack_t &vars() const
+    {
+        return variable_stack;
     }
 
     /* Hackish. In order to correctly report the origin of code with no associated file, we need to know whether it's run during initialization or not. */

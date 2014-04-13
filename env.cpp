@@ -98,10 +98,6 @@ bool g_use_posix_spawn = false; //will usually be set to true
 // Big global lock that all environment modifications use
 static pthread_mutex_t s_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// We use shared pointers to track nodes, because multiple stacks can reference the same node
-class env_node_t;
-typedef shared_ptr<env_node_t> env_node_ref_t;
-
 /**
    Struct representing one level in the function variable stack
 */
@@ -167,48 +163,25 @@ class env_node_t
     }
 };
 
-/* Class representing a function variable stack */
-class env_stack_t
+env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global)
 {
-    /** Bottom node on the function stack */
-    const env_node_ref_t global;
-    
-    /** Top node on the function stack */
-    env_node_ref_t top;
+}
 
-    env_node_t *get_node(const wcstring &key);
-    
-    /* Returns the next scope to search in order, respecting the new_scope flag, or NULL if we're done. */
-    env_node_t *next_scope(env_node_t *scope);
-    const env_node_t *next_scope(const env_node_t *scope) const;
-    
-    bool try_remove(env_node_t *n, const wcstring &key, int var_mode);
-    bool local_scope_exports(env_node_t *n) const;
-    void get_exported(const env_node_t *n, std::map<wcstring, wcstring> &h) const;
-    
-    null_terminated_array_t<char> export_array;
-    
-    public:
-    env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global)
-    {
-    }
-    
-    int set(const wcstring &key, const wchar_t *val, int var_mode);
-    
-    int remove(const wcstring &key, int var_mode);
-    env_var_t get_string(const wcstring &key);
-    bool exist(const wchar_t *key, int mode) const;
-    void push(bool new_scope);
-    void pop();
-    
-    wcstring_list_t get_names(int flags) const;
-    
-    void update_export_array_if_necessary(bool recalc);
-    const null_terminated_array_t<char> &get_export_array() const;
-};
+env_stack_t::~env_stack_t()
+{
+}
 
 /* The stack associated with the main thread of execution */
-static env_stack_t *main_stack;
+static env_stack_t *main_stack()
+{
+    return &parser_t::principal_parser().vars();
+}
+
+const env_stack_t &env_stack_t::empty()
+{
+    static const env_stack_t empty_result;
+    return empty_result;
+}
 
 /* Helper class for storing constant strings, without needing to wrap them in a wcstring */
 
@@ -524,9 +497,9 @@ int env_set_pwd()
     return 1;
 }
 
-wcstring env_get_pwd_slash(void)
+wcstring env_get_pwd_slash(const env_vars_snapshot_t &snapshot)
 {
-    env_var_t pwd = env_get_string(L"PWD");
+    env_var_t pwd = snapshot.get(L"PWD");
     if (pwd.missing_or_empty())
     {
         return L"";
@@ -568,7 +541,6 @@ static void env_set_defaults()
     }
 
     env_set_pwd();
-
 }
 
 // Some variables should not be arrays. This used to be handled by a startup script, but we'd like to get down to 0 forks for startup, so handle it here.
@@ -623,12 +595,6 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
     env_electric.insert(L"history");
     env_electric.insert(L"status");
     env_electric.insert(L"umask");
-
-    /*
-      Now the environemnt variable handling is set up, the next step
-      is to insert valid data
-    */
-    main_stack = new env_stack_t();
 
     /*
       Import environment variables
@@ -953,7 +919,7 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, int var_mode)
 
 int env_set(const wcstring &key, const wchar_t *val, int var_mode)
 {
-    return main_stack->set(key, val, var_mode);
+    return main_stack()->set(key, val, var_mode);
 }
 
 
@@ -1045,19 +1011,14 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
     return !erased;
 }
 
-int env_remove(const wcstring &key, int var_mode)
-{
-    return main_stack->remove(key, var_mode);
-}
-
-wcstring_list_t env_get_names(int flags)
-{
-    return main_stack->get_names(flags);
-}
-
 env_var_t env_get_string(const wcstring &key)
 {
-    return main_stack->get_string(key);
+    return main_stack()->get(key);
+}
+
+env_var_t env_get_super_global(const wcstring &key)
+{
+    return main_stack()->get(key);
 }
 
 const wchar_t *env_var_t::c_str(void) const
@@ -1066,7 +1027,7 @@ const wchar_t *env_var_t::c_str(void) const
     return wcstring::c_str();
 }
 
-env_var_t env_stack_t::get_string(const wcstring &key)
+env_var_t env_stack_t::get(const wcstring &key) const
 {
     /* Big hack...we only allow getting the history on the main thread. Note that history_t may ask for an environment variable, so don't take the lock here (we don't need it) */
     const bool is_main = is_main_thread();
@@ -1105,7 +1066,7 @@ env_var_t env_stack_t::get_string(const wcstring &key)
             /* Lock around a local region */
             scoped_lock locker(s_env_lock);
 
-            env_node_t *env = top.get();
+            const env_node_t *env = top.get();
             wcstring result;
 
             while (env != NULL)
@@ -1150,9 +1111,6 @@ env_var_t env_stack_t::get_string(const wcstring &key)
 
 bool env_stack_t::exist(const wchar_t *key, int mode) const
 {
-    const env_node_t *env;
-    const wchar_t *item = NULL;
-
     CHECK(key, false);
 
     /*
@@ -1178,8 +1136,7 @@ bool env_stack_t::exist(const wchar_t *key, int mode) const
 
     if (!(mode & ENV_UNIVERSAL))
     {
-        env = (mode & ENV_GLOBAL) ? this->global.get() : this->top.get();
-
+        const env_node_t *env = (mode & ENV_GLOBAL) ? this->global.get() : this->top.get();
         while (env != 0)
         {
             const var_entry_t *entry = env->find_entry(key);
@@ -1212,7 +1169,7 @@ bool env_stack_t::exist(const wchar_t *key, int mode) const
             env_universal_barrier();
         }
 
-        item = env_universal_get(key);
+        const wchar_t *item = env_universal_get(key);
 
         if (item != NULL)
         {
@@ -1230,11 +1187,6 @@ bool env_stack_t::exist(const wchar_t *key, int mode) const
     }
 
     return 0;
-}
-
-bool env_exist(const wchar_t *key, int mode)
-{
-    return main_stack->exist(key, mode);
 }
 
 /**
@@ -1258,7 +1210,6 @@ bool env_stack_t::local_scope_exports(env_node_t *n) const
 void env_stack_t::push(bool new_scope)
 {
     const env_node_ref_t node = env_node_ref_t(new env_node_t(new_scope, top));
-
     if (new_scope)
     {
         if (local_scope_exports(top.get()))
@@ -1266,12 +1217,6 @@ void env_stack_t::push(bool new_scope)
     }
     this->top = node;
 }
-
-void env_push(bool new_scope)
-{
-    main_stack->push(new_scope);
-}
-
 
 void env_stack_t::pop()
 {
@@ -1326,9 +1271,10 @@ void env_stack_t::pop()
     }
 }
 
-void env_pop()
+env_var_t env_get_from_main(const wcstring &key)
 {
-    main_stack->pop();
+    const environment_t &vars = parser_t::principal_environment();
+    return vars.get(key);
 }
 
 /**
@@ -1521,8 +1467,8 @@ const null_terminated_array_t<char> &env_stack_t::get_export_array() const
 const char * const *env_export_arr(bool recalc)
 {
     ASSERT_IS_MAIN_THREAD();
-    main_stack->update_export_array_if_necessary(recalc);
-    return main_stack->get_export_array().get();
+    main_stack()->update_export_array_if_necessary(recalc);
+    return main_stack()->get_export_array().get();
 }
 
 env_vars_snapshot_t::env_vars_snapshot_t(const wchar_t * const *keys)
@@ -1568,4 +1514,7 @@ env_var_t env_vars_snapshot_t::get(const wcstring &key) const
     }
 }
 
-const wchar_t * const env_vars_snapshot_t::highlighting_keys[] = {L"PATH", L"CDPATH", L"fish_function_path", NULL};
+const wchar_t * const env_vars_snapshot_t::highlighting_keys[] = {L"PATH", L"CDPATH", L"fish_function_path", L"PWD", USER_ABBREVIATIONS_VARIABLE_NAME, NULL};
+
+environment_t::environment_t() { }
+environment_t::~environment_t() { }

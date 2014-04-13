@@ -339,9 +339,9 @@ static void erase_values(wcstring_list_t &list, const std::vector<long> &indexes
    Print the names of all environment variables in the scope, with or without shortening,
    with or without values, with or without escaping
 */
-static void print_variables(int include_values, int esc, bool shorten_ok, int scope)
+static void print_variables(int include_values, int esc, bool shorten_ok, int scope, const parser_t &parser)
 {
-    wcstring_list_t names = env_get_names(scope);
+    wcstring_list_t names = parser.vars().get_names(scope);
     sort(names.begin(), names.end());
 
     for (size_t i = 0; i < names.size(); i++)
@@ -609,7 +609,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
             }
             else
             {
-                if (!env_exist(arg, scope))
+                if (! parser.vars().exist(arg, scope))
                 {
                     retcode++;
                 }
@@ -624,7 +624,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     if (list)
     {
         /* Maybe we should issue an error if there are any other arguments? */
-        print_variables(0, 0, shorten_ok, scope);
+        print_variables(0, 0, shorten_ok, scope, parser);
         return 0;
     }
 
@@ -645,7 +645,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
         }
         else
         {
-            print_variables(1, 1, shorten_ok, scope);
+            print_variables(1, 1, shorten_ok, scope, parser);
         }
 
         return retcode;
@@ -787,7 +787,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
             }
             else
             {
-                retcode = env_remove(dest, scope);
+                retcode = parser.vars().remove(dest, scope);
             }
         }
         else

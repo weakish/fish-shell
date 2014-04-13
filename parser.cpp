@@ -185,9 +185,9 @@ static const struct block_lookup_entry block_lookup[]=
 };
 
 // Given a file path, return something nicer. Currently we just "unexpand" tildes.
-static wcstring user_presentable_path(const wcstring &path)
+wcstring parser_t::user_presentable_path(const wcstring &path) const
 {
-    return replace_home_directory_with_tilde(path);
+    return replace_home_directory_with_tilde(path, this->vars());
 }
 
 
@@ -212,6 +212,13 @@ parser_t &parser_t::principal_parser(void)
         s_principal_parser = &parser;
     }
     return parser;
+}
+
+/* A hacktastic function which enables getting access to the main thread environment from outside the main thread. This is used by the autoloading mechanisms (and ONLY by the autoloading mechanisms), since we do not yet support per-thread functions sets. */
+const environment_t &parser_t::principal_environment()
+{
+    assert(s_principal_parser != NULL);
+    return s_principal_parser->vars();
 }
 
 void parser_t::set_is_within_fish_initialization(bool flag)
@@ -283,7 +290,7 @@ void parser_t::push_block(block_t *new_current)
             (new_current->type() != FAKE) &&
             (new_current->type() != TOP))
     {
-        env_push(type == FUNCTION_CALL);
+        this->vars().push(type == FUNCTION_CALL);
         new_current->wants_pop_env = true;
     }
 }
@@ -303,7 +310,7 @@ void parser_t::pop_block()
     block_stack.pop_back();
 
     if (old->wants_pop_env)
-        env_pop();
+        this->vars().pop();
 
     delete old;
 }
@@ -477,8 +484,10 @@ void parser_t::emit_profiling(const char *path) const
     }
 }
 
-void parser_t::expand_argument_list(const wcstring &arg_list_src, std::vector<completion_t> &output_arg_list)
+void parser_t::expand_argument_list(const wcstring &arg_list_src, const environment_t &vars, std::vector<completion_t> *output_arg_list)
 {
+    assert(output_arg_list != NULL);
+    
     expand_flags_t eflags = 0;
     if (! show_errors)
         eflags |= EXPAND_NO_DESCRIPTIONS;
@@ -511,7 +520,17 @@ void parser_t::expand_argument_list(const wcstring &arg_list_src, std::vector<co
         if (arg_node != NULL)
         {
             const wcstring arg_src = arg_node->get_source(arg_list_src);
-            if (expand_string(arg_src, output_arg_list, eflags, NULL) == EXPAND_ERROR)
+            /* Hackish. If we are a general parser, we allow command substitutions, in which case we have to pass ourselves to expand_string. Otherwise, we must pass the environment we were given. */
+            int expand_result;
+            if (this->parser_type == PARSER_TYPE_GENERAL)
+            {
+                expand_result = expand_string(arg_src, *this, *output_arg_list, eflags, NULL);
+            }
+            else
+            {
+                expand_result = expand_string(arg_src, vars, *output_arg_list, eflags, NULL);
+            }
+            if (expand_result == EXPAND_ERROR)
             {
                 /* Failed to expand a string */
                 break;

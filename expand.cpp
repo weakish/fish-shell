@@ -174,11 +174,11 @@ static void append_cmdsub_error(parse_error_list_t *errors, size_t source_start,
 /**
    Return the environment variable value for the string starting at \c in.
 */
-static env_var_t expand_var(const wchar_t *in)
+static env_var_t expand_var(const wchar_t *in, const environment_t &vars)
 {
     if (!in)
         return env_var_t::missing_var();
-    return env_get_string(in);
+    return vars.get(in);
 }
 
 /**
@@ -874,7 +874,7 @@ static int expand_pid(const wcstring &instr_with_sep,
 }
 
 
-void expand_variable_error(parser_t &parser, const wcstring &token, size_t token_pos, int error_pos, parse_error_list_t *errors)
+static void expand_variable_error(const wcstring &token, size_t token_pos, int error_pos, parse_error_list_t *errors)
 {
     size_t stop_pos = token_pos+1;
 
@@ -1052,17 +1052,17 @@ static int parse_slice(const wchar_t *in, wchar_t **end_ptr, std::vector<long> &
    happens, don't edit it unless you know exactly what you are doing,
    and do proper testing afterwards.
 */
-static int expand_variables_internal(parser_t &parser, wchar_t * const in, std::vector<completion_t> &out, long last_idx, parse_error_list_t *errors);
+static int expand_variables_internal(const environment_t &vars, wchar_t * const in, std::vector<completion_t> &out, long last_idx, parse_error_list_t *errors);
 
-static int expand_variables2(parser_t &parser, const wcstring &instr, std::vector<completion_t> &out, long last_idx, parse_error_list_t *errors)
+static int expand_variables2(const environment_t &vars, const wcstring &instr, std::vector<completion_t> &out, long last_idx, parse_error_list_t *errors)
 {
     wchar_t *in = wcsdup(instr.c_str());
-    int result = expand_variables_internal(parser, in, out, last_idx, errors);
+    int result = expand_variables_internal(vars, in, out, last_idx, errors);
     free(in);
     return result;
 }
 
-static int expand_variables_internal(parser_t &parser, wchar_t * const in, std::vector<completion_t> &out, long last_idx, parse_error_list_t *errors)
+static int expand_variables_internal(const environment_t &vars, wchar_t * const in, std::vector<completion_t> &out, long last_idx, parse_error_list_t *errors)
 {
     int is_ok= 1;
     int empty=0;
@@ -1106,14 +1106,14 @@ static int expand_variables_internal(parser_t &parser, wchar_t * const in, std::
 
             if (var_len == 0)
             {
-                expand_variable_error(parser, in, stop_pos-1, -1, errors);
+                expand_variable_error(in, stop_pos-1, -1, errors);
 
                 is_ok = 0;
                 break;
             }
 
             var_tmp.append(in + start_pos, var_len);
-            env_var_t var_val = expand_var(var_tmp.c_str());
+            const env_var_t var_val = expand_var(var_tmp.c_str(), vars);
 
             if (! var_val.missing())
             {
@@ -1192,7 +1192,7 @@ static int expand_variables_internal(parser_t &parser, wchar_t * const in, std::
                             }
                         }
                         res.append(in + stop_pos);
-                        is_ok &= expand_variables2(parser, res, out, i, errors);
+                        is_ok &= expand_variables2(vars, res, out, i, errors);
                     }
                     else
                     {
@@ -1220,7 +1220,7 @@ static int expand_variables_internal(parser_t &parser, wchar_t * const in, std::
                                     }
                                     new_in.append(next);
                                     new_in.append(in + stop_pos);
-                                    is_ok &= expand_variables2(parser, new_in, out, i, errors);
+                                    is_ok &= expand_variables2(vars, new_in, out, i, errors);
                                 }
                             }
 
@@ -1252,7 +1252,7 @@ static int expand_variables_internal(parser_t &parser, wchar_t * const in, std::
                     res.append(in);
                     res.append(in + stop_pos);
 
-                    is_ok &= expand_variables2(parser, res, out, i, errors);
+                    is_ok &= expand_variables2(vars, res, out, i, errors);
                     return is_ok;
                 }
             }
@@ -1272,7 +1272,7 @@ static int expand_variables_internal(parser_t &parser, wchar_t * const in, std::
 /**
    Perform bracket expansion
 */
-static int expand_brackets(parser_t &parser, const wcstring &instr, int flags, std::vector<completion_t> &out, parse_error_list_t *errors)
+static int expand_brackets(const environment_t &vars, const wcstring &instr, int flags, std::vector<completion_t> &out, parse_error_list_t *errors)
 {
     bool syntax_error = false;
     int bracket_count=0;
@@ -1342,7 +1342,7 @@ static int expand_brackets(parser_t &parser, const wcstring &instr, int flags, s
                 mod.push_back(BRACKET_END);
             }
 
-            return expand_brackets(parser, mod, 1, out, errors);
+            return expand_brackets(vars, mod, 1, out, errors);
         }
     }
 
@@ -1378,7 +1378,7 @@ static int expand_brackets(parser_t &parser, const wcstring &instr, int flags, s
                 whole_item.append(in, length_preceding_brackets);
                 whole_item.append(item_begin, item_len);
                 whole_item.append(bracket_end + 1);
-                expand_brackets(parser, whole_item, flags, out, errors);
+                expand_brackets(vars, whole_item, flags, out, errors);
 
                 item_begin = pos+1;
                 if (pos == bracket_end)
@@ -1540,7 +1540,7 @@ static wcstring get_home_directory_name(const wcstring &input, size_t *out_tail_
 }
 
 /** Attempts tilde expansion of the string specified, modifying it in place. */
-static void expand_home_directory(wcstring &input)
+static void expand_home_directory(wcstring &input, const env_var_t &current_user_home)
 {
     if (! input.empty() && input.at(0) == HOME_DIRECTORY)
     {
@@ -1552,7 +1552,7 @@ static void expand_home_directory(wcstring &input)
         if (username.empty())
         {
             /* Current users home directory */
-            home = env_get_string(L"HOME");
+            home = current_user_home.missing() ? L"" : current_user_home;
             tail_idx = 1;
         }
         else
@@ -1578,18 +1578,18 @@ static void expand_home_directory(wcstring &input)
     }
 }
 
-void expand_tilde(wcstring &input)
+void expand_tilde(wcstring &input, const environment_t &vars)
 {
     // Avoid needless COW behavior by ensuring we use const at
     const wcstring &tmp = input;
     if (! tmp.empty() && tmp.at(0) == L'~')
     {
         input.at(0) = HOME_DIRECTORY;
-        expand_home_directory(input);
+        expand_home_directory(input, vars.get(L"HOME"));
     }
 }
 
-static void unexpand_tildes(const wcstring &input, std::vector<completion_t> *completions)
+static void unexpand_tildes(const wcstring &input, std::vector<completion_t> *completions, const environment_t &vars)
 {
     // If input begins with tilde, then try to replace the corresponding string in each completion with the tilde
     // If it does not, there's nothing to do
@@ -1617,7 +1617,7 @@ static void unexpand_tildes(const wcstring &input, std::vector<completion_t> *co
 
     // Expand username_with_tilde
     wcstring home = username_with_tilde;
-    expand_tilde(home);
+    expand_tilde(home, vars);
 
     // Now for each completion that starts with home, replace it with the username_with_tilde
     for (size_t i=0; i < completions->size(); i++)
@@ -1635,14 +1635,14 @@ static void unexpand_tildes(const wcstring &input, std::vector<completion_t> *co
 
 // If the given path contains the user's home directory, replace that with a tilde
 // We don't try to be smart about case insensitivity, etc.
-wcstring replace_home_directory_with_tilde(const wcstring &str)
+wcstring replace_home_directory_with_tilde(const wcstring &str, const environment_t &vars)
 {
     // only absolute paths get this treatment
     wcstring result = str;
     if (string_prefixes_string(L"/", result))
     {
         wcstring home_directory = L"~";
-        expand_tilde(home_directory);
+        expand_tilde(home_directory, vars);
         if (! string_suffixes_string(L"/", home_directory))
         {
             home_directory.push_back(L'/');
@@ -1687,10 +1687,11 @@ static void remove_internal_separator(wcstring &str, bool conv)
 }
 
 
-int expand_string(const wcstring &input, std::vector<completion_t> &output, expand_flags_t flags, parse_error_list_t *errors)
+static int expand_string_internal(const wcstring &input, parser_t *parser_or_null, const environment_t &vars, completion_list_t &output, expand_flags_t flags, parse_error_list_t *errors)
 {
-    parser_t parser(PARSER_TYPE_ERRORS_ONLY, true /* show errors */);
-
+    // If we are going to do cmdsub expansion, we must have a parser
+    assert(parser_or_null != NULL || (flags & EXPAND_SKIP_CMDSUBST));
+    
     size_t i;
     int res = EXPAND_OK;
 
@@ -1716,7 +1717,8 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
     }
     else
     {
-        int cmdsubst_ok = expand_cmdsubst(parser, input, *in, errors);
+        assert(parser_or_null != NULL);
+        int cmdsubst_ok = expand_cmdsubst(*parser_or_null, input, *in, errors);
         if (! cmdsubst_ok)
             return EXPAND_ERROR;
     }
@@ -1744,7 +1746,7 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
         }
         else
         {
-            if (!expand_variables2(parser, next, *out, next.size() - 1, errors))
+            if (!expand_variables2(vars, next, *out, next.size() - 1, errors))
             {
                 return EXPAND_ERROR;
             }
@@ -1758,7 +1760,7 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
     {
         const wcstring &next = in->at(i).completion;
 
-        if (!expand_brackets(parser, next, flags, *out, errors))
+        if (!expand_brackets(vars, next, flags, *out, errors))
         {
             return EXPAND_ERROR;
         }
@@ -1771,7 +1773,7 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
         wcstring next = in->at(i).completion;
 
         if (!(EXPAND_SKIP_HOME_DIRECTORIES & flags))
-            expand_home_directory(next);
+            expand_home_directory(next, vars.get(L"HOME"));
 
 
         if (flags & ACCEPT_INCOMPLETE)
@@ -1879,7 +1881,7 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
     // Hack to un-expand tildes (see #647)
     if (!(flags & EXPAND_SKIP_HOME_DIRECTORIES))
     {
-        unexpand_tildes(input, out);
+        unexpand_tildes(input, out, vars);
     }
 
     // Return our output
@@ -1888,8 +1890,22 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
     return res;
 }
 
-bool expand_one(wcstring &string, expand_flags_t flags, parse_error_list_t *errors)
+int expand_string(const wcstring &input, const environment_t &vars, std::vector<completion_t> &output, expand_flags_t flags, parse_error_list_t *errors)
 {
+    assert(flags & EXPAND_SKIP_CMDSUBST);
+    return expand_string_internal(input, NULL, vars, output, flags, errors);
+}
+
+int expand_string(const wcstring &input, parser_t &parser, std::vector<completion_t> &output, expand_flags_t flags, parse_error_list_t *errors)
+{
+    return expand_string_internal(input, &parser, parser.vars(), output, flags, errors);
+}
+
+static bool expand_one_internal(wcstring &string, parser_t *parser_or_null, const environment_t &vars, expand_flags_t flags, parse_error_list_t *errors)
+{
+    // If we are going to do cmdsub expansion, we must have a parser
+    assert(parser_or_null != NULL || (flags & EXPAND_SKIP_CMDSUBST));
+
     std::vector<completion_t> completions;
     bool result = false;
 
@@ -1898,7 +1914,7 @@ bool expand_one(wcstring &string, expand_flags_t flags, parse_error_list_t *erro
         return true;
     }
 
-    if (expand_string(string, completions, flags | EXPAND_NO_DESCRIPTIONS, errors))
+    if (expand_string_internal(string, parser_or_null, vars, completions, flags | EXPAND_NO_DESCRIPTIONS, errors))
     {
         if (completions.size() == 1)
         {
@@ -1909,6 +1925,15 @@ bool expand_one(wcstring &string, expand_flags_t flags, parse_error_list_t *erro
     return result;
 }
 
+bool expand_one(wcstring &string, const environment_t &vars, expand_flags_t flags, parse_error_list_t *errors)
+{
+    return expand_one_internal(string, NULL, vars, flags, errors);
+}
+
+bool expand_one(wcstring &string, parser_t &parser, expand_flags_t flags, parse_error_list_t *errors)
+{
+    return expand_one_internal(string, &parser, parser.vars(), flags, errors);
+}
 
 /*
 
@@ -2022,13 +2047,13 @@ bool fish_openSUSE_dbus_hack_hack_hack_hack(std::vector<completion_t> *args)
     return result;
 }
 
-bool expand_abbreviation(const wcstring &src, wcstring *output)
+bool expand_abbreviation(const wcstring &src, const env_vars_snapshot_t &vars, wcstring *output)
 {
     if (src.empty())
         return false;
 
     /* Get the abbreviations. Return false if we have none */
-    env_var_t var = env_get_string(USER_ABBREVIATIONS_VARIABLE_NAME);
+    env_var_t var = vars.get(USER_ABBREVIATIONS_VARIABLE_NAME);
     if (var.missing_or_empty())
         return false;
 

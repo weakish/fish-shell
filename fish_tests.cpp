@@ -683,7 +683,8 @@ static void test_parser()
 
     say(L"Testing eval_args");
     completion_list_t comps;
-    parser_t::principal_parser().expand_argument_list(L"alpha 'beta gamma' delta", comps);
+    parser_t &principal = parser_t::principal_parser();
+    principal.expand_argument_list(L"alpha 'beta gamma' delta", principal.vars(), &comps);
     do_test(comps.size() == 3);
     do_test(comps.at(0).completion == L"alpha");
     do_test(comps.at(1).completion == L"beta gamma");
@@ -1252,7 +1253,7 @@ static int expand_test(const wchar_t *in, int flags, ...)
     int res=1;
     wchar_t *arg;
 
-    if (expand_string(in, output, flags, NULL))
+    if (expand_string(in, parser_t::principal_parser(), output, flags, NULL))
     {
 
     }
@@ -1353,21 +1354,24 @@ static void test_abbreviations(void)
         L"=foo" ARRAY_SEP_STR
         L"foo" ARRAY_SEP_STR
         L"foo=bar";
-
-    env_push(true);
+    
+    env_stack_t &vars = parser_t::principal_parser().vars();
+    vars.push(true);
 
     int ret = env_set(USER_ABBREVIATIONS_VARIABLE_NAME, abbreviations, ENV_LOCAL);
     if (ret != 0) err(L"Unable to set abbreviation variable");
-
+    
+    const env_vars_snapshot_t &vars_snapshot = env_vars_snapshot_t::current();
+    
     wcstring result;
-    if (expand_abbreviation(L"", &result)) err(L"Unexpected success with empty abbreviation");
-    if (expand_abbreviation(L"nothing", &result)) err(L"Unexpected success with missing abbreviation");
+    if (expand_abbreviation(L"", vars_snapshot, &result)) err(L"Unexpected success with empty abbreviation");
+    if (expand_abbreviation(L"nothing", vars_snapshot, &result)) err(L"Unexpected success with missing abbreviation");
 
-    if (! expand_abbreviation(L"gc", &result)) err(L"Unexpected failure with gc abbreviation");
+    if (! expand_abbreviation(L"gc", vars_snapshot, &result)) err(L"Unexpected failure with gc abbreviation");
     if (result != L"git checkout") err(L"Wrong abbreviation result for gc");
     result.clear();
 
-    if (! expand_abbreviation(L"foo", &result)) err(L"Unexpected failure with foo abbreviation");
+    if (! expand_abbreviation(L"foo", vars_snapshot, &result)) err(L"Unexpected failure with foo abbreviation");
     if (result != L"bar") err(L"Wrong abbreviation result for foo");
 
     bool expanded;
@@ -1402,7 +1406,7 @@ static void test_abbreviations(void)
     if (expanded) err(L"gc incorrectly expanded on line %ld", (long)__LINE__);
 
 
-    env_pop();
+    vars.pop();
 }
 
 /** Test path functions */
@@ -1633,26 +1637,28 @@ static void test_is_potential_path()
 
     const wcstring wd = L"/tmp/is_potential_path_test/";
     const wcstring_list_t wds(1, wd);
+    
+    const environment_t &vars = parser_t::principal_parser().vars();
 
     wcstring tmp;
-    do_test(is_potential_path(L"al", wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"alpha/");
-    do_test(is_potential_path(L"alpha/", wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"alpha/");
-    do_test(is_potential_path(L"aard", wds, 0, &tmp) && tmp == L"aardvark");
+    do_test(is_potential_path(L"al", vars, wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"alpha/");
+    do_test(is_potential_path(L"alpha/", vars, wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"alpha/");
+    do_test(is_potential_path(L"aard", vars, wds, 0, &tmp) && tmp == L"aardvark");
 
-    do_test(! is_potential_path(L"balpha/", wds, PATH_REQUIRE_DIR, &tmp));
-    do_test(! is_potential_path(L"aard", wds, PATH_REQUIRE_DIR, &tmp));
-    do_test(! is_potential_path(L"aarde", wds, PATH_REQUIRE_DIR, &tmp));
-    do_test(! is_potential_path(L"aarde", wds, 0, &tmp));
+    do_test(! is_potential_path(L"balpha/", vars, wds, PATH_REQUIRE_DIR, &tmp));
+    do_test(! is_potential_path(L"aard", vars, wds, PATH_REQUIRE_DIR, &tmp));
+    do_test(! is_potential_path(L"aarde", vars, wds, PATH_REQUIRE_DIR, &tmp));
+    do_test(! is_potential_path(L"aarde", vars, wds, 0, &tmp));
 
-    do_test(is_potential_path(L"/tmp/is_potential_path_test/aardvark", wds, 0, &tmp) && tmp == L"/tmp/is_potential_path_test/aardvark");
-    do_test(is_potential_path(L"/tmp/is_potential_path_test/al", wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"/tmp/is_potential_path_test/alpha/");
-    do_test(is_potential_path(L"/tmp/is_potential_path_test/aardv", wds, 0, &tmp) && tmp == L"/tmp/is_potential_path_test/aardvark");
+    do_test(is_potential_path(L"/tmp/is_potential_path_test/aardvark", vars, wds, 0, &tmp) && tmp == L"/tmp/is_potential_path_test/aardvark");
+    do_test(is_potential_path(L"/tmp/is_potential_path_test/al", vars, wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"/tmp/is_potential_path_test/alpha/");
+    do_test(is_potential_path(L"/tmp/is_potential_path_test/aardv", vars, wds, 0, &tmp) && tmp == L"/tmp/is_potential_path_test/aardvark");
 
-    do_test(! is_potential_path(L"/tmp/is_potential_path_test/aardvark", wds, PATH_REQUIRE_DIR, &tmp));
-    do_test(! is_potential_path(L"/tmp/is_potential_path_test/al/", wds, 0, &tmp));
-    do_test(! is_potential_path(L"/tmp/is_potential_path_test/ar", wds, 0, &tmp));
+    do_test(! is_potential_path(L"/tmp/is_potential_path_test/aardvark", vars, wds, PATH_REQUIRE_DIR, &tmp));
+    do_test(! is_potential_path(L"/tmp/is_potential_path_test/al/", vars, wds, 0, &tmp));
+    do_test(! is_potential_path(L"/tmp/is_potential_path_test/ar", vars, wds, 0, &tmp));
 
-    do_test(is_potential_path(L"/usr", wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"/usr/");
+    do_test(is_potential_path(L"/usr", vars, wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"/usr/");
 
 }
 
@@ -1800,41 +1806,43 @@ static void test_colors()
 static void test_complete(void)
 {
     say(L"Testing complete");
-    const wchar_t *name_strs[] = {L"Foo1", L"Foo2", L"Foo3", L"Bar1", L"Bar2", L"Bar3"};
-    size_t count = sizeof name_strs / sizeof *name_strs;
-    const wcstring_list_t names(name_strs, name_strs + count);
-
-    complete_set_variable_names(&names);
+    const wchar_t *name_strs[] = {L"QFoo111", L"QFoo222", L"QFoo333", L"QBar111", L"QBar222", L"QBar333"};
+    env_stack_t vars;
+    vars.push(true);
+    for (size_t i=0; i < sizeof name_strs / sizeof *name_strs; i++)
+    {
+        vars.set(name_strs[i], L"ABC", ENV_LOCAL);
+    }
 
     std::vector<completion_t> completions;
-    complete(L"$F", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"$QF", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 3);
-    do_test(completions.at(0).completion == L"oo1");
-    do_test(completions.at(1).completion == L"oo2");
-    do_test(completions.at(2).completion == L"oo3");
+    do_test(completions.at(0).completion == L"oo111");
+    do_test(completions.at(1).completion == L"oo222");
+    do_test(completions.at(2).completion == L"oo333");
 
     completions.clear();
-    complete(L"$1", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"$111", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.empty());
 
     completions.clear();
-    complete(L"$1", completions, COMPLETION_REQUEST_DEFAULT | COMPLETION_REQUEST_FUZZY_MATCH);
+    complete(L"$111", completions, &vars, COMPLETION_REQUEST_DEFAULT | COMPLETION_REQUEST_FUZZY_MATCH);
     do_test(completions.size() == 2);
-    do_test(completions.at(0).completion == L"$Foo1");
-    do_test(completions.at(1).completion == L"$Bar1");
+    do_test(completions.at(0).completion == L"$QBar111");
+    do_test(completions.at(1).completion == L"$QFoo111");
 
     completions.clear();
-    complete(L"echo (/bin/mkdi", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo (/bin/mkdi", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);
     do_test(completions.at(0).completion == L"r");
 
     completions.clear();
-    complete(L"echo (ls /bin/mkdi", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo (ls /bin/mkdi", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);
     do_test(completions.at(0).completion == L"r");
 
     completions.clear();
-    complete(L"echo (command ls /bin/mkdi", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo (command ls /bin/mkdi", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);
     do_test(completions.at(0).completion == L"r");
 
@@ -1846,36 +1854,36 @@ static void test_complete(void)
 
     /* Complete a function name */
     completions.clear();
-    complete(L"echo (scuttlebut", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo (scuttlebut", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);
     do_test(completions.at(0).completion == L"t");
 
     /* But not with the command prefix */
     completions.clear();
-    complete(L"echo (command scuttlebut", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo (command scuttlebut", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 0);
 
     /* Not with the builtin prefix */
     completions.clear();
-    complete(L"echo (builtin scuttlebut", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo (builtin scuttlebut", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 0);
 
     /* Trailing spaces (#1261) */
     complete_add(L"foobarbaz", false, 0, NULL, 0, NO_FILES, NULL, L"qux", NULL, COMPLETE_AUTO_SPACE);
     completions.clear();
-    complete(L"foobarbaz ", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"foobarbaz ", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);
     do_test(completions.at(0).completion == L"qux");
 
     /* Don't complete variable names in single quotes (#1023) */
     completions.clear();
-    complete(L"echo '$Foo", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo '$Foo", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.empty());
     completions.clear();
-    complete(L"echo \\$Foo", completions, COMPLETION_REQUEST_DEFAULT);
+    complete(L"echo \\$Foo", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.empty());
 
-    complete_set_variable_names(NULL);
+    vars.pop();
 }
 
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)
@@ -1931,8 +1939,9 @@ static void test_completion_insertions()
 
 static void perform_one_autosuggestion_test(const wcstring &command, const wcstring &wd, const wcstring &expected, long line)
 {
+    const environment_t &vars = parser_t::principal_parser().vars();
     wcstring suggestion;
-    bool success = autosuggest_suggest_special(command, wd, suggestion);
+    bool success = autosuggest_suggest_special(command, wd, vars, &suggestion);
     if (! success)
     {
         printf("line %ld: autosuggest_suggest_special() failed for command %ls\n", line, command.c_str());
@@ -2052,13 +2061,14 @@ void perf_complete()
 
     t1 = get_time();
 
+    env_stack_t vars;
 
     for (c=L'a'; c<=L'z'; c++)
     {
         str[0]=c;
         reader_set_buffer(str, 0);
 
-        complete(str, out, COMPLETION_REQUEST_DEFAULT);
+        complete(str, out, &vars, COMPLETION_REQUEST_DEFAULT);
 
         matches += out.size();
         out.clear();
@@ -2078,7 +2088,7 @@ void perf_complete()
 
         reader_set_buffer(str, 0);
 
-        complete(str, out, COMPLETION_REQUEST_DEFAULT);
+        complete(str, out, &vars, COMPLETION_REQUEST_DEFAULT);
 
         matches += out.size();
         out.clear();
@@ -3125,7 +3135,7 @@ static void test_highlighting(void)
         do_test(expected_colors.size() == text.size());
 
         std::vector<highlight_spec_t> colors(text.size());
-        highlight_shell(text, colors, 20, NULL, env_vars_snapshot_t());
+        highlight_shell(text, colors, 20, NULL, env_vars_snapshot_t::current());
 
         if (expected_colors.size() != colors.size())
         {

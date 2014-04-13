@@ -126,6 +126,7 @@ public:
     static bool is_alphabetically_less_than(const completion_t &a, const completion_t &b);
     static bool is_alphabetically_equal_to(const completion_t &a, const completion_t &b);
 };
+typedef std::vector<completion_t> completion_list_t;
 
 enum
 {
@@ -212,8 +213,10 @@ void complete_remove(const wchar_t *cmd,
 
 /** Find all completions of the command cmd, insert them into out.
  */
+class env_stack_t;
 void complete(const wcstring &cmd,
               std::vector<completion_t> &comp,
+              const env_stack_t *vars,
               completion_request_flags_t flags);
 
 /**
