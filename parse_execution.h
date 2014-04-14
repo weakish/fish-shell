@@ -13,6 +13,7 @@
 
 class job_t;
 struct block_t;
+class parser_t;
 
 enum parse_execution_result_t
 {

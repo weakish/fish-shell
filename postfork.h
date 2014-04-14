@@ -18,6 +18,7 @@
 #include "proc.h"
 #include "wutil.h"
 #include "io.h"
+#include "job.h"
 
 #if HAVE_SPAWN_H
 #include <spawn.h>

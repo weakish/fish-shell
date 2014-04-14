@@ -13,6 +13,7 @@
 #include "function.h"
 #include "parse_tree.h"
 #include "env.h"
+#include "job.h"
 #include <vector>
 
 /**
@@ -70,6 +71,7 @@ enum block_type_t
 /**
    block_t represents a block of commands.
 */
+class job_t;
 struct block_t
 {
 protected:
