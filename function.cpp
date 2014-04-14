@@ -108,7 +108,7 @@ static void autoload_names(std::set<wcstring> &names, int get_hidden)
 {
     size_t i;
 
-    const env_var_t path_var_wstr =  env_get_string(L"fish_function_path");
+    const env_var_t path_var_wstr =  env_get_from_main(L"fish_function_path");
     if (path_var_wstr.missing())
         return;
     const wchar_t *path_var = path_var_wstr.c_str();

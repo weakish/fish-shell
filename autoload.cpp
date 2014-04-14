@@ -10,6 +10,7 @@ The classes responsible for autoloading functions and completions.
 #include "signal.h"
 #include "env.h"
 #include "exec.h"
+#include "parser.h"
 #include <assert.h>
 #include <algorithm>
 
@@ -358,7 +359,7 @@ bool autoload_t::locate_file_and_maybe_load_it(const wcstring &cmd, bool really_
     /* If we have a script, either built-in or a file source, then run it */
     if (really_load && has_script_source)
     {
-        if (exec_subshell(script_source, false /* do not apply exit status */) == -1)
+        if (exec_subshell(parser_t::principal_parser(), script_source, false /* do not apply exit status */) == -1)
         {
             /* Do nothing on failure */
         }

@@ -54,8 +54,8 @@ void exec_job(parser_t &parser, job_t *j);
 
   \return the status of the last job to exit, or -1 if en error was encountered.
 */
-int exec_subshell(const wcstring &cmd, std::vector<wcstring> &outputs, bool preserve_exit_status);
-int exec_subshell(const wcstring &cmd, bool preserve_exit_status);
+int exec_subshell(parser_t &parser, const wcstring &cmd, std::vector<wcstring> &outputs, bool preserve_exit_status);
+int exec_subshell(parser_t &parser, const wcstring &cmd, bool preserve_exit_status);
 
 
 /**

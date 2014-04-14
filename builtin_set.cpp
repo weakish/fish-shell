@@ -56,7 +56,7 @@ static int is_path_variable(const wchar_t *env)
    Call env_set. If this is a path variable, e.g. PATH, validate the
    elements. On error, print a description of the problem to stderr.
 */
-static int my_env_set(const wchar_t *key, const wcstring_list_t &val, int scope)
+static int my_env_set(env_stack_t &vars, const wchar_t *key, const wcstring_list_t &val, int scope)
 {
     size_t i;
     int retcode = 0;
@@ -69,7 +69,7 @@ static int my_env_set(const wchar_t *key, const wcstring_list_t &val, int scope)
 
         /* Don't bother validating (or complaining about) values that are already present */
         wcstring_list_t existing_values;
-        const env_var_t existing_variable = env_get_string(key);
+        const env_var_t existing_variable = vars.get(key);
         if (! existing_variable.missing_or_empty())
             tokenize_variable_array(existing_variable, existing_values);
 
@@ -148,7 +148,7 @@ static int my_env_set(const wchar_t *key, const wcstring_list_t &val, int scope)
         val_str = sb.c_str();
     }
 
-    switch (env_set(key, val_str, scope | ENV_USER))
+    switch (vars.set(key, val_str, scope | ENV_USER))
     {
         case ENV_PERM:
         {
@@ -339,9 +339,9 @@ static void erase_values(wcstring_list_t &list, const std::vector<long> &indexes
    Print the names of all environment variables in the scope, with or without shortening,
    with or without values, with or without escaping
 */
-static void print_variables(int include_values, int esc, bool shorten_ok, int scope, const parser_t &parser)
+static void print_variables(const env_stack_t &vars, int include_values, int esc, bool shorten_ok, int scope)
 {
-    wcstring_list_t names = parser.vars().get_names(scope);
+    wcstring_list_t names = vars.get_names(scope);
     sort(names.begin(), names.end());
 
     for (size_t i = 0; i < names.size(); i++)
@@ -353,7 +353,7 @@ static void print_variables(int include_values, int esc, bool shorten_ok, int sc
 
         if (include_values)
         {
-            env_var_t value = env_get_string(key);
+            env_var_t value = vars.get(key);
             if (!value.missing())
             {
                 int shorten = 0;
@@ -389,6 +389,8 @@ static void print_variables(int include_values, int esc, bool shorten_ok, int sc
 */
 static int builtin_set(parser_t &parser, wchar_t **argv)
 {
+    env_stack_t &vars = parser.vars();
+    
     /** Variables used for parsing the argument list */
     const struct woption long_options[] =
     {
@@ -588,7 +590,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
                 wcstring_list_t result;
                 size_t j;
 
-                env_var_t dest_str = env_get_string(dest);
+                env_var_t dest_str = vars.get(dest);
                 if (! dest_str.missing())
                     tokenize_variable_array(dest_str, result);
 
@@ -624,7 +626,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     if (list)
     {
         /* Maybe we should issue an error if there are any other arguments? */
-        print_variables(0, 0, shorten_ok, scope, parser);
+        print_variables(vars, 0, 0, shorten_ok, scope);
         return 0;
     }
 
@@ -645,7 +647,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
         }
         else
         {
-            print_variables(1, 1, shorten_ok, scope, parser);
+            print_variables(vars, 1, 1, shorten_ok, scope);
         }
 
         return retcode;
@@ -700,7 +702,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
         std::vector<long> indexes;
         wcstring_list_t result;
 
-        const env_var_t dest_str = env_get_string(dest);
+        const env_var_t dest_str = vars.get(dest);
         if (! dest_str.missing())
             tokenize_variable_array(dest_str, result);
 
@@ -742,7 +744,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
             if (erase)
             {
                 erase_values(result, indexes);
-                my_env_set(dest, result, scope);
+                my_env_set(vars, dest, result, scope);
             }
             else
             {
@@ -762,7 +764,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
                     stderr_buffer.push_back(L'\n');
                 }
 
-                my_env_set(dest, result, scope);
+                my_env_set(vars, dest, result, scope);
 
 
             }
@@ -795,7 +797,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
             wcstring_list_t val;
             for (i=woptind; i<argc; i++)
                 val.push_back(argv[i]);
-            retcode = my_env_set(dest, val, scope);
+            retcode = my_env_set(vars, dest, val, scope);
         }
     }
 

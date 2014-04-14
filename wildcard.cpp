@@ -32,6 +32,7 @@ wildcards using **.
 #include "reader.h"
 #include "expand.h"
 #include "exec.h"
+#include "parser.h"
 #include <map>
 
 /**
@@ -386,8 +387,9 @@ static wcstring complete_get_desc_suffix_internal(const wcstring &suff)
 
     wcstring_list_t lst;
     wcstring desc;
-
-    if (exec_subshell(cmd, lst, false /* do not apply exit status */) != -1)
+    
+    parser_t mimedb_parser(PARSER_TYPE_GENERAL, false);
+    if (exec_subshell(mimedb_parser, cmd, lst, false /* do not apply exit status */) != -1)
     {
         if (! lst.empty())
         {

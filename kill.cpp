@@ -85,7 +85,7 @@ void kill_add(const wcstring &str)
        command too, so, the command used must accept the input via stdin.
     */
 
-    const env_var_t clipboard_wstr = env_get_string(L"FISH_CLIPBOARD_CMD");
+    const env_var_t clipboard_wstr = env_get_from_principal(L"FISH_CLIPBOARD_CMD");
     if (!clipboard_wstr.missing())
     {
         escaped_str = escape(str.c_str(), 1);
@@ -101,7 +101,7 @@ void kill_add(const wcstring &str)
             return;
         }
 
-        const env_var_t disp_wstr = env_get_string(L"DISPLAY");
+        const env_var_t disp_wstr = env_get_from_principal(L"DISPLAY");
         if (!disp_wstr.missing())
         {
             escaped_str = escape(str.c_str(), ESCAPE_ALL);
@@ -113,7 +113,7 @@ void kill_add(const wcstring &str)
 
     if (! cmd.empty())
     {
-        if (exec_subshell(cmd, false /* do not apply exit status */) == -1)
+        if (exec_subshell(parser_t::principal_parser(), cmd, false /* do not apply exit status */) == -1)
         {
             /*
                Do nothing on failiure
@@ -168,15 +168,16 @@ static void kill_check_x_buffer()
 {
     if (!has_xsel())
         return;
-
-    const env_var_t disp = env_get_string(L"DISPLAY");
+    
+    parser_t &parser = parser_t::principal_parser();
+    const env_var_t disp = parser.vars().get(L"DISPLAY");
     if (! disp.missing())
     {
         size_t i;
         wcstring cmd = L"xsel -t 500 -b";
         wcstring new_cut_buffer=L"";
         wcstring_list_t list;
-        if (exec_subshell(cmd, list, false /* do not apply exit status */) != -1)
+        if (exec_subshell(parser, cmd, list, false /* do not apply exit status */) != -1)
         {
 
             for (i=0; i<list.size(); i++)

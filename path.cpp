@@ -244,8 +244,8 @@ static wcstring path_create_config()
 {
     bool done = false;
     wcstring res;
-
-    const env_var_t xdg_dir  = env_get_string(L"XDG_CONFIG_HOME");
+    
+    const env_var_t xdg_dir  = env_get_from_principal(L"XDG_CONFIG_HOME");
     if (! xdg_dir.missing())
     {
         res = xdg_dir + L"/fish";
@@ -256,7 +256,7 @@ static wcstring path_create_config()
     }
     else
     {
-        const env_var_t home = env_get_string(L"HOME");
+        const env_var_t home = env_get_from_principal(L"HOME");
         if (! home.missing())
         {
             res = home + L"/.config/fish";

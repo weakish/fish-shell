@@ -1227,7 +1227,7 @@ breakpoint_block_t::breakpoint_block_t() : block_t(BREAKPOINT)
 
 bool parser_use_ast(void)
 {
-    env_var_t var = env_get_string(L"fish_new_parser");
+    env_var_t var = env_get_from_principal(L"fish_new_parser");
     if (var.missing_or_empty())
     {
         return 1;

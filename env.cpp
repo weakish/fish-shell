@@ -261,7 +261,7 @@ static void start_fishd()
     wcstring cmd = format_string(FISHD_CMD, pw->pw_name);
 
     /* Prefer the fishd in __fish_bin_dir, if exists */
-    const env_var_t bin_dir = env_get_string(L"__fish_bin_dir");
+    const env_var_t bin_dir = env_get_from_main(L"__fish_bin_dir");
     if (! bin_dir.missing_or_empty())
     {
         wcstring path = bin_dir + L"/fishd";
@@ -304,7 +304,8 @@ static bool var_is_locale(const wcstring &key)
 */
 static void handle_locale()
 {
-    const env_var_t lc_all = env_get_string(L"LC_ALL");
+    env_stack_t &vars = parser_t::principal_parser().vars();
+    const env_var_t lc_all = vars.get(L"LC_ALL");
     const wcstring old_locale = wsetlocale(LC_MESSAGES, NULL);
 
     /*
@@ -329,7 +330,7 @@ static void handle_locale()
     }
     else
     {
-        const env_var_t lang = env_get_string(L"LANG");
+        const env_var_t lang = vars.get(L"LANG");
         if (!lang.missing())
         {
             wsetlocale(LC_ALL, lang.c_str());
@@ -337,7 +338,7 @@ static void handle_locale()
 
         for (int i=2; locale_variable[i]; i++)
         {
-            const env_var_t val = env_get_string(locale_variable[i]);
+            const env_var_t val = env_get_from_main(locale_variable[i]);
 
             if (!val.missing())
             {
@@ -438,7 +439,7 @@ static void universal_callback(fish_message_type_t type,
 */
 static void setup_path()
 {
-    const env_var_t path = env_get_string(L"PATH");
+    const env_var_t path = env_get_from_main(L"PATH");
     if (path.missing_or_empty())
     {
         const wchar_t *value = L"/usr/bin" ARRAY_SEP_STR L"/bin";
@@ -477,8 +478,8 @@ wcstring env_get_pwd_slash(const env_vars_snapshot_t &snapshot)
  */
 static void env_set_defaults()
 {
-
-    if (env_get_string(L"USER").missing())
+    env_stack_t &vars = parser_t::principal_parser().vars();
+    if (vars.get(L"USER").missing())
     {
         struct passwd *pw = getpwuid(getuid());
         if (pw->pw_name != NULL)
@@ -488,15 +489,15 @@ static void env_set_defaults()
         }
     }
 
-    if (env_get_string(L"HOME").missing())
+    if (vars.get(L"HOME").missing())
     {
-        const env_var_t unam = env_get_string(L"USER");
+        const env_var_t unam = vars.get(L"USER");
         char *unam_narrow = wcs2str(unam.c_str());
         struct passwd *pw = getpwnam(unam_narrow);
         if (pw->pw_dir != NULL)
         {
             const wcstring dir = str2wcstring(pw->pw_dir);
-            env_set(L"HOME", dir.c_str(), ENV_GLOBAL);
+            vars.set(L"HOME", dir.c_str(), ENV_GLOBAL);
         }
         free(unam_narrow);
     }
@@ -613,8 +614,9 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
     env_set(L"version", version.c_str(), ENV_GLOBAL);
     env_set(L"FISH_VERSION", version.c_str(), ENV_GLOBAL);
 
-    const env_var_t fishd_dir_wstr = env_get_string(L"FISHD_SOCKET_DIR");
-    const env_var_t user_dir_wstr = env_get_string(L"USER");
+    env_stack_t &vars = parser_t::principal_parser().vars();
+    const env_var_t fishd_dir_wstr = vars.get(L"FISHD_SOCKET_DIR");
+    const env_var_t user_dir_wstr = vars.get(L"USER");
 
     wchar_t * fishd_dir = fishd_dir_wstr.missing()?NULL:const_cast<wchar_t*>(fishd_dir_wstr.c_str());
     wchar_t * user_dir = user_dir_wstr.missing()?NULL:const_cast<wchar_t*>(user_dir_wstr.c_str());
@@ -626,7 +628,7 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
     /*
       Set up SHLVL variable
     */
-    const env_var_t shlvl_str = env_get_string(L"SHLVL");
+    const env_var_t shlvl_str = vars.get(L"SHLVL");
     wcstring nshlvl_str = L"1";
     if (! shlvl_str.missing())
     {
@@ -636,21 +638,21 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
             nshlvl_str = to_string<long>(shlvl_i + 1);
         }
     }
-    env_set(L"SHLVL", nshlvl_str.c_str(), ENV_GLOBAL | ENV_EXPORT);
+    vars.set(L"SHLVL", nshlvl_str.c_str(), ENV_GLOBAL | ENV_EXPORT);
 
     /* Set correct defaults for e.g. USER and HOME variables */
     env_set_defaults();
 
     /* Set g_log_forks */
-    env_var_t log_forks = env_get_string(L"fish_log_forks");
+    const env_var_t log_forks = vars.get(L"fish_log_forks");
     g_log_forks = ! log_forks.missing_or_empty() && from_string<bool>(log_forks);
 
     /* Set g_use_posix_spawn. Default to true. */
-    env_var_t use_posix_spawn = env_get_string(L"fish_use_posix_spawn");
+    const env_var_t use_posix_spawn = vars.get(L"fish_use_posix_spawn");
     g_use_posix_spawn = (use_posix_spawn.missing_or_empty() ? true : from_string<bool>(use_posix_spawn));
 
     /* Set fish_bind_mode to "default" */
-    env_set(FISH_BIND_MODE_VAR, DEFAULT_BIND_MODE, ENV_GLOBAL);
+    vars.set(FISH_BIND_MODE_VAR, DEFAULT_BIND_MODE, ENV_GLOBAL);
 }
 
 env_node_t *env_stack_t::get_node(const wcstring &key)
@@ -967,14 +969,9 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
     return !erased;
 }
 
-env_var_t env_get_string(const wcstring &key)
+env_var_t env_get_from_principal(const wcstring &key)
 {
-    return main_stack()->get(key);
-}
-
-env_var_t env_get_super_global(const wcstring &key)
-{
-    return main_stack()->get(key);
+    return parser_t::principal_parser().vars().get(key);
 }
 
 const wchar_t *env_var_t::c_str(void) const
@@ -1430,14 +1427,14 @@ const char * const *env_export_arr(bool recalc)
     return main_stack()->get_export_array().get();
 }
 
-env_vars_snapshot_t::env_vars_snapshot_t(const wchar_t * const *keys)
+env_vars_snapshot_t::env_vars_snapshot_t(const environment_t &env, const wchar_t * const *keys)
 {
     ASSERT_IS_MAIN_THREAD();
     wcstring key;
     for (size_t i=0; keys[i]; i++)
     {
         key.assign(keys[i]);
-        const env_var_t val = env_get_string(key);
+        const env_var_t val = env.get(key);
         if (! val.missing())
         {
             vars[key] = val;
@@ -1448,15 +1445,15 @@ env_vars_snapshot_t::env_vars_snapshot_t(const wchar_t * const *keys)
 env_vars_snapshot_t::env_vars_snapshot_t() { }
 
 /* The "current" variables are not a snapshot at all, but instead trampoline to env_get_string, etc. We identify the current snapshot based on pointer values. */
-static const env_vars_snapshot_t sCurrentSnapshot;
 const env_vars_snapshot_t &env_vars_snapshot_t::current()
 {
+    static const env_vars_snapshot_t sCurrentSnapshot;
     return sCurrentSnapshot;
 }
 
 bool env_vars_snapshot_t::is_current() const
 {
-    return this == &sCurrentSnapshot;
+    return this == &current();
 }
 
 env_var_t env_vars_snapshot_t::get(const wcstring &key) const
@@ -1464,7 +1461,7 @@ env_var_t env_vars_snapshot_t::get(const wcstring &key) const
     /* If we represent the current state, bounce to env_get_string */
     if (this->is_current())
     {
-        return env_get_string(key);
+        return parser_t::principal_parser().vars().get(key);
     }
     else
     {

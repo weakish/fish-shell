@@ -294,7 +294,7 @@ static int input_function_args_index = 0;
 */
 wcstring input_get_bind_mode()
 {
-    env_var_t mode = env_get_string(FISH_BIND_MODE_VAR);
+    env_var_t mode = env_get_from_principal(FISH_BIND_MODE_VAR);
     return mode.missing() ? DEFAULT_BIND_MODE : mode;
 }
 
@@ -426,7 +426,7 @@ static int interrupt_handler()
 void update_fish_term256(void)
 {
     /* Infer term256 support. If fish_term256 is set, we respect it; otherwise try to detect it from the TERM variable */
-    env_var_t fish_term256 = env_get_string(L"fish_term256");
+    env_var_t fish_term256 = env_get_from_principal(L"fish_term256");
     bool support_term256;
     if (! fish_term256.missing_or_empty())
     {
@@ -434,7 +434,7 @@ void update_fish_term256(void)
     }
     else
     {
-        env_var_t term = env_get_string(L"TERM");
+        env_var_t term = env_get_from_principal(L"TERM");
         if (term.missing())
         {
             support_term256 = false;
@@ -447,7 +447,7 @@ void update_fish_term256(void)
         else if (term.find(L"xterm") != wcstring::npos)
         {
             // assume that all xterms are 256, except for OS X SnowLeopard
-            env_var_t prog = env_get_string(L"TERM_PROGRAM");
+            env_var_t prog = env_get_from_principal(L"TERM_PROGRAM");
             support_term256 = (prog != L"Apple_Terminal");
         }
         else
@@ -468,7 +468,7 @@ int input_init()
 
     input_common_init(&interrupt_handler);
 
-    const env_var_t term = env_get_string(L"TERM");
+    const env_var_t term = env_get_from_principal(L"TERM");
     int errret;
     if (setupterm(0, STDOUT_FILENO, &errret) == ERR)
     {
