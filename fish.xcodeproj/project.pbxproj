@@ -55,6 +55,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		4FA355461A509B540079F06C /* job.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D040B3E718FC618A003FA371 /* job.cpp */; };
 		D00769121990137800CA4627 /* autoload.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0C6FCC914CFA4B0004CE8AD /* autoload.cpp */; };
 		D00769131990137800CA4627 /* builtin_test.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0F3373A1506DE3C00ECEFC0 /* builtin_test.cpp */; };
 		D00769141990137800CA4627 /* color.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0B6B0FE14E88BA400AD6C10 /* color.cpp */; };
@@ -144,6 +145,7 @@
 		D033781115DC6D4C00A634BA /* completions in CopyFiles */ = {isa = PBXBuildFile; fileRef = D025C02715D1FEA100B9DB63 /* completions */; };
 		D033781215DC6D5200A634BA /* functions in CopyFiles */ = {isa = PBXBuildFile; fileRef = D025C02815D1FEA100B9DB63 /* functions */; };
 		D033781315DC6D5400A634BA /* tools in CopyFiles */ = {isa = PBXBuildFile; fileRef = D025C02915D1FEA100B9DB63 /* tools */; };
+		D040B3E918FC618A003FA371 /* job.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D040B3E718FC618A003FA371 /* job.cpp */; };
 		D052D80B1868F7FC003ABCBD /* parse_execution.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D052D8091868F7FC003ABCBD /* parse_execution.cpp */; };
 		D07B247315BCC15700D4ADB4 /* add-shell in Resources */ = {isa = PBXBuildFile; fileRef = D07B247215BCC15700D4ADB4 /* add-shell */; };
 		D07B247615BCC4BE00D4ADB4 /* install.sh in Resources */ = {isa = PBXBuildFile; fileRef = D07B247515BCC4BE00D4ADB4 /* install.sh */; };
@@ -369,6 +371,8 @@
 		D03238891849D1980032CF2C /* pager.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = pager.cpp; sourceTree = "<group>"; };
 		D032388A1849D1980032CF2C /* pager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = pager.h; sourceTree = "<group>"; };
 		D03EE83814DF88B200FC7150 /* lru.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lru.h; sourceTree = "<group>"; };
+		D040B3E718FC618A003FA371 /* job.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = job.cpp; sourceTree = "<group>"; };
+		D040B3E818FC618A003FA371 /* job.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = job.h; sourceTree = "<group>"; };
 		D052D8091868F7FC003ABCBD /* parse_execution.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = parse_execution.cpp; sourceTree = "<group>"; };
 		D052D80A1868F7FC003ABCBD /* parse_execution.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = parse_execution.h; sourceTree = "<group>"; };
 		D07B247215BCC15700D4ADB4 /* add-shell */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = "add-shell"; path = "build_tools/osx_package_scripts/add-shell"; sourceTree = "<group>"; };
@@ -614,6 +618,8 @@
 				D0A0853C13B3ACEE0099B651 /* exec.cpp */,
 				D0A0850C13B3ACEE0099B651 /* expand.h */,
 				D0A0853D13B3ACEE0099B651 /* expand.cpp */,
+				D040B3E818FC618A003FA371 /* job.h */,
+				D040B3E718FC618A003FA371 /* job.cpp */,
 				D0D9B2B318555D92001AE279 /* parse_constants.h */,
 				D0FE8EE6179CA8A5008C9F21 /* parse_productions.h */,
 				D0FE8EE7179FB75F008C9F21 /* parse_productions.cpp */,
@@ -1123,6 +1129,7 @@
 				D030FC041A4A38F300F7ADA0 /* intern.cpp in Sources */,
 				D030FC051A4A38F300F7ADA0 /* io.cpp in Sources */,
 				D030FC061A4A38F300F7ADA0 /* iothread.cpp in Sources */,
+				4FA355461A509B540079F06C /* job.cpp in Sources */,
 				D030FC071A4A38F300F7ADA0 /* kill.cpp in Sources */,
 				D030FBF11A4A384000F7ADA0 /* output.cpp in Sources */,
 				D030FC081A4A38F300F7ADA0 /* pager.cpp in Sources */,
@@ -1152,6 +1159,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D040B3E918FC618A003FA371 /* job.cpp in Sources */,
 				D0D02A7C159839D5008E62BD /* autoload.cpp in Sources */,
 				D0D02A7D159839D5008E62BD /* builtin_test.cpp in Sources */,
 				D0D02A7E159839D5008E62BD /* color.cpp in Sources */,

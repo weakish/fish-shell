@@ -28,6 +28,7 @@ The library for various signal related issues
 #include "event.h"
 #include "reader.h"
 #include "proc.h"
+#include "job.h"
 
 
 /**
