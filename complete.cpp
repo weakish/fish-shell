@@ -511,8 +511,9 @@ bool completer_t::condition_test(const wcstring &condition)
     condition_cache_t::iterator cached_entry = condition_cache.find(condition);
     if (cached_entry == condition_cache.end())
     {
-        /* Compute new value and reinsert it */
-        test_res = (0 == exec_subshell(condition, false /* don't apply exit status */));
+        /* Compute new value and reinsert it. This can only be done on the principal parser. */
+        parser_t &parser = parser_t::principal_parser();
+        test_res = (0 == exec_subshell(parser, condition, false /* don't apply exit status */));
         condition_cache[condition] = test_res;
     }
     else
@@ -831,7 +832,8 @@ void completer_t::complete_cmd_desc(const wcstring &str)
       since apropos is only called once.
     */
     wcstring_list_t list;
-    if (exec_subshell(lookup_cmd, list, false /* don't apply exit status */) != -1)
+    parser_t &parser = parser_t::principal_parser();
+    if (exec_subshell(parser, lookup_cmd, list, false /* don't apply exit status */) != -1)
     {
 
         /*

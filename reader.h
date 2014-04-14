@@ -115,9 +115,9 @@ void reader_pop_current_filename();
 /**
    Write the title to the titlebar. This function is called just
    before a new application starts executing and just after it
-   finishes.
+   finishes. The parser is used for executing fish_title, if present.
 */
-void reader_write_title();
+void reader_write_title(parser_t &parser);
 
 /**
    Call this function to tell the reader that a repaint is needed, and

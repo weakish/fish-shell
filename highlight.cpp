@@ -310,7 +310,7 @@ static bool is_potential_cd_path(const wcstring &path, const environment_t &vars
     else
     {
         /* Get the CDPATH */
-        env_var_t cdpath = env_get_string(L"CDPATH");
+        env_var_t cdpath = vars.get(L"CDPATH");
         if (cdpath.missing_or_empty())
             cdpath = L".";
 
@@ -356,7 +356,7 @@ static bool plain_statement_get_expanded_command(const wcstring &src, const pars
     return result;
 }
 
-
+/* We assume that syntax highlighting only ever happens on the principal parser, and therefore we should use env_get_from_principal */
 rgb_color_t highlight_get_color(highlight_spec_t highlight, bool is_background)
 {
     rgb_color_t result = rgb_color_t::normal();
@@ -371,20 +371,24 @@ rgb_color_t highlight_get_color(highlight_spec_t highlight, bool is_background)
         return rgb_color_t::normal();
     }
 
-    env_var_t val_wstr = env_get_string(highlight_var[idx]);
+    env_var_t val_wstr = env_get_from_principal(highlight_var[idx]);
 
 //  debug( 1, L"%d -> %d -> %ls", highlight, idx, val );
 
     if (val_wstr.missing())
-        val_wstr = env_get_string(highlight_var[0]);
+    {
+        val_wstr = env_get_from_principal(highlight_var[0]);
+    }
 
     if (! val_wstr.missing())
+    {
         result = parse_color(val_wstr, treat_as_background);
+    }
 
     /* Handle modifiers. */
     if (highlight & highlight_modifier_valid_path)
     {
-        env_var_t val2_wstr =  env_get_string(L"fish_color_valid_path");
+        env_var_t val2_wstr =  env_get_from_principal(L"fish_color_valid_path");
         const wcstring val2 = val2_wstr.missing() ? L"" : val2_wstr.c_str();
 
         rgb_color_t result2 = parse_color(val2, is_background);

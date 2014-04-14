@@ -778,7 +778,7 @@ void parse_execution_context_t::handle_command_not_found(const wcstring &cmd_str
     else if (cmd[0]==L'$' || cmd[0] == VARIABLE_EXPAND || cmd[0] == VARIABLE_EXPAND_SINGLE)
     {
 
-        const env_var_t val_wstr = env_get_string(cmd+1);
+        const env_var_t val_wstr = parser->vars().get(cmd+1);
         const wchar_t *val = val_wstr.missing() ? NULL : val_wstr.c_str();
         if (val)
         {

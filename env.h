@@ -251,9 +251,9 @@ class env_stack_t : public environment_t
 
 
 /** Gets the variable with the specified name, or env_var_t::missing_var if it does not exist. */
-env_var_t env_get_string(const wcstring &key);
-
 env_var_t env_get_from_main(const wcstring &key);
+
+env_var_t env_get_from_principal(const wcstring &key);
 
 /** Returns an array containing all exported variables in a format suitable for execv. */
 const char * const * env_export_arr(bool recalc);
@@ -271,9 +271,10 @@ class env_vars_snapshot_t : public environment_t
     std::map<wcstring, wcstring> vars;
     bool is_current() const;
 
+    env_vars_snapshot_t();
+
 public:
-    env_vars_snapshot_t(const wchar_t * const * keys);
-    env_vars_snapshot_t(void);
+    env_vars_snapshot_t(const environment_t &env, const wchar_t * const * keys);
 
     env_var_t get(const wcstring &key) const;
 

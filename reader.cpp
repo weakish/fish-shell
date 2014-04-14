@@ -898,10 +898,10 @@ bool reader_thread_job_is_stale()
     return (void*)(uintptr_t) s_generation_count != pthread_getspecific(generation_count_key);
 }
 
-void reader_write_title()
+void reader_write_title(parser_t &parser)
 {
     const wchar_t *title;
-    const env_var_t term_str = env_get_string(L"TERM");
+    const env_var_t term_str = parser.vars().get(L"TERM");
 
     /*
       This is a pretty lame heuristic for detecting terminals that do
@@ -950,7 +950,7 @@ void reader_write_title()
     wcstring_list_t lst;
 
     proc_push_interactive(0);
-    if (exec_subshell(title, lst, false /* do not apply exit status */) != -1)
+    if (exec_subshell(parser, title, lst, false /* do not apply exit status */) != -1)
     {
         if (! lst.empty())
         {
@@ -969,7 +969,7 @@ void reader_write_title()
 /**
    Reexecute the prompt command. The output is inserted into data->prompt_buff.
 */
-static void exec_prompt()
+static void exec_prompt(parser_t &parser)
 {
     /* Clear existing prompts */
     data->left_prompt_buff.clear();
@@ -987,7 +987,7 @@ static void exec_prompt()
         {
             wcstring_list_t prompt_list;
             // ignore return status
-            exec_subshell(data->left_prompt, prompt_list, apply_exit_status);
+            exec_subshell(parser, data->left_prompt, prompt_list, apply_exit_status);
             for (size_t i = 0; i < prompt_list.size(); i++)
             {
                 if (i > 0) data->left_prompt_buff += L'\n';
@@ -999,7 +999,7 @@ static void exec_prompt()
         {
             wcstring_list_t prompt_list;
             // status is ignored
-            exec_subshell(data->right_prompt, prompt_list, apply_exit_status);
+            exec_subshell(parser, data->right_prompt, prompt_list, apply_exit_status);
             for (size_t i = 0; i < prompt_list.size(); i++)
             {
                 // Right prompt does not support multiple lines, so just concatenate all of them
@@ -1011,7 +1011,7 @@ static void exec_prompt()
     }
 
     /* Write the screen title */
-    reader_write_title();
+    reader_write_title(parser);
 }
 
 void reader_init()
@@ -1089,7 +1089,7 @@ void reader_repaint_if_needed()
 
     if (needs_reset)
     {
-        exec_prompt();
+        exec_prompt(parser_t::principal_parser());
         s_reset(&data->screen, screen_reset_current_line_and_prompt);
         data->screen_reset_needed = false;
     }
@@ -1404,7 +1404,7 @@ struct autosuggestion_context_t
         cursor_pos(pos),
         searcher(*history, term, HISTORY_SEARCH_TYPE_PREFIX),
         detector(history),
-        var_snapshot(env_vars_snapshot_t::highlighting_keys),
+        var_snapshot(parser_t::principal_parser().vars(), env_vars_snapshot_t::highlighting_keys),
         var_stack(&parser_t::principal_parser().vars()),
         generation_count(s_generation_count)
     {
@@ -2513,7 +2513,7 @@ void reader_run_command(parser_t &parser, const wcstring &cmd)
     if (! ft.empty())
         env_set(L"_", ft.c_str(), ENV_GLOBAL);
 
-    reader_write_title();
+    reader_write_title(parser);
 
     term_donate();
 
@@ -2590,7 +2590,7 @@ void reader_push(const wchar_t *name)
         reader_interactive_init();
     }
 
-    exec_prompt();
+    exec_prompt(parser_t::principal_parser());
     reader_set_highlight_function(&highlight_universal);
     reader_set_test_function(&default_test);
     reader_set_left_prompt(L"");
@@ -2671,7 +2671,7 @@ void reader_import_history_if_necessary(const environment_t &vars)
     {
         /* Try opening a bash file. We make an effort to respect $HISTFILE; this isn't very complete (AFAIK it doesn't have to be exported), and to really get this right we ought to ask bash itself. But this is better than nothing.
         */
-        const env_var_t var = env_get_string(L"HISTFILE");
+        const env_var_t var = env_get_from_principal(L"HISTFILE");
         wcstring path = (var.missing() ? L"~/.bash_history" : var);
         expand_tilde(path, vars);
         FILE *f = wfopen(path, "r");
@@ -2713,7 +2713,7 @@ public:
         colors(pbuff.size(), 0),
         match_highlight_pos(phighlight_pos),
         highlight_function(phighlight_func),
-        vars(env_vars_snapshot_t::highlighting_keys),
+        vars(parser_t::principal_parser().vars(), env_vars_snapshot_t::highlighting_keys),
         when(timef()),
         generation_count(s_generation_count)
     {
@@ -3042,10 +3042,10 @@ static wchar_t unescaped_quote(const wcstring &str, size_t pos)
 
 const wchar_t *reader_readline(void)
 {
+    parser_t &parser = parser_t::principal_parser();
     wint_t c;
     int last_char=0;
     size_t yank_len=0;
-    const wchar_t *yank_str;
     bool comp_empty = true;
     std::vector<completion_t> comp;
     int finished=0;
@@ -3061,7 +3061,7 @@ const wchar_t *reader_readline(void)
     data->search_buff.clear();
     data->search_mode = NO_SEARCH;
 
-    exec_prompt();
+    exec_prompt(parser);
 
     reader_super_highlight_me_plenty();
     s_reset(&data->screen, screen_reset_abandon_line);
@@ -3225,7 +3225,7 @@ const wchar_t *reader_readline(void)
                 if (! coalescing_repaints)
                 {
                     coalescing_repaints = true;
-                    exec_prompt();
+                    exec_prompt(parser);
                     s_reset(&data->screen, screen_reset_current_line_and_prompt);
                     data->screen_reset_needed = false;
                     reader_repaint();
@@ -3304,7 +3304,7 @@ const wchar_t *reader_readline(void)
                     const wcstring buffcpy = wcstring(cmdsub_begin, token_end);
 
                     //fprintf(stderr, "Complete (%ls)\n", buffcpy.c_str());
-                    const env_stack_t *var_stack = &parser_t::principal_parser().vars();
+                    const env_stack_t *var_stack = &parser.vars();
                     data->complete_func(buffcpy, comp, var_stack, COMPLETION_REQUEST_DEFAULT | COMPLETION_REQUEST_DESCRIPTIONS | COMPLETION_REQUEST_FUZZY_MATCH);
 
                     /* Munge our completions */
@@ -3420,7 +3420,7 @@ const wchar_t *reader_readline(void)
             /* yank*/
             case R_YANK:
             {
-                yank_str = kill_yank();
+                const wchar_t *yank_str = kill_yank();
                 insert_string(data->active_edit_line(), yank_str);
                 yank_len = wcslen(yank_str);
                 break;
@@ -3434,7 +3434,7 @@ const wchar_t *reader_readline(void)
                     for (size_t i=0; i<yank_len; i++)
                         remove_backward();
 
-                    yank_str = kill_yank_rotate();
+                    const wchar_t *yank_str = kill_yank_rotate();
                     insert_string(data->active_edit_line(), yank_str);
                     yank_len = wcslen(yank_str);
                 }

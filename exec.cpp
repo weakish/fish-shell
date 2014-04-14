@@ -1574,7 +1574,7 @@ void exec_job(parser_t &parser, job_t *j)
 }
 
 
-static int exec_subshell_internal(const wcstring &cmd, wcstring_list_t *lst, bool apply_exit_status)
+static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstring_list_t *lst, bool apply_exit_status)
 {
     ASSERT_IS_MAIN_THREAD();
     int prev_subshell = is_subshell;
@@ -1583,7 +1583,7 @@ static int exec_subshell_internal(const wcstring &cmd, wcstring_list_t *lst, boo
 
     //fprintf(stderr, "subcmd %ls\n", cmd.c_str());
 
-    const env_var_t ifs = env_get_string(L"IFS");
+    const env_var_t ifs = parser.vars().get(L"IFS");
 
     if (! ifs.missing_or_empty())
     {
@@ -1608,7 +1608,6 @@ static int exec_subshell_internal(const wcstring &cmd, wcstring_list_t *lst, boo
     const shared_ptr<io_buffer_t> io_buffer(io_buffer_t::create(STDOUT_FILENO));
     if (io_buffer.get() != NULL)
     {
-        parser_t &parser = parser_t::principal_parser();
         if (parser.eval(cmd, io_chain_t(io_buffer), SUBST) == 0)
         {
             subcommand_status = proc_get_last_status();
@@ -1651,14 +1650,14 @@ static int exec_subshell_internal(const wcstring &cmd, wcstring_list_t *lst, boo
     return subcommand_status;
 }
 
-int exec_subshell(const wcstring &cmd, std::vector<wcstring> &outputs, bool apply_exit_status)
+int exec_subshell(parser_t &parser, const wcstring &cmd, std::vector<wcstring> &outputs, bool apply_exit_status)
 {
     ASSERT_IS_MAIN_THREAD();
-    return exec_subshell_internal(cmd, &outputs, apply_exit_status);
+    return exec_subshell_internal(parser, cmd, &outputs, apply_exit_status);
 }
 
-int exec_subshell(const wcstring &cmd, bool apply_exit_status)
+int exec_subshell(parser_t &parser, const wcstring &cmd, bool apply_exit_status)
 {
     ASSERT_IS_MAIN_THREAD();
-    return exec_subshell_internal(cmd, NULL, apply_exit_status);
+    return exec_subshell_internal(parser, cmd, NULL, apply_exit_status);
 }

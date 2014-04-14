@@ -220,7 +220,7 @@ wcstring builtin_help_get(parser_t &parser, const wchar_t *name)
     wcstring out;
     const wcstring name_esc = escape_string(name, 1);
     const wcstring cmd = format_string(L"__fish_print_help %ls", name_esc.c_str());
-    if (exec_subshell(cmd, lst, false /* don't apply exit status */) >= 0)
+    if (exec_subshell(parser, cmd, lst, false /* don't apply exit status */) >= 0)
     {
         for (size_t i=0; i<lst.size(); i++)
         {
@@ -2484,7 +2484,7 @@ static int builtin_read(parser_t &parser, wchar_t **argv)
 
         wchar_t *state;
 
-        env_var_t ifs = env_get_string(L"IFS");
+        env_var_t ifs = parser.vars().get(L"IFS");
         if (ifs.missing())
             ifs = L"";
 
@@ -2812,7 +2812,7 @@ static int builtin_cd(parser_t &parser, wchar_t **argv)
 
     if (argv[1] == NULL)
     {
-        dir_in = env_get_string(L"HOME");
+        dir_in = parser.vars().get(L"HOME");
         if (dir_in.missing_or_empty())
         {
             append_format(stderr_buffer,
@@ -3237,7 +3237,7 @@ static int builtin_fg(parser_t &parser, wchar_t **argv)
         const wcstring ft = tok_first(j->command_wcstr());
         if (! ft.empty())
             env_set(L"_", ft.c_str(), ENV_EXPORT);
-        reader_write_title();
+        reader_write_title(parser);
 
         make_first(j);
         job_set_flag(j, JOB_FOREGROUND, 1);

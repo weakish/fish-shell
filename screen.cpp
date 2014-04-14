@@ -233,7 +233,7 @@ size_t escape_code_length(const wchar_t *code)
         if (code[1] == L'k')
         {
             /* This looks like the escape sequence for setting a screen name */
-            const env_var_t term_name = env_get_string(L"TERM");
+            const env_var_t term_name = env_get_from_principal(L"TERM");
             if (!term_name.missing() && string_prefixes_string(L"screen", term_name))
             {
                 const wchar_t * const screen_name_end_sentinel = L"\x1b\\";
