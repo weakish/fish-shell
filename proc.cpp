@@ -995,8 +995,14 @@ void job_continue(job_t *j, bool cont)
                               improvement on my 300 MHz machine) on
                               short-lived jobs.
                             */
+                            #if 0
                             int status;
                             pid_t pid = waitpid(-1, &status, WUNTRACED);
+                            #else
+                            int status = 0;
+                            pid_t pid = 0;
+                            int err = job_store_t::global_store().wait_for_job_in_parser(parser_t::principal_parser(), &pid, &status);
+                            #endif
                             if (pid > 0)
                             {
                                 handle_child_status(pid, status);
