@@ -359,6 +359,12 @@ public:
         return my_job_list;
     }
     
+    const job_list_t &job_list() const
+    {
+        return my_job_list;
+    }
+
+    
     env_stack_t &vars()
     {
         return variable_stack;

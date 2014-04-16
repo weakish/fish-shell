@@ -8,15 +8,11 @@
 #include "common.h"
 #include "io.h"
 #include <list>
+#include <map>
 
 typedef int job_id_t;
 job_id_t acquire_job_id(void);
 void release_job_id(job_id_t jobid);
-
-class job_manager_t
-{
-    
-};
 
 /**
     A struct represeting a job. A job is basically a pipeline of one
@@ -237,5 +233,42 @@ int job_signal(job_t *j, int signal);
 */
 void job_mark_process_as_failed(const job_t *job, process_t *p);
 
+typedef std::map<pid_t, int> pid_status_map_t;
+class job_store_t
+{
+    pthread_mutex_t lock;
+    
+    /* condition variable broadcast when status_map has stuff added to it */
+    pthread_cond_t status_map_broadcaster;
+    
+    
+    /* We call waitpid() in a dedicated background thread, while we fork in other threads. After creating a new process, we increment needs_waitpid_gen_count. The thread grabs needs_waitpid_gen_count and calls waitpid(); if waitpid() returns ECHILD (no children), and the gen count hasn't changed, then it sleeps.
+    
+    So the client responsibilities are:
+      1. Start the process
+      2. Increment needs_waitpid_gen_count
+    
+    */
+    uint32_t needs_waitpid_gen_count;
+    bool waitpid_thread_running;
+    
+    /* The map from pid to returned status */
+    pid_status_map_t status_map;
+    
+    pid_status_map_t acquire_statuses_for_jobs(const job_list_t &jobs);
+    
+    job_store_t();
+    ~job_store_t();
+    
+public:
+    static job_store_t &global_store();
+    
+    void note_needs_wait();
+    int background_do_wait();
+    
+    /* returns 0 on success, an errno value on failure */
+    int wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, int *out_status);
+    
+};
 
 #endif

@@ -1102,8 +1102,20 @@ void job_continue(job_t *j, bool cont)
                               improvement on my 300 MHz machine) on
                               short-lived jobs.
                             */
+#if 0
                             int processed = process_mark_finished_children(true);
-                            if (processed < 0)
+                            bool signaled = (processed < 0);
+#else
+                            int status = 0;
+                            pid_t pid = 0;
+                            int err = job_store_t::global_store().wait_for_job_in_parser(parser_t::principal_parser(), &pid, &status);
+                            bool signaled = (pid < 0);
+                            if (pid > 0)
+                            {
+                                handle_child_status(pid, status);
+                            }
+#endif
+                            if (signaled)
                             {
                                 /*
                                   This probably means we got a
