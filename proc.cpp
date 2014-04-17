@@ -342,6 +342,20 @@ static void handle_child_status(pid_t pid, int status)
     return;
 }
 
+static bool reap_job_and_apply_exit_status(parser_t &parser, long long timeout_usec)
+{
+    bool result = false;
+    pid_t pid = 0;
+    int status = 0;
+    if (job_store_t::global_store().wait_for_job_in_parser(parser, &pid, &status, timeout_usec))
+    {
+        handle_child_status(pid, status);
+        result = true;
+    }
+    return result;
+}
+
+
 process_t::process_t() :
     argv_array(),
     argv0_narrow(),
@@ -402,7 +416,8 @@ io_chain_t job_t::all_io_redirections() const
 /* This is called from a signal handler */
 void job_handle_signal(int signal, siginfo_t *info, void *con)
 {
-
+    return;
+#if ! JOB_USE_REAPER_THREAD
     int status;
     pid_t pid;
     int errno_old = errno;
@@ -429,6 +444,7 @@ void job_handle_signal(int signal, siginfo_t *info, void *con)
     }
     kill(0, SIGIO);
     errno=errno_old;
+#endif
 }
 
 /**
@@ -478,6 +494,9 @@ int job_reap(bool interactive)
     */
     if (locked>1)
         return 0;
+    
+    /* Reap everything that's ready */
+    
 
     job_iterator_t jobs;
     jnext = jobs.next();
@@ -982,6 +1001,17 @@ void job_continue(job_t *j, bool cont)
                         case 1:
                         {
                             read_try(j);
+#if JOB_USE_REAPER_THREAD
+                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 0);
+#endif
+                            break;
+                        }
+                            
+                        case 0:
+                        {
+#if JOB_USE_REAPER_THREAD
+                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 0);
+#endif
                             break;
                         }
 
@@ -995,14 +1025,9 @@ void job_continue(job_t *j, bool cont)
                               improvement on my 300 MHz machine) on
                               short-lived jobs.
                             */
-                            #if 0
+#if ! JOB_USE_REAPER_THREAD
                             int status;
                             pid_t pid = waitpid(-1, &status, WUNTRACED);
-                            #else
-                            int status = 0;
-                            pid_t pid = 0;
-                            int err = job_store_t::global_store().wait_for_job_in_parser(parser_t::principal_parser(), &pid, &status);
-                            #endif
                             if (pid > 0)
                             {
                                 handle_child_status(pid, status);
@@ -1022,6 +1047,14 @@ void job_continue(job_t *j, bool cont)
                                 }
 
                             }
+#else
+                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 10000);
+                            if (reader_exit_forced())
+                            {
+                                quit = 1;
+                            }
+#endif
+
                             break;
                         }
 

@@ -241,7 +241,9 @@ void iothread_service_completion(void)
         if (req)
         {
             if (req->completionCallback)
+            {
                 req->completionCallback(req->context, req->handlerResult);
+            }
             delete req;
         }
 

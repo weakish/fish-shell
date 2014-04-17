@@ -718,6 +718,7 @@ void exec_job(parser_t &parser, job_t *j)
         {
             /* Parent */
             set_child_group(j, &keepalive, 0);
+            job_store_t::global_store().child_process_spawned(keepalive.pid);
         }
     }
 
@@ -1180,7 +1181,7 @@ void exec_job(parser_t &parser, job_t *j)
                         */
                         p->pid = pid;
                         set_child_group(j, p, 0);
-
+                        job_store_t::global_store().child_process_spawned(p->pid);
                     }
 
                 }
@@ -1231,6 +1232,7 @@ void exec_job(parser_t &parser, job_t *j)
                     */
                     p->pid = pid;
                     set_child_group(j, p, 0);
+                    job_store_t::global_store().child_process_spawned(p->pid);
                 }
 
                 break;
@@ -1365,6 +1367,7 @@ void exec_job(parser_t &parser, job_t *j)
                         p->pid = pid;
 
                         set_child_group(j, p, 0);
+                        job_store_t::global_store().child_process_spawned(p->pid);
                     }
                 }
 
@@ -1463,6 +1466,7 @@ void exec_job(parser_t &parser, job_t *j)
                 p->pid = pid;
 
                 set_child_group(j, p, 0);
+                job_store_t::global_store().child_process_spawned(p->pid);
 
                 break;
             }
