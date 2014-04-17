@@ -204,8 +204,11 @@ static int background_do_wait_trampoline(job_store_t *store)
     return store->background_do_wait();
 }
 
+#define REAPER_LOG if (0)
+
 int job_store_t::background_do_wait()
 {
+    REAPER_LOG fprintf(stderr, "background_do_wait start\n");
     /* This lock stays locked with the exception of the waitpid() calls */
     int processes_reaped = 0;
     scoped_lock locker(lock);
@@ -231,6 +234,7 @@ int job_store_t::background_do_wait()
         if (pid >= 0)
         {
             status_map[pid] = status;
+            REAPER_LOG fprintf(stderr, "reaped %d\n", pid);
             processes_reaped++;
             
             // Announce our good news
@@ -241,7 +245,7 @@ int job_store_t::background_do_wait()
             /* There are no child processes - we might be done! */
             if (prewait_gen_count == this->needs_waitpid_gen_count)
             {
-                /* The client forked and then incremented the gen count. Because the gen count has not been incremented, we have seen all forks that occurred before this gen count. Therefore there are no more child processes. */
+                /* The client forked and then incremented the gen count. Because the gen count has not been incremented across our call to waitpid,  we have seen all forks that occurred before this gen count. Therefore there are no more child processes. */
                 break;
             }
             else
@@ -257,32 +261,60 @@ int job_store_t::background_do_wait()
     }
     
     /* We are exiting. Note that we are locked around waitpid_thread_running here. */
-    waitpid_thread_running = false;
+    ASSERT_IS_LOCKED(lock);
+    this->waitpid_thread_running = false;
     
+    REAPER_LOG fprintf(stderr, "background_do_wait done\n");
     return processes_reaped;
 }
 
-void job_store_t::note_needs_wait()
+void job_store_t::child_process_spawned(pid_t pid)
 {
+#if JOB_USE_REAPER_THREAD
     scoped_lock locker(lock);
     
     // Increment needs_waitpid_gen_count. Its OK if it wraps to zero.
     needs_waitpid_gen_count++;
+    
+    REAPER_LOG fprintf(stderr, "child_process_spawned: %d (running: %d)\n", pid, waitpid_thread_running);
     
     if (! waitpid_thread_running)
     {
         waitpid_thread_running = true;
         iothread_perform<job_store_t>(background_do_wait_trampoline, NULL, this);
     }
+#endif
 }
 
-int job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, int *out_status)
+static struct timespec timespec_make_relative(long long usec_into_futre)
+{
+    const unsigned long long nanosec_per_usec = 1000LLU;
+    const unsigned long long usec_per_sec = 1000000LLU;
+    struct timeval now = {0};
+    VOMIT_ON_FAILURE(gettimeofday(&now, NULL));
+    
+    unsigned long long future_usec = now.tv_sec * usec_per_sec + now.tv_usec + usec_into_futre;
+    
+    struct timespec ts;
+    ts.tv_sec = future_usec / usec_per_sec;
+    ts.tv_nsec = (future_usec % usec_per_sec) * nanosec_per_usec;
+    return ts;
+}
+
+bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, int *out_status, long long timeout_usec)
 {
     const job_list_t &jobs = parser.job_list();
 
-    int result_error = 0;
+    bool got_pid = false;
     pid_t result_pid = -1;
     int result_status = 0;
+    
+    /* if we have a timeout, determine the end date */
+    struct timespec end_date = {};
+    if (timeout_usec > 0)
+    {
+        end_date = timespec_make_relative(timeout_usec);
+    }
     
     scoped_lock locker(lock);
     while (result_pid == -1)
@@ -301,6 +333,8 @@ int job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, 
                         result_pid = where->first;
                         result_status = where->second;
                         status_map.erase(where);
+                        REAPER_LOG fprintf(stderr, "acquired %d\n", result_pid);
+                        got_pid = true;
                     }
                 }
             }
@@ -308,9 +342,25 @@ int job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, 
         
         if (result_pid == -1)
         {
-            // We did not get a PID. Wait for one to be added.
-            // TODO: What if SIGHUP is delivered here? Should wait on a timer.
-            pthread_cond_wait(&this->status_map_broadcaster, &this->lock);
+            if (timeout_usec == 0)
+            {
+                // no timeout
+                break;
+            }
+            else if (timeout_usec < 0)
+            {
+                // wait forever
+                pthread_cond_wait(&this->status_map_broadcaster, &this->lock);
+            }
+            else
+            {
+                if (pthread_cond_timedwait(&this->status_map_broadcaster, &this->lock, &end_date) < 0)
+                {
+                    // Must be timeout
+                    assert(errno == ETIMEDOUT);
+                    break;
+                }
+            }
         }
     }
     
@@ -323,29 +373,6 @@ int job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, 
         *out_status = result_status;
     }
 
-    return result_error;
+    return got_pid;
 }
 
-pid_status_map_t job_store_t::acquire_statuses_for_jobs(const job_list_t &jobs)
-{
-    scoped_lock locker(lock);
-    pid_status_map_t acquired_map;
-    for (job_list_t::const_iterator iter = jobs.begin(); iter != jobs.end(); ++iter)
-    {
-        const job_t *j = *iter;
-        for (const process_t *p = j->first_process; p; p=p->next)
-        {
-            if (p->pid > 0)
-            {
-                pid_status_map_t::iterator where = status_map.find(p->pid);
-                if (where != status_map.end())
-                {
-                    /* We found this pid in status_map. Transfer the value from status_map to result. */
-                    acquired_map.insert(*where);
-                    status_map.erase(where);
-                }
-            }
-        }
-    }
-    return acquired_map;
-}

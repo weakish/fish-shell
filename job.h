@@ -233,6 +233,8 @@ int job_signal(job_t *j, int signal);
 */
 void job_mark_process_as_failed(const job_t *job, process_t *p);
 
+#define JOB_USE_REAPER_THREAD 1
+
 typedef std::map<pid_t, int> pid_status_map_t;
 class job_store_t
 {
@@ -255,20 +257,17 @@ class job_store_t
     /* The map from pid to returned status */
     pid_status_map_t status_map;
     
-    pid_status_map_t acquire_statuses_for_jobs(const job_list_t &jobs);
-    
     job_store_t();
     ~job_store_t();
     
 public:
     static job_store_t &global_store();
     
-    void note_needs_wait();
+    void child_process_spawned(pid_t pid);
     int background_do_wait();
     
-    /* returns 0 on success, an errno value on failure */
-    int wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, int *out_status);
-    
+    /* Returns success if reaped a job, false on failure. A timeout of 0 is a poll. */
+    bool wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, int *out_status, long long timeout_usec);
 };
 
 #endif

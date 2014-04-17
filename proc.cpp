@@ -346,6 +346,20 @@ static void handle_child_status(pid_t pid, int status)
     return;
 }
 
+static bool reap_job_and_apply_exit_status(parser_t &parser, long long timeout_usec)
+{
+    bool result = false;
+    pid_t pid = 0;
+    int status = 0;
+    if (job_store_t::global_store().wait_for_job_in_parser(parser, &pid, &status, timeout_usec))
+    {
+        handle_child_status(pid, status);
+        result = true;
+    }
+    return result;
+}
+
+
 process_t::process_t() :
     argv_array(),
     argv0_narrow(),
@@ -1082,6 +1096,9 @@ void job_continue(job_t *j, bool cont)
                         {
                             read_try(j);
                             process_mark_finished_children(false);
+#if JOB_USE_REAPER_THREAD
+                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 0);
+#endif
                             break;
                         }
                         
@@ -1089,6 +1106,10 @@ void job_continue(job_t *j, bool cont)
                         {
                             /* No FDs are ready. Look for finished processes. */
                             process_mark_finished_children(false);
+#if JOB_USE_REAPER_THREAD
+                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 0);
+#endif
+
                             break;
                         }
 
@@ -1102,37 +1123,32 @@ void job_continue(job_t *j, bool cont)
                               improvement on my 300 MHz machine) on
                               short-lived jobs.
                             */
-#if 0
+                            
+                            
+#if ! JOB_USE_REAPER_THREAD
                             int processed = process_mark_finished_children(true);
                             bool signaled = (processed < 0);
 #else
-                            int status = 0;
-                            pid_t pid = 0;
-                            int err = job_store_t::global_store().wait_for_job_in_parser(parser_t::principal_parser(), &pid, &status);
-                            bool signaled = (pid < 0);
-                            if (pid > 0)
-                            {
-                                handle_child_status(pid, status);
-                            }
+                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 10000);
+                            bool signaled = true;
 #endif
                             if (signaled)
                             {
                                 /*
-                                  This probably means we got a
-                                  signal. A signal might mean that the
-                                  terminal emulator sent us a hup
-                                  signal to tell is to close. If so,
-                                  we should exit.
-                                */
+                                 This probably means we got a
+                                 signal. A signal might mean that the
+                                 terminal emulator sent us a hup
+                                 signal to tell is to close. If so,
+                                 we should exit.
+                                 */
                                 if (reader_exit_forced())
                                 {
                                     quit = 1;
                                 }
-
+                                
                             }
                             break;
                         }
-
                     }
                 }
             }
