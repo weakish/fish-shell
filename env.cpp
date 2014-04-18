@@ -98,6 +98,10 @@ bool g_use_posix_spawn = false; //will usually be set to true
 // Big global lock that all environment modifications use
 static pthread_mutex_t s_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
+// We use shared pointers to track nodes, because multiple stacks can reference the same node
+class env_node_t;
+typedef shared_ptr<env_node_t> env_node_ref_t;
+
 /**
    Struct representing one level in the function variable stack
 */
@@ -109,8 +113,7 @@ class env_node_t
     
     public:
     /** Pointer to next level */
-    env_node_t * const next;
-
+    const env_node_ref_t next;
     
     /**
       Does this node imply a new variable scope? If yes, all
@@ -127,7 +130,7 @@ class env_node_t
     bool exportv;
 
 
-    env_node_t(bool is_new_scope, env_node_t *nxt) : next(nxt), new_scope(is_new_scope), exportv(false) { }
+    env_node_t(bool is_new_scope, const env_node_ref_t &nxt) : next(nxt), new_scope(is_new_scope), exportv(false) { }
 
     /* Returns a pointer to the given entry if present, or NULL. */
     var_entry_t *find_entry(const wcstring &key);
@@ -152,16 +155,26 @@ class env_node_t
         ASSERT_IS_LOCKED(s_env_lock);
         return env;
     }
+    
+    env_node_t *get_next()
+    {
+        return next.get();
+    }
+    
+    const env_node_t *get_next() const
+    {
+        return next.get();
+    }
 };
 
 /* Class representing a function variable stack */
 class env_stack_t
 {
     /** Bottom node on the function stack */
-    env_node_t * const global;
+    const env_node_ref_t global;
     
     /** Top node on the function stack */
-    env_node_t *top;
+    env_node_ref_t top;
 
     env_node_t *get_node(const wcstring &key);
     
@@ -176,7 +189,7 @@ class env_stack_t
     null_terminated_array_t<char> export_array;
     
     public:
-    env_stack_t() : global(new env_node_t(false, NULL)), top(global)
+    env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global)
     {
     }
     
@@ -283,12 +296,12 @@ var_entry_t *env_node_t::find_entry(const wcstring &key)
 
 env_node_t *env_stack_t::next_scope(env_node_t *scope)
 {
-    return scope->new_scope ? this->global : scope->next;
+    return scope->new_scope ? this->global.get() : scope->get_next();
 }
 
 const env_node_t *env_stack_t::next_scope(const env_node_t *scope) const
 {
-    return scope->new_scope ? this->global : scope->next;
+    return scope->new_scope ? this->global.get() : scope->get_next();
 }
 
 
@@ -715,7 +728,7 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
 
 env_node_t *env_stack_t::get_node(const wcstring &key)
 {
-    env_node_t *env = top;
+    env_node_t *env = top.get();
     while (env != NULL)
     {
         if (env->find_entry(key) != NULL)
@@ -826,11 +839,11 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, int var_mode)
         env_node_t *node = NULL;
         if (var_mode & ENV_GLOBAL)
         {
-            node = this->global;
+            node = this->global.get();
         }
         else if (var_mode & ENV_LOCAL)
         {
-            node = top;
+            node = top.get();
         }
         else if (preexisting_node != NULL)
         {
@@ -880,10 +893,10 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, int var_mode)
                  which will be either the current function or the
                  global scope.
                  */
-                node = top;
+                node = top.get();
                 while (node->next && !node->new_scope)
                 {
-                    node = node->next;
+                    node = node->get_next();
                 }
             }
         }
@@ -975,11 +988,11 @@ bool env_stack_t::try_remove(env_node_t *n, const wcstring &key, int var_mode)
 
     if (n->new_scope)
     {
-        return try_remove(this->global, key, var_mode);
+        return try_remove(this->global.get(), key, var_mode);
     }
     else
     {
-        return try_remove(n->next, key, var_mode);
+        return try_remove(n->get_next(), key, var_mode);
     }
 }
 
@@ -996,14 +1009,14 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
         return 2;
     }
 
-    first_node = this->top;
+    first_node = this->top.get();
 
     if (!(var_mode & ENV_UNIVERSAL))
     {
 
         if (var_mode & ENV_GLOBAL)
         {
-            first_node = this->global;
+            first_node = this->global.get();
         }
 
         if (try_remove(first_node, key, var_mode))
@@ -1092,7 +1105,7 @@ env_var_t env_stack_t::get_string(const wcstring &key)
             /* Lock around a local region */
             scoped_lock locker(s_env_lock);
 
-            env_node_t *env = top;
+            env_node_t *env = top.get();
             wcstring result;
 
             while (env != NULL)
@@ -1165,7 +1178,7 @@ bool env_stack_t::exist(const wchar_t *key, int mode) const
 
     if (!(mode & ENV_UNIVERSAL))
     {
-        env = (mode & ENV_GLOBAL) ? this->global : this->top;
+        env = (mode & ENV_GLOBAL) ? this->global.get() : this->top.get();
 
         while (env != 0)
         {
@@ -1230,7 +1243,7 @@ bool env_exist(const wchar_t *key, int mode)
 bool env_stack_t::local_scope_exports(env_node_t *n) const
 {
 
-    if (n==this->global)
+    if (n == this->global.get())
         return false;
 
     if (n->exportv)
@@ -1239,16 +1252,16 @@ bool env_stack_t::local_scope_exports(env_node_t *n) const
     if (n->new_scope)
         return false;
 
-    return this->local_scope_exports(n->next);
+    return this->local_scope_exports(n->get_next());
 }
 
 void env_stack_t::push(bool new_scope)
 {
-    env_node_t *node = new env_node_t(new_scope, top);
+    const env_node_ref_t node = env_node_ref_t(new env_node_t(new_scope, top));
 
     if (new_scope)
     {
-        if (local_scope_exports(top))
+        if (local_scope_exports(top.get()))
             mark_changed_exported();
     }
     this->top = node;
@@ -1268,7 +1281,7 @@ void env_stack_t::pop()
         int i;
         int locale_changed = 0;
 
-        const env_node_t *killme = top;
+        const env_node_t *killme = top.get();
 
         for (i=0; locale_variable[i]; i++)
         {
@@ -1282,7 +1295,7 @@ void env_stack_t::pop()
 
         if (killme->new_scope)
         {
-            if (killme->exportv || local_scope_exports(killme->next))
+            if (killme->exportv || local_scope_exports(killme->next.get()))
                 mark_changed_exported();
         }
 
@@ -1348,7 +1361,7 @@ wcstring_list_t env_stack_t::get_names(int flags) const
     int show_global = flags & ENV_GLOBAL;
     int show_universal = flags & ENV_UNIVERSAL;
 
-    env_node_t *n=top;
+    const env_node_t *n = top.get();
     const bool show_exported = (flags & ENV_EXPORT) || !(flags & ENV_UNEXPORT);
     const bool show_unexported = (flags & ENV_UNEXPORT) || !(flags & ENV_EXPORT);
 
@@ -1361,14 +1374,14 @@ wcstring_list_t env_stack_t::get_names(int flags) const
     {
         while (n)
         {
-            if (n == this->global)
+            if (n == this->global.get())
                 break;
 
             add_key_to_string_set(n->get_env(), &names, show_exported, show_unexported);
             if (n->new_scope)
                 break;
             else
-                n = n->next;
+                n = n->next.get();
 
         }
     }
@@ -1414,9 +1427,9 @@ void env_stack_t::get_exported(const env_node_t *n, std::map<wcstring, wcstring>
         return;
     
     if (n->new_scope)
-        this->get_exported(this->global, h);
+        this->get_exported(this->global.get(), h);
     else
-        this->get_exported(n->next, h);
+        this->get_exported(n->next.get(), h);
 
     var_table_t::const_iterator iter;
     for (iter = n->get_env().begin(); iter != n->get_env().end(); ++iter)
@@ -1476,7 +1489,7 @@ void env_stack_t::update_export_array_if_necessary(bool recalc)
 
         debug(4, L"env_export_arr() recalc");
 
-        get_exported(top, vals);
+        get_exported(top.get(), vals);
 
         wcstring_list_t uni;
         env_universal_get_names(uni, 1, 0);
