@@ -99,19 +99,24 @@ bool g_use_posix_spawn = false; //will usually be set to true
 /**
    Struct representing one level in the function variable stack
 */
-struct env_node_t
+class env_node_t
 {
-    /**
-      Variable table
-    */
+    private:
+    /** Variable table */
     var_table_t env;
+    
+    public:
+    /** Pointer to next level */
+    env_node_t * const next;
+
+    
     /**
       Does this node imply a new variable scope? If yes, all
       non-global variables below this one in the stack are
       invisible. If new_scope is set for the global variable node,
       the universe will explode.
     */
-    bool new_scope;
+    const bool new_scope;
     
     /**
        Might this node contain any variables which are exported to subshells?
@@ -119,16 +124,29 @@ struct env_node_t
     */
     bool exportv;
 
-    /**
-      Pointer to next level
-    */
-    struct env_node_t *next;
 
-
-    env_node_t() : new_scope(false), exportv(false), next(NULL) { }
+    env_node_t(bool is_new_scope, env_node_t *nxt) : next(nxt), new_scope(is_new_scope), exportv(false) { }
 
     /* Returns a pointer to the given entry if present, or NULL. */
-    const var_entry_t *find_entry(const wcstring &key);
+    var_entry_t *find_entry(const wcstring &key);
+    const var_entry_t *find_entry(const wcstring &key) const;
+    
+    /* Removes an entry */
+    void remove_entry(const wcstring &key)
+    {
+        env.erase(key);
+    }
+    
+    /* Returns a pointer to the given entry, creating it if necessary */
+    var_entry_t *find_or_create_entry(const wcstring &key)
+    {
+        return &env[key];
+    }
+    
+    const var_table_t &get_env() const
+    {
+        return env;
+    }
 };
 
 /* Class representing a function variable stack */
@@ -148,14 +166,14 @@ class env_stack_t
     env_node_t *next_scope(env_node_t *scope);
     const env_node_t *next_scope(const env_node_t *scope) const;
     
-    bool try_remove(env_node_t *n, const wchar_t *key, int var_mode);
+    bool try_remove(env_node_t *n, const wcstring &key, int var_mode);
     bool local_scope_exports(env_node_t *n) const;
     void get_exported(const env_node_t *n, std::map<wcstring, wcstring> &h) const;
     
     null_terminated_array_t<char> export_array;
     
     public:
-    env_stack_t() : global(new env_node_t), top(global)
+    env_stack_t() : global(new env_node_t(false, NULL)), top(global)
     {
         VOMIT_ON_FAILURE(pthread_mutex_init(&lock, NULL));
     }
@@ -244,7 +262,7 @@ static const wchar_t * const locale_variable[] =
 };
 
 
-const var_entry_t *env_node_t::find_entry(const wcstring &key)
+const var_entry_t *env_node_t::find_entry(const wcstring &key) const
 {
     const var_entry_t *result = NULL;
     var_table_t::const_iterator where = env.find(key);
@@ -255,6 +273,16 @@ const var_entry_t *env_node_t::find_entry(const wcstring &key)
     return result;
 }
 
+var_entry_t *env_node_t::find_entry(const wcstring &key)
+{
+    var_entry_t *result = NULL;
+    var_table_t::iterator where = env.find(key);
+    if (where != env.end())
+    {
+        result = &where->second;
+    }
+    return result;
+}
 
 env_node_t *env_stack_t::next_scope(env_node_t *scope)
 {
@@ -787,10 +815,9 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, int var_mode)
         bool preexisting_entry_exportv = false;
         if (preexisting_node != NULL)
         {
-            var_table_t::const_iterator result = preexisting_node->env.find(key);
-            assert(result != preexisting_node->env.end());
-            const var_entry_t &entry = result->second;
-            if (entry.exportv)
+            const var_entry_t *entry = preexisting_node->find_entry(key);
+            assert(entry != NULL);
+            if (entry->exportv)
             {
                 preexisting_entry_exportv = true;
                 has_changed_new = true;
@@ -866,23 +893,23 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, int var_mode)
         {
             // Set the entry in the node
             // Note that operator[] accesses the existing entry, or creates a new one
-            var_entry_t &entry = node->env[key];
-            if (entry.exportv)
+            var_entry_t *entry = node->find_or_create_entry(key);
+            if (entry->exportv)
             {
                 // this variable already existed, and was exported
                 has_changed_new = true;
             }
-            entry.val = val;
+            entry->val = val;
             if (var_mode & ENV_EXPORT)
             {
                 // the new variable is exported
-                entry.exportv = true;
+                entry->exportv = true;
                 node->exportv = true;
                 has_changed_new = true;
             }
             else
             {
-                entry.exportv = false;
+                entry->exportv = false;
             }
             
             if (has_changed_old || has_changed_new)
@@ -921,21 +948,21 @@ int env_set(const wcstring &key, const wchar_t *val, int var_mode)
 
    \return zero if the variable was not found, non-zero otherwise
 */
-bool env_stack_t::try_remove(env_node_t *n, const wchar_t *key, int var_mode)
+bool env_stack_t::try_remove(env_node_t *n, const wcstring &key, int var_mode)
 {
     if (n == NULL)
     {
         return false;
     }
 
-    var_table_t::iterator result = n->env.find(key);
-    if (result != n->env.end())
+    var_entry_t *result = n->find_entry(key);
+    if (result != NULL)
     {
-        if (result->second.exportv)
+        if (result->exportv)
         {
             mark_changed_exported();
         }
-        n->env.erase(result);
+        n->remove_entry(key);
         return true;
     }
 
@@ -976,7 +1003,7 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
             first_node = this->global;
         }
 
-        if (try_remove(first_node, key.c_str(), var_mode))
+        if (try_remove(first_node, key, var_mode))
         {
             event_t ev = event_t::variable_event(key);
             ev.arguments.push_back(L"VARIABLE");
@@ -1138,21 +1165,18 @@ bool env_stack_t::exist(const wchar_t *key, int mode) const
 
         while (env != 0)
         {
-            var_table_t::const_iterator result = env->env.find(key);
+            const var_entry_t *entry = env->find_entry(key);
 
-            if (result != env->env.end())
+            if (entry != NULL)
             {
-                const var_entry_t &res = result->second;
-
                 if (mode & ENV_EXPORT)
                 {
-                    return res.exportv;
+                    return entry->exportv;
                 }
                 else if (mode & ENV_UNEXPORT)
                 {
-                    return ! res.exportv;
+                    return ! entry->exportv;
                 }
-
                 return true;
             }
 
@@ -1216,9 +1240,7 @@ bool env_stack_t::local_scope_exports(env_node_t *n) const
 
 void env_stack_t::push(bool new_scope)
 {
-    env_node_t *node = new env_node_t;
-    node->next = top;
-    node->new_scope=new_scope;
+    env_node_t *node = new env_node_t(new_scope, top);
 
     if (new_scope)
     {
@@ -1241,12 +1263,12 @@ void env_stack_t::pop()
         int i;
         int locale_changed = 0;
 
-        env_node_t *killme = top;
+        const env_node_t *killme = top;
 
         for (i=0; locale_variable[i]; i++)
         {
-            var_table_t::iterator result =  killme->env.find(locale_variable[i]);
-            if (result != killme->env.end())
+            const var_entry_t *result =  killme->find_entry(locale_variable[i]);
+            if (result != NULL)
             {
                 locale_changed = 1;
                 break;
@@ -1261,8 +1283,8 @@ void env_stack_t::pop()
 
         top = top->next;
 
-        var_table_t::iterator iter;
-        for (iter = killme->env.begin(); iter != killme->env.end(); ++iter)
+        var_table_t::const_iterator iter;
+        for (iter = killme->get_env().begin(); iter != killme->get_env().end(); ++iter)
         {
             const var_entry_t &entry = iter->second;
             if (entry.exportv)
@@ -1337,7 +1359,7 @@ wcstring_list_t env_stack_t::get_names(int flags) const
             if (n == this->global)
                 break;
 
-            add_key_to_string_set(n->env, &names, show_exported, show_unexported);
+            add_key_to_string_set(n->get_env(), &names, show_exported, show_unexported);
             if (n->new_scope)
                 break;
             else
@@ -1348,7 +1370,7 @@ wcstring_list_t env_stack_t::get_names(int flags) const
 
     if (show_global)
     {
-        add_key_to_string_set(this->global->env, &names, show_exported, show_unexported);
+        add_key_to_string_set(this->global->get_env(), &names, show_exported, show_unexported);
         if (show_unexported)
         {
             result.insert(result.end(), env_electric.begin(), env_electric.end());
@@ -1391,7 +1413,7 @@ void env_stack_t::get_exported(const env_node_t *n, std::map<wcstring, wcstring>
         this->get_exported(n->next, h);
 
     var_table_t::const_iterator iter;
-    for (iter = n->env.begin(); iter != n->env.end(); ++iter)
+    for (iter = n->get_env().begin(); iter != n->get_env().end(); ++iter)
     {
         const wcstring &key = iter->first;
         const var_entry_t &val_entry = iter->second;
