@@ -354,10 +354,11 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
             }
             else
             {
-                if (pthread_cond_timedwait(&this->status_map_broadcaster, &this->lock, &end_date) < 0)
+                int wait_result = pthread_cond_timedwait(&this->status_map_broadcaster, &this->lock, &end_date);
+                if (wait_result != 0)
                 {
                     // Must be timeout
-                    assert(errno == ETIMEDOUT);
+                    assert(wait_result == ETIMEDOUT);
                     break;
                 }
             }
