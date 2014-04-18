@@ -95,6 +95,8 @@ typedef std::map<wcstring, var_entry_t> var_table_t;
 bool g_log_forks = false;
 bool g_use_posix_spawn = false; //will usually be set to true
 
+// Big global lock that all environment modifications use
+static pthread_mutex_t s_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /**
    Struct representing one level in the function variable stack
@@ -134,17 +136,20 @@ class env_node_t
     /* Removes an entry */
     void remove_entry(const wcstring &key)
     {
+        ASSERT_IS_LOCKED(s_env_lock);
         env.erase(key);
     }
     
     /* Returns a pointer to the given entry, creating it if necessary */
     var_entry_t *find_or_create_entry(const wcstring &key)
     {
+        ASSERT_IS_LOCKED(s_env_lock);
         return &env[key];
     }
     
     const var_table_t &get_env() const
     {
+        ASSERT_IS_LOCKED(s_env_lock);
         return env;
     }
 };
@@ -157,8 +162,6 @@ class env_stack_t
     
     /** Top node on the function stack */
     env_node_t *top;
-    
-    pthread_mutex_t lock;
 
     env_node_t *get_node(const wcstring &key);
     
@@ -175,12 +178,6 @@ class env_stack_t
     public:
     env_stack_t() : global(new env_node_t(false, NULL)), top(global)
     {
-        VOMIT_ON_FAILURE(pthread_mutex_init(&lock, NULL));
-    }
-    
-    ~env_stack_t()
-    {
-        pthread_mutex_destroy(&lock);
     }
     
     int set(const wcstring &key, const wchar_t *val, int var_mode);
@@ -734,6 +731,8 @@ env_node_t *env_stack_t::get_node(const wcstring &key)
 int env_stack_t::set(const wcstring &key, const wchar_t *val, int var_mode)
 {
     ASSERT_IS_MAIN_THREAD();
+    
+    scoped_lock locker(s_env_lock);
     bool has_changed_old = has_changed_exported;
     bool has_changed_new = false;
     int done=0;
@@ -931,6 +930,9 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, int var_mode)
         //  debug( 1, L"env_set: return from event firing" );
     }
     
+    
+    // Must not hold the lock around react_to_variable_change
+    locker.unlock();
     react_to_variable_change(key);
     
     return 0;
@@ -985,6 +987,7 @@ bool env_stack_t::try_remove(env_node_t *n, const wcstring &key, int var_mode)
 int env_stack_t::remove(const wcstring &key, int var_mode)
 {
     ASSERT_IS_MAIN_THREAD();
+    scoped_lock locker(s_env_lock);
     env_node_t *first_node;
     int erased = 0;
 
@@ -1023,6 +1026,7 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
         erased = ! env_universal_remove(key.c_str());
     }
 
+    locker.unlock();
     react_to_variable_change(key);
 
     return !erased;
@@ -1086,7 +1090,7 @@ env_var_t env_stack_t::get_string(const wcstring &key)
     {
         {
             /* Lock around a local region */
-            scoped_lock locker(lock);
+            scoped_lock locker(s_env_lock);
 
             env_node_t *env = top;
             wcstring result;
@@ -1258,6 +1262,7 @@ void env_push(bool new_scope)
 
 void env_stack_t::pop()
 {
+    scoped_lock locker(s_env_lock);
     if (this->top != this->global)
     {
         int i;
@@ -1335,7 +1340,7 @@ static void add_key_to_string_set(const var_table_t &envs, std::set<wcstring> *s
 
 wcstring_list_t env_stack_t::get_names(int flags) const
 {
-    scoped_lock locker(lock);
+    scoped_lock locker(s_env_lock);
 
     wcstring_list_t result;
     std::set<wcstring> names;
@@ -1404,9 +1409,10 @@ wcstring_list_t env_stack_t::get_names(int flags) const
 
 void env_stack_t::get_exported(const env_node_t *n, std::map<wcstring, wcstring> &h) const
 {
+    ASSERT_IS_LOCKED(s_env_lock);
     if (!n)
         return;
-
+    
     if (n->new_scope)
         this->get_exported(this->global, h);
     else
@@ -1454,6 +1460,8 @@ static void export_func(const std::map<wcstring, wcstring> &envs, std::vector<st
 
 void env_stack_t::update_export_array_if_necessary(bool recalc)
 {
+    scoped_lock locker(s_env_lock);
+    
     ASSERT_IS_MAIN_THREAD();
     if (recalc && ! get_proc_had_barrier())
     {
