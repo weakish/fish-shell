@@ -193,8 +193,6 @@ class env_stack_t : public environment_t
     /** Top node on the function stack */
     env_node_ref_t top;
     
-    pthread_mutex_t lock;
-
     env_node_t *get_node(const wcstring &key);
     
     /* Returns the next scope to search in order, respecting the new_scope flag, or NULL if we're done. */

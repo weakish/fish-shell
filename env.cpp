@@ -1223,7 +1223,7 @@ void env_stack_t::pop()
         int i;
         int locale_changed = 0;
 
-        const env_node_t *killme = top.get();
+        const env_node_ref_t killme = top;
 
         for (i=0; locale_variable[i]; i++)
         {
@@ -1253,8 +1253,6 @@ void env_stack_t::pop()
                 break;
             }
         }
-
-        delete killme;
 
         if (locale_changed)
             handle_locale();
