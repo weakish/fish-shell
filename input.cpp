@@ -400,7 +400,7 @@ static int interrupt_handler()
     /*
       Reap stray processes, including printing exit status messages
     */
-    if (job_reap(1))
+    if (job_reap(&parser_t::principal_parser(), 1))
         reader_repaint_needed();
 
     /*

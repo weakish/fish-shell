@@ -9,29 +9,13 @@ Utilities for keeping track of jobs.
 #include "parser.h"
 #include "iothread.h"
 
-
-/**
-   Remove job from list of jobs
-*/
-static int job_remove(job_t *j)
-{
-    ASSERT_IS_MAIN_THREAD();
-    return parser_t::principal_parser().job_remove(j);
-}
-
-void job_promote(job_t *job)
-{
-    ASSERT_IS_MAIN_THREAD();
-    parser_t::principal_parser().job_promote(job);
-}
-
 /*
   Remove job from the job list and free all memory associated with
   it.
 */
-void job_free(job_t * j)
+void job_free(parser_t *parser, job_t * j)
 {
-    job_remove(j);
+    parser->job_remove(j);
     delete j;
 }
 
@@ -317,15 +301,21 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
     }
     
     scoped_lock locker(lock);
+    if (! waitpid_thread_running && status_map.empty())
+    {
+        fprintf(stderr, "Error: waiting for job when there is no job to wait for\n");
+    }
     while (result_pid == -1)
     {
         for (job_list_t::const_iterator iter = jobs.begin(); iter != jobs.end() && result_pid == -1; ++iter)
         {
             const job_t *j = *iter;
+            REAPER_LOG fprintf(stderr, "waiting for job '%ls' in parser %p\n", j->command_wcstr(), &parser);
             for (const process_t *p = j->first_process; p != NULL && result_pid == -1; p=p->next)
             {
                 if (p->pid > 0)
                 {
+                    REAPER_LOG fprintf(stderr, "    pid %d\n", p->pid);
                     pid_status_map_t::iterator where = status_map.find(p->pid);
                     if (where != status_map.end())
                     {
@@ -333,7 +323,7 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
                         result_pid = where->first;
                         result_status = where->second;
                         status_map.erase(where);
-                        REAPER_LOG fprintf(stderr, "acquired %d\n", result_pid);
+                        REAPER_LOG fprintf(stderr, "acquired %d for parser %p\n", result_pid, &parser);
                         got_pid = true;
                     }
                 }
@@ -377,3 +367,42 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
     return got_pid;
 }
 
+
+void job_iterator_t::reset()
+{
+    this->current = job_list->begin();
+    this->end = job_list->end();
+}
+
+job_iterator_t::job_iterator_t(job_list_t &jobs) : job_list(&jobs)
+{
+    this->reset();
+}
+
+
+job_iterator_t::job_iterator_t(parser_t *parser) : job_list(&parser->job_list())
+{
+    assert(parser != NULL);
+    this->reset();
+}
+
+job_iterator_t::job_iterator_t() : job_list(&parser_t::principal_parser().job_list())
+{
+    ASSERT_IS_MAIN_THREAD();
+    this->reset();
+}
+
+size_t job_iterator_t::count() const
+{
+    return this->job_list->size();
+}
+
+void print_jobs(void)
+{
+    job_iterator_t jobs;
+    job_t *j;
+    while ((j = jobs.next()))
+    {
+        printf("%p -> %ls -> (foreground %d, complete %d, stopped %d, constructed %d)\n", j, j->command_wcstr(), job_get_flag(j, JOB_FOREGROUND), job_is_completed(j), job_is_stopped(j), job_get_flag(j, JOB_CONSTRUCTED));
+    }
+}

@@ -654,7 +654,7 @@ static int find_job(const struct find_job_data_t *info)
             jid = fish_wcstoi(proc, &end, 10);
             if (jid > 0 && !errno && !*end)
             {
-                j = job_get(jid);
+                j = parser_t::principal_parser().job_get(jid);
                 if ((j != 0) && (j->command_wcstr() != 0) && (!j->command_is_empty()))
                 {
                     append_completion(completions, to_string<long>(j->pgid));

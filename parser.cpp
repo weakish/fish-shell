@@ -975,7 +975,7 @@ int parser_t::eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum
     }
 
     /* Not sure why we reap jobs here */
-    job_reap(0);
+    job_reap(this, 0);
 
     /* Start it up */
     const block_t * const start_current_block = current_block();
@@ -999,7 +999,7 @@ int parser_t::eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum
     }
 
     /* Reap again */
-    job_reap(0);
+    job_reap(this, 0);
 
     return result;
 }

@@ -94,38 +94,6 @@ bool job_list_is_empty(void)
     return parser_t::principal_parser().job_list().empty();
 }
 
-void job_iterator_t::reset()
-{
-    this->current = job_list->begin();
-    this->end = job_list->end();
-}
-
-job_iterator_t::job_iterator_t(job_list_t &jobs) : job_list(&jobs)
-{
-    this->reset();
-}
-
-job_iterator_t::job_iterator_t() : job_list(&parser_t::principal_parser().job_list())
-{
-    ASSERT_IS_MAIN_THREAD();
-    this->reset();
-}
-
-size_t job_iterator_t::count() const
-{
-    return this->job_list->size();
-}
-
-void print_jobs(void)
-{
-    job_iterator_t jobs;
-    job_t *j;
-    while ((j = jobs.next()))
-    {
-        printf("%p -> %ls -> (foreground %d, complete %d, stopped %d, constructed %d)\n", j, j->command_wcstr(), job_get_flag(j, JOB_FOREGROUND), job_is_completed(j), job_is_stopped(j), job_get_flag(j, JOB_CONSTRUCTED));
-    }
-}
-
 int is_interactive_session=0;
 int is_subshell=0;
 int is_block=0;
@@ -172,17 +140,6 @@ static std::vector<int> interactive_stack;
 void proc_init()
 {
     proc_push_interactive(0);
-}
-
-void proc_destroy()
-{
-    job_list_t &jobs = parser_t::principal_parser().job_list();
-    while (! jobs.empty())
-    {
-        job_t *job = jobs.front();
-        debug(2, L"freeing leaked job %ls", job->command_wcstr());
-        job_free(job);
-    }
 }
 
 void proc_set_last_status(int s)
@@ -251,7 +208,7 @@ void job_mark_process_as_failed(const job_t *job, process_t *p)
    \param pid the pid of the process whose status changes
    \param status the status as returned by wait
 */
-static void handle_child_status(pid_t pid, int status)
+static void handle_child_status(parser_t *parser, pid_t pid, int status)
 {
     bool found_proc = false;
     const job_t *j = NULL;
@@ -265,7 +222,7 @@ static void handle_child_status(pid_t pid, int status)
       write( 2, mess, strlen(mess ));
     */
 
-    job_iterator_t jobs;
+    job_iterator_t jobs(parser);
     while (! found_proc && (j = jobs.next()))
     {
         process_t *prev=0;
@@ -346,14 +303,14 @@ static void handle_child_status(pid_t pid, int status)
     return;
 }
 
-static bool reap_job_and_apply_exit_status(parser_t &parser, long long timeout_usec)
+static bool reap_job_and_apply_exit_status(parser_t *parser, long long timeout_usec)
 {
     bool result = false;
     pid_t pid = 0;
     int status = 0;
-    if (job_store_t::global_store().wait_for_job_in_parser(parser, &pid, &status, timeout_usec))
+    if (job_store_t::global_store().wait_for_job_in_parser(*parser, &pid, &status, timeout_usec))
     {
-        handle_child_status(pid, status);
+        handle_child_status(parser, pid, status);
         result = true;
     }
     return result;
@@ -419,11 +376,11 @@ io_chain_t job_t::all_io_redirections() const
 
 typedef unsigned int process_generation_count_t;
 
-/* A static value tracking how many SIGCHLDs we have seen. This is only ever modified from within the SIGCHLD signal handler, and therefore does not need atomics or locks */
+/* A static value tracking how many SIGCHLDs we have seen. This is only ever modified from within the SIGCHLD signal handler, and therefore does not need atomics or locks. TODO: must be parser specific */
 static volatile process_generation_count_t s_sigchld_generation_count = 0;
 
 /* If we have received a SIGCHLD signal, process any children. If await is false, this returns immediately if no SIGCHLD has been received. If await is true, this waits for one. Returns true if something was processed. This returns the number of children processed, or -1 on error. */
-static int process_mark_finished_children(bool wants_await)
+static int process_mark_finished_children(parser_t *parser, bool wants_await)
 {
     ASSERT_IS_MAIN_THREAD();
     
@@ -455,7 +412,7 @@ static int process_mark_finished_children(bool wants_await)
             if (pid > 0)
             {
                 /* We got a valid pid */
-                handle_child_status(pid, status);
+                handle_child_status(parser, pid, status);
                 processed_count += 1;
             }
             else if (pid == 0)
@@ -559,7 +516,7 @@ void proc_fire_event(const wchar_t *msg, int type, pid_t pid, int status)
     event.arguments.resize(0);
 }
 
-int job_reap(bool interactive)
+int job_reap(parser_t *parser, bool interactive)
 {
     ASSERT_IS_MAIN_THREAD();
     job_t *jnext;
@@ -573,7 +530,7 @@ int job_reap(bool interactive)
     }
     locked = true;
     
-    process_mark_finished_children(false);
+    process_mark_finished_children(parser, false);
 
     /* Preserve the exit status */
     const int saved_status = proc_get_last_status();
@@ -679,7 +636,7 @@ int job_reap(bool interactive)
             proc_fire_event(L"JOB_EXIT", EVENT_EXIT, -j->pgid, 0);
             proc_fire_event(L"JOB_EXIT", EVENT_JOB_ID, j->job_id, 0);
 
-            job_free(j);
+            job_free(parser, j);
         }
         else if (job_is_stopped(j) && !job_get_flag(j, JOB_NOTIFIED))
         {
@@ -1002,12 +959,11 @@ static int terminal_return_from_job(job_t *j)
     return 1;
 }
 
-void job_continue(job_t *j, bool cont)
+void job_continue(parser_t *parser, job_t *j, bool cont)
 {
-    /*
-      Put job first in the job list
-    */
-    job_promote(j);
+    assert(parser != NULL);
+    /* Put job first in the job list */
+    parser->job_promote(j);
     job_set_flag(j, JOB_NOTIFIED, 0);
 
     CHECK_BLOCK();
@@ -1095,9 +1051,9 @@ void job_continue(job_t *j, bool cont)
                         case 1:
                         {
                             read_try(j);
-                            process_mark_finished_children(false);
+                            process_mark_finished_children(parser, false);
 #if JOB_USE_REAPER_THREAD
-                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 0);
+                            reap_job_and_apply_exit_status(parser, 0);
 #endif
                             break;
                         }
@@ -1105,9 +1061,9 @@ void job_continue(job_t *j, bool cont)
                         case 0:
                         {
                             /* No FDs are ready. Look for finished processes. */
-                            process_mark_finished_children(false);
+                            process_mark_finished_children(parser, false);
 #if JOB_USE_REAPER_THREAD
-                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 0);
+                            reap_job_and_apply_exit_status(parser, 0);
 #endif
 
                             break;
@@ -1126,10 +1082,10 @@ void job_continue(job_t *j, bool cont)
                             
                             
 #if ! JOB_USE_REAPER_THREAD
-                            int processed = process_mark_finished_children(true);
+                            int processed = process_mark_finished_children(parser, true);
                             bool signaled = (processed < 0);
 #else
-                            reap_job_and_apply_exit_status(parser_t::principal_parser(), 10000);
+                            reap_job_and_apply_exit_status(parser, 10000);
                             bool signaled = true;
 #endif
                             if (signaled)
@@ -1145,7 +1101,6 @@ void job_continue(job_t *j, bool cont)
                                 {
                                     quit = 1;
                                 }
-                                
                             }
                             break;
                         }

@@ -3468,9 +3468,9 @@ static int builtin_source(parser_t &parser, wchar_t ** argv)
    around in the list makes the list reflect the order in which the
    jobs were used.
 */
-static void make_first(job_t *j)
+static void make_first(parser_t *parser, job_t *j)
 {
-    job_promote(j);
+    parser->job_promote(j);
 }
 
 
@@ -3611,10 +3611,10 @@ static int builtin_fg(parser_t &parser, wchar_t **argv)
             env_set(L"_", ft.c_str(), ENV_EXPORT);
         reader_write_title(parser, j->command());
 
-        make_first(j);
+        make_first(&parser, j);
         job_set_flag(j, JOB_FOREGROUND, 1);
 
-        job_continue(j, job_is_stopped(j));
+        job_continue(&parser, j, job_is_stopped(j));
     }
     return j != 0;
 }
@@ -3650,9 +3650,9 @@ static int send_to_bg(parser_t &parser, job_t *j, const wchar_t *name)
                       j->job_id,
                       j->command_wcstr());
     }
-    make_first(j);
+    make_first(&parser, j);
     job_set_flag(j, JOB_FOREGROUND, 0);
-    job_continue(j, job_is_stopped(j));
+    job_continue(&parser, j, job_is_stopped(j));
     return STATUS_BUILTIN_OK;
 }
 

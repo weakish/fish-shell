@@ -361,11 +361,6 @@ void proc_fire_event(const wchar_t *msg, int type, pid_t pid, int status);
 void proc_init();
 
 /**
-   Clean up before exiting
-*/
-void proc_destroy();
-
-/**
    Set new value for is_interactive flag, saving previous value. If
    needed, update signal handlers.
 */

@@ -144,6 +144,7 @@ public:
     }
 
     job_iterator_t(job_list_t &jobs);
+    job_iterator_t(parser_t *parser);
     job_iterator_t();
     size_t count() const;
 };
@@ -171,12 +172,7 @@ extern int job_control_mode;
 /**
    Remove the specified job
 */
-void job_free(job_t* j);
-
-/**
-   Promotes a job to the front of the job list.
-*/
-void job_promote(job_t *job);
+void job_free(parser_t *parser, job_t* j);
 
 /**
   Return the job with the specified job id.
@@ -204,10 +200,11 @@ bool job_is_completed(const job_t *j);
   cont is true, restore the saved terminal modes and send the
   process group a SIGCONT signal to wake it up before we block.
 
+  \param parser The parser containing the job
   \param j The job
   \param cont Whether the function should wait for the job to complete before returning
 */
-void job_continue(job_t *j, bool cont);
+void job_continue(parser_t *parser, job_t *j, bool cont);
 
 /**
    Notify the user about stopped or terminated jobs. Delete terminated
@@ -215,7 +212,7 @@ void job_continue(job_t *j, bool cont);
 
    \param interactive whether interactive jobs should be reaped as well
 */
-int job_reap(bool interactive);
+int job_reap(parser_t *parser, bool interactive);
 
 /**
    Signal handler for SIGCHLD. Mark any processes with relevant

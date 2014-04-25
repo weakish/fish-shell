@@ -3863,7 +3863,6 @@ int main(int argc, char **argv)
     builtin_destroy();
     wutil_destroy();
     event_destroy();
-    proc_destroy();
 
     if (err_count != 0)
     {

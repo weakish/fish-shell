@@ -549,7 +549,7 @@ static void internal_exec_helper(parser_t &parser,
 
     morphed_chain.clear();
     io_cleanup_fds(opened_fds);
-    job_reap(0);
+    job_reap(&parser, 0);
 }
 
 /* Returns whether we can use posix spawn for a given process in a given job.
@@ -1478,7 +1478,7 @@ void exec_job(parser_t &parser, job_t *j)
 
     if (! exec_error)
     {
-        job_continue(j, false);
+        job_continue(&parser, j, false);
     }
     else
     {

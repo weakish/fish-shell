@@ -1458,7 +1458,7 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
 
 
     /* Clean up jobs. */
-    job_reap(0);
+    job_reap(this->parser, 0);
 
     /* All done */
     return result;
