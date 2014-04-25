@@ -695,19 +695,20 @@ void parser_t::stack_trace(size_t block_idx, wcstring &buff) const
    moving down the block-scope-stack, checking every block if it is of
    type FUNCTION_CALL.
 */
-const wchar_t *parser_t::is_function() const
+const bool parser_t::is_function(wcstring *out_name) const
 {
-    // PCA: Have to make this a string somehow
-    ASSERT_IS_MAIN_THREAD();
-
-    const wchar_t *result = NULL;
+    bool result = false;
     for (size_t block_idx = 0; block_idx < this->block_count(); block_idx++)
     {
         const block_t *b = this->block_at_index(block_idx);
         if (b->type() == FUNCTION_CALL || b->type() == FUNCTION_CALL_NO_SHADOW)
         {
             const function_block_t *fb = static_cast<const function_block_t *>(b);
-            result = fb->name.c_str();
+            result = true;
+            if (out_name != NULL)
+            {
+                out_name->assign(fb->name);
+            }
             break;
         }
         else if (b->type() == SOURCE)
@@ -728,8 +729,8 @@ int parser_t::get_lineno() const
         lineno = execution_contexts.back()->get_current_line_number();
 
         /* If we are executing a function, we have to add in its offset */
-        const wchar_t *function_name = is_function();
-        if (function_name != NULL)
+        wcstring function_name;
+        if (this->is_function(&function_name))
         {
             lineno += function_get_definition_offset(function_name);
         }
@@ -786,7 +787,7 @@ wcstring parser_t::current_line()
     wcstring prefix;
 
     /* If we are not going to print a stack trace, at least print the line number and filename */
-    if (!get_is_interactive() || is_function())
+    if (!get_is_interactive() || this->is_function(NULL))
     {
         if (file)
         {
@@ -803,7 +804,7 @@ wcstring parser_t::current_line()
     }
 
     bool is_interactive = get_is_interactive();
-    bool skip_caret = is_interactive && ! is_function();
+    bool skip_caret = is_interactive && ! this->is_function(NULL);
 
     /* Use an error with empty text */
     assert(source_offset >= 0);

@@ -283,12 +283,8 @@ private:
     void job_add(job_t *job);
 
     /**
-       Returns the name of the currently evaluated function if we are
-       currently evaluating a function, null otherwise. This is tested by
-       moving down the block-scope-stack, checking every block if it is of
-       type FUNCTION_CALL.
-    */
-    const wchar_t *is_function() const;
+       Returns true if we are evaluating a function, false if not. Also optionally returns the function name by reference. */
+    const bool is_function(wcstring *out_name) const;
     
     wcstring user_presentable_path(const wcstring &path) const;
     
