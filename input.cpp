@@ -591,10 +591,10 @@ static void input_mapping_execute(const input_mapping_t &m, bool allow_commands)
              This key sequence is bound to a command, which
              is sent to the parser for evaluation.
              */
-            int last_status = proc_get_last_status();
-            parser_t::principal_parser().eval(command.c_str(), io_chain_t(), TOP);
-
-            proc_set_last_status(last_status);
+            parser_t &parser = parser_t::principal_parser();
+            int last_status = parser.get_last_status();
+            parser.eval(command.c_str(), io_chain_t(), TOP);
+            parser.set_last_status(last_status);
 
             input_unreadch(R_NULL);
         }

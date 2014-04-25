@@ -523,7 +523,7 @@ static void internal_exec_helper(parser_t &parser,
     */
     if (! transmorgrified)
     {
-        proc_set_last_status(STATUS_EXEC_FAIL);
+        parser.set_last_status(STATUS_EXEC_FAIL);
         return;
     }
 
@@ -1111,7 +1111,7 @@ void exec_job(parser_t &parser, job_t *j)
             case INTERNAL_BLOCK_NODE:
             case INTERNAL_FUNCTION:
             {
-                int status = proc_get_last_status();
+                int status = parser.get_last_status();
 
                 /*
                   Handle output from a block or function. This usually
@@ -1127,7 +1127,7 @@ void exec_job(parser_t &parser, job_t *j)
                     */
                     if (p->next == NULL)
                     {
-                        proc_set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
+                        parser.set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
                     }
                     p->completed = 1;
                     break;
@@ -1152,10 +1152,7 @@ void exec_job(parser_t &parser, job_t *j)
                     pid = execute_fork(false);
                     if (pid == 0)
                     {
-
-                        /*
-                          This is the child process. Write out the contents of the pipeline.
-                        */
+                        /* This is the child process. Write out the contents of the pipeline. */
                         p->pid = getpid();
                         setup_child_process(j, p, process_net_io_chain);
 
@@ -1163,11 +1160,7 @@ void exec_job(parser_t &parser, job_t *j)
                     }
                     else
                     {
-                        /*
-                           This is the parent process. Store away
-                           information on the child, and possibly give
-                           it control over the terminal.
-                        */
+                        /* This is the parent process. Store away information on the child, and possibly give it control over the terminal. */
                         p->pid = pid;
                         set_child_group(j, p, 0);
                         job_store_t::global_store().child_process_spawned(p->pid);
@@ -1178,7 +1171,7 @@ void exec_job(parser_t &parser, job_t *j)
                 {
                     if (p->next == 0)
                     {
-                        proc_set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
+                        parser.set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
                     }
                     p->completed = 1;
                 }
@@ -1266,7 +1259,7 @@ void exec_job(parser_t &parser, job_t *j)
                         debug(3, L"Set status of %ls to %d using short circuit", j->command_wcstr(), p->status);
 
                         int status = p->status;
-                        proc_set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
+                        parser.set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
                     }
                 }
                 else
@@ -1493,8 +1486,9 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
 {
     ASSERT_IS_MAIN_THREAD();
     int prev_subshell = is_subshell;
-    const int prev_status = proc_get_last_status();
+    const int prev_status = parser.get_last_status();
     bool split_output=false;
+    char sep=0;
 
     //fprintf(stderr, "subcmd %ls\n", cmd.c_str());
 
@@ -1516,7 +1510,7 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
     {
         if (parser.eval(cmd, io_chain_t(io_buffer), SUBST) == 0)
         {
-            subcommand_status = proc_get_last_status();
+            subcommand_status = parser.get_last_status();
         }
 
         io_buffer->read();
@@ -1524,7 +1518,7 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
 
     // If the caller asked us to preserve the exit status, restore the old status
     // Otherwise set the status of the subcommand
-    proc_set_last_status(apply_exit_status ? subcommand_status : prev_status);
+    parser.set_last_status(apply_exit_status ? subcommand_status : prev_status);
 
 
     is_subshell = prev_subshell;

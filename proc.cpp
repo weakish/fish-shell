@@ -142,17 +142,6 @@ void proc_init()
     proc_push_interactive(0);
 }
 
-void proc_set_last_status(int s)
-{
-    ASSERT_IS_MAIN_THREAD();
-    last_status = s;
-}
-
-int proc_get_last_status()
-{
-    return last_status;
-}
-
 
 /**
    Store the status of the process pid that was returned by waitpid.
@@ -518,7 +507,10 @@ void proc_fire_event(const wchar_t *msg, int type, pid_t pid, int status)
 
 int job_reap(parser_t *parser, bool interactive)
 {
-    ASSERT_IS_MAIN_THREAD();
+    if (interactive || parser->is_principal())
+    {
+        ASSERT_IS_MAIN_THREAD();
+    }
     job_t *jnext;
     int found=0;
 
@@ -533,9 +525,9 @@ int job_reap(parser_t *parser, bool interactive)
     process_mark_finished_children(parser, false);
 
     /* Preserve the exit status */
-    const int saved_status = proc_get_last_status();
+    const int saved_status = parser->get_last_status();
 
-    job_iterator_t jobs;
+    job_iterator_t jobs(parser);
     const size_t job_count = jobs.count();
     jnext = jobs.next();
     while (jnext)
@@ -656,7 +648,7 @@ int job_reap(parser_t *parser, bool interactive)
         fflush(stdout);
 
     /* Restore the exit status. */
-    proc_set_last_status(saved_status);
+    parser->set_last_status(saved_status);
 
     locked = false;
 
@@ -1136,7 +1128,7 @@ void job_continue(parser_t *parser, job_t *j, bool cont)
                 {
                     int status = proc_format_status(p->status);
                     //wprintf(L"setting status %d for %ls\n", job_get_flag( j, JOB_NEGATE )?!status:status, j->command);
-                    proc_set_last_status(job_get_flag(j, JOB_NEGATE)?!status:status);
+                    parser->set_last_status(job_get_flag(j, JOB_NEGATE)?!status:status);
                 }
             }
         }

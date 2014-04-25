@@ -149,6 +149,18 @@ public:
     size_t count() const;
 };
 
+/* Process IDs for emulated processes. These occupy a different namespace than pids. */
+class emulated_process_id_t
+{
+    uint64_t epid;
+    public:
+    emulated_process_id_t() : epid(0)
+    {
+    }
+    
+    static emulated_process_id_t create();
+};
+
 
 /**
    Add the specified flag to the bitset of flags for the specified job

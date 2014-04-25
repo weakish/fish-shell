@@ -427,7 +427,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     int universal = 0, query=0;
     bool shorten_ok = true;
     bool preserve_incoming_failure_exit_status = true;
-    const int incoming_exit_status = proc_get_last_status();
+    const int incoming_exit_status = parser.get_last_status();
 
     /*
       Variables used for performing the actual work

@@ -367,6 +367,16 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
     return got_pid;
 }
 
+emulated_process_id_t emulated_process_id_t::create()
+{
+    static uint64_t next;
+    static pthread_mutex_t epid_lock = PTHREAD_MUTEX_INITIALIZER;
+    scoped_lock locker(epid_lock);
+    emulated_process_id_t result;
+    result.epid = ++next;
+    return result;
+}
+
 
 void job_iterator_t::reset()
 {

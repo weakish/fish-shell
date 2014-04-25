@@ -21,6 +21,7 @@
 #include "io.h"
 #include "common.h"
 #include "parse_tree.h"
+#include "job.h"
 
 /**
    The status code use when a command was not found
@@ -136,11 +137,7 @@ public:
     process_t();
     ~process_t();
 
-
-    /**
-      Type of process. Can be one of \c EXTERNAL, \c
-      INTERNAL_BUILTIN, \c INTERNAL_FUNCTION, \c INTERNAL_EXEC
-    */
+    /** Type of process. */
     enum process_type_t type;
 
     /* For internal block processes only, the node offset of the block */
@@ -200,6 +197,9 @@ public:
 
     /** process ID */
     pid_t pid;
+    
+    /** emulated process id */
+    emulated_process_id_t epid;
 
     /** File descriptor that pipe output should bind to */
     int pipe_write_fd;
@@ -314,17 +314,6 @@ extern pid_t proc_last_bg_pid;
    the syntax of a file but doesn't actually do anything.
   */
 extern int no_exec;
-
-
-/**
-   Sets the status of the last process to exit
-*/
-void proc_set_last_status(int s);
-
-/**
-   Returns the status of the last process to exit
-*/
-int proc_get_last_status();
 
 #ifdef HAVE__PROC_SELF_STAT
 /**

@@ -544,15 +544,15 @@ static void event_fire_internal(const event_t &event)
           they are marked as non-interactive
         */
         proc_push_interactive(0);
-        prev_status = proc_get_last_status();
         parser_t &parser = parser_t::principal_parser();
+        prev_status = parser.get_last_status();
 
         block_t *block = new event_block_t(event);
         parser.push_block(block);
         parser.eval(buffer, io_chain_t(), TOP);
         parser.pop_block();
         proc_pop_interactive();
-        proc_set_last_status(prev_status);
+        parser.set_last_status(prev_status);
     }
 
     /*

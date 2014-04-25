@@ -235,6 +235,7 @@ class parse_execution_context_t;
 class parser_t
 {
     friend class parse_execution_context_t;
+    friend class child_eval_context_t;
     friend env_var_t env_get_from_main(const wcstring &key);
 private:
     const enum parser_type_t parser_type;
@@ -250,7 +251,10 @@ private:
 
     /** Indicates that we are within the process of initializing fish */
     bool is_within_fish_initialization;
-
+    
+    /* Last result of execution */
+    int last_status;
+    
     /** Stack of execution contexts. We own these pointers and must delete them */
     std::vector<parse_execution_context_t *> execution_contexts;
 
@@ -386,6 +390,9 @@ public:
 
     /* Hackish. In order to correctly report the origin of code with no associated file, we need to know whether it's run during initialization or not. */
     void set_is_within_fish_initialization(bool flag);
+    
+    /* Whether we are the principal parser */
+    bool is_principal() const;
 
     /** Pushes the block. pop_block will call delete on it. */
     void push_block(block_t *newv);
@@ -398,6 +405,17 @@ public:
 
     /** Return a description of the given blocktype */
     const wchar_t *get_block_desc(int block) const;
+    
+    /** Set and get the last status */
+    int get_last_status() const
+    {
+        return last_status;
+    }
+    
+    void set_last_status(int val)
+    {
+        last_status = val;
+    }
 
     /** Removes a job */
     bool job_remove(job_t *job);

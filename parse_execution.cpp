@@ -285,7 +285,7 @@ parse_execution_result_t parse_execution_context_t::run_if_statement(const parse
 
         /* Check the condition. We treat parse_execution_errored here as failure, in accordance with historic behavior */
         parse_execution_result_t cond_ret = run_1_job(condition, ib);
-        bool take_branch = (cond_ret == parse_execution_success) && proc_get_last_status() == EXIT_SUCCESS;
+        bool take_branch = (cond_ret == parse_execution_success) && this->parser->get_last_status() == EXIT_SUCCESS;
 
         if (take_branch)
         {
@@ -338,7 +338,7 @@ parse_execution_result_t parse_execution_context_t::run_if_statement(const parse
     /* Issue 1061: If we executed, then always report success, instead of letting the exit status of the last command linger */
     if (result == parse_execution_success)
     {
-        proc_set_last_status(STATUS_BUILTIN_OK);
+        this->parser->set_last_status(STATUS_BUILTIN_OK);
     }
 
     return result;
@@ -395,7 +395,7 @@ parse_execution_result_t parse_execution_context_t::run_function_statement(const
         int definition_line_offset = this->line_offset_of_character_at_offset(contents_start);
         wcstring error_str;
         int err = define_function(*parser, argument_list, contents_str, definition_line_offset, &error_str);
-        proc_set_last_status(err);
+        this->parser->set_last_status(err);
 
         if (! error_str.empty())
         {
@@ -646,7 +646,7 @@ parse_execution_result_t parse_execution_context_t::run_while_statement(const pa
         parse_execution_result_t cond_result = this->run_1_job(while_condition, wb);
 
         /* We only continue on successful execution and EXIT_SUCCESS */
-        if (cond_result != parse_execution_success || proc_get_last_status() != EXIT_SUCCESS)
+        if (cond_result != parse_execution_success || this->parser->get_last_status() != EXIT_SUCCESS)
         {
             break;
         }
@@ -735,7 +735,7 @@ parse_execution_result_t parse_execution_context_t::report_errors(const parse_er
 /* Reoports an unmatched wildcard error and returns parse_execution_errored */
 parse_execution_result_t parse_execution_context_t::report_unmatched_wildcard_error(const parse_node_t &unmatched_wildcard)
 {
-    proc_set_last_status(STATUS_UNMATCHED_WILDCARD);
+    this->parser->set_last_status(STATUS_UNMATCHED_WILDCARD);
     // unmatched wildcards are only reported in interactive use because scripts have legitimate reasons
     // to want to use wildcards without knowing whether they expand to anything.
     if (get_is_interactive())
@@ -864,7 +864,7 @@ void parse_execution_context_t::handle_command_not_found(const wcstring &cmd_str
     }
 
     /* Set the last proc status appropriately */
-    proc_set_last_status(err_code==ENOENT?STATUS_UNKNOWN_COMMAND:STATUS_NOT_EXECUTABLE);
+    this->parser->set_last_status(err_code==ENOENT?STATUS_UNKNOWN_COMMAND:STATUS_NOT_EXECUTABLE);
 }
 
 /* Creates a 'normal' (non-block) process */
@@ -1132,12 +1132,12 @@ parse_execution_result_t parse_execution_context_t::populate_boolean_process(job
     {
         case parse_bool_and:
             // AND. Skip if the last job failed.
-            skip_job = (proc_get_last_status() != 0);
+            skip_job = (this->parser->get_last_status() != EXIT_SUCCESS);
             break;
 
         case parse_bool_or:
             // OR. Skip if the last job succeeded.
-            skip_job = (proc_get_last_status() == 0);
+            skip_job = (this->parser->get_last_status() == EXIT_SUCCESS);
             break;
 
         case parse_bool_not:

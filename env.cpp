@@ -1022,7 +1022,15 @@ env_var_t env_stack_t::get(const wcstring &key, env_mode_flags_t mode) const
         }
         else if (key == L"status")
         {
-            return to_string(proc_get_last_status());
+            #pragma warning This is totally wrong.
+            if (is_main_thread())
+            {
+                return to_string(parser_t::principal_parser().get_last_status());
+            }
+            else
+            {
+                return L"sorry";
+            }
         }
         else if (key == L"umask")
         {

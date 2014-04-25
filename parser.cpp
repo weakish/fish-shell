@@ -45,6 +45,7 @@ The fish parser. Contains functions for parsing and evaluating code.
 #include "complete.h"
 #include "parse_tree.h"
 #include "parse_execution.h"
+#include "iothread.h"
 
 /**
    Error message for tokenizer error. The tokenizer message is
@@ -194,7 +195,8 @@ parser_t::parser_t(enum parser_type_t type, bool errors) :
     parser_type(type),
     show_errors(errors),
     cancellation_requested(false),
-    is_within_fish_initialization(false)
+    is_within_fish_initialization(false),
+    last_status(0)
 {
 }
 
@@ -203,6 +205,7 @@ parser_t::parser_t(const parser_t &parent) :
     show_errors(parent.show_errors),
     cancellation_requested(parent.cancellation_requested),
     is_within_fish_initialization(parent.is_within_fish_initialization),
+    last_status(0),
     variable_stack(parent.variable_stack)
 {
 }
@@ -220,6 +223,11 @@ parser_t &parser_t::principal_parser(void)
         s_principal_parser = &parser;
     }
     return parser;
+}
+
+bool parser_t::is_principal() const
+{
+    return s_principal_parser != NULL && this == s_principal_parser;
 }
 
 /* A hacktastic function which enables getting access to the main thread environment from outside the main thread. This is used by the autoloading mechanisms (and ONLY by the autoloading mechanisms), since we do not yet support per-thread functions sets. */
@@ -1004,6 +1012,40 @@ int parser_t::eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum
     return result;
 }
 
+class child_eval_context_t
+{
+    public:
+    parser_t parser;
+    parse_node_tree_t tree;
+    wcstring src;
+    node_offset_t node_idx;
+    io_chain_t io;
+    enum block_type_t block_type;
+    int result;
+    bool finished;
+    
+    child_eval_context_t(const parser_t &parent) : parser(parent), result(0), finished(false)
+    {
+    }
+    
+    int run_in_background()
+    {
+        this->result = parser.eval(src, tree, node_idx, io, block_type);
+        this->finished = true;
+        return result;
+    }
+    
+    static int run_in_background(child_eval_context_t *self)
+    {
+        return self->run_in_background();
+    }
+};
+
+static int run_child_parser_in_background(child_eval_context_t *ctx)
+{
+    return ctx->run_in_background();
+}
+
 int parser_t::eval_block_node_in_child(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type)
 {
     /* Paranoia. It's a little frightening that we're given only a node_idx and we interpret this in the topmost execution context's tree. What happens if two trees were to be interleaved? Fortunately that cannot happen (yet); in the future we probably want some sort of reference counted trees.
@@ -1013,8 +1055,22 @@ int parser_t::eval_block_node_in_child(node_offset_t node_idx, const io_chain_t 
 
     CHECK_BLOCK(1);
 
-    parser_t child_parser(*this);
-    return child_parser.eval(ctx->get_source(), ctx->get_tree(), node_idx, io, block_type);
+    child_eval_context_t *child_eval = new child_eval_context_t(*this);
+    child_eval->tree = ctx->get_tree();
+    child_eval->src = ctx->get_source();
+    child_eval->node_idx = node_idx;
+    child_eval->io = io;
+    child_eval->block_type = block_type;
+    
+    iothread_perform(run_child_parser_in_background, (void (*)(child_eval_context_t *, int))NULL, child_eval);
+    while (! child_eval->finished)
+    {
+        usleep(1000);
+    }
+    int result = child_eval->result;
+    this->set_last_status(child_eval->parser.get_last_status());
+    delete child_eval;
+    return result;
 }
 
 bool parser_t::detect_errors_in_argument_list(const wcstring &arg_list_src, wcstring *out, const wchar_t *prefix)

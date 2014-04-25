@@ -446,7 +446,7 @@ int main(int argc, char **argv)
     if (read_init(paths))
     {
         /* Stop the exit status of any initialization commands (#635) */
-        proc_set_last_status(STATUS_BUILTIN_OK);
+        parser.set_last_status(STATUS_BUILTIN_OK);
 
         /* Run the commands specified as arguments, if any */
         if (! cmds.empty())
@@ -523,7 +523,7 @@ int main(int argc, char **argv)
         }
     }
 
-    int exit_status = res ? STATUS_UNKNOWN_COMMAND : proc_get_last_status();
+    int exit_status = res ? STATUS_UNKNOWN_COMMAND : parser.get_last_status();
 
     proc_fire_event(L"PROCESS_EXIT", EVENT_EXIT, getpid(), exit_status);
 

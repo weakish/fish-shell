@@ -3135,7 +3135,7 @@ static int builtin_exit(parser_t &parser, wchar_t **argv)
     {
         case 1:
         {
-            ec = proc_get_last_status();
+            ec = parser.get_last_status();
             break;
         }
 
@@ -3450,7 +3450,7 @@ static int builtin_source(parser_t &parser, wchar_t ** argv)
     }
     else
     {
-        res = proc_get_last_status();
+        res = parser.get_last_status();
     }
 
     /*
@@ -3790,7 +3790,7 @@ static int builtin_breakpoint(parser_t &parser, wchar_t **argv)
 
     parser.pop_block();
 
-    return proc_get_last_status();
+    return parser.get_last_status();
 }
 
 
@@ -3800,7 +3800,7 @@ static int builtin_breakpoint(parser_t &parser, wchar_t **argv)
 static int builtin_return(parser_t &parser, wchar_t **argv)
 {
     int argc = builtin_count_args(argv);
-    int status = proc_get_last_status();
+    int status = parser.get_last_status();
 
     switch (argc)
     {
