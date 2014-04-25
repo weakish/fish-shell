@@ -150,6 +150,11 @@ env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), to
 {
 }
 
+/* This creates a "child stack", not a copy. */
+env_stack_t::env_stack_t(const env_stack_t &parent) : global(parent.global), top(parent.top), boundary(parent.top)
+{
+}
+
 env_stack_t::~env_stack_t()
 {
 }
@@ -1180,6 +1185,9 @@ void env_stack_t::push(bool new_scope)
 
 void env_stack_t::pop()
 {
+    /* Don't pop past the boundary */
+    assert(this->boundary.get() == NULL || this->boundary.get() != this->top.get());
+    
     scoped_lock locker(s_env_lock);
     if (this->top != this->global)
     {

@@ -198,6 +198,15 @@ parser_t::parser_t(enum parser_type_t type, bool errors) :
 {
 }
 
+parser_t::parser_t(const parser_t &parent) :
+    parser_type(parent.parser_type),
+    show_errors(parent.show_errors),
+    cancellation_requested(parent.cancellation_requested),
+    is_within_fish_initialization(parent.is_within_fish_initialization),
+    variable_stack(parent.variable_stack)
+{
+}
+
 /* A pointer to the principal parser (which is a static local) */
 static parser_t *s_principal_parser = NULL;
 
@@ -876,15 +885,6 @@ profile_item_t *parser_t::create_profile_item()
 
 int parser_t::eval(const wcstring &cmd, const io_chain_t &io, enum block_type_t block_type)
 {
-    CHECK_BLOCK(1);
-
-    if (block_type != TOP && block_type != SUBST)
-    {
-        debug(1, INVALID_SCOPE_ERR_MSG, parser_t::get_block_desc(block_type));
-        bugreport();
-        return 1;
-    }
-
     /* Parse the source into a tree, if we can */
     parse_node_tree_t tree;
     parse_error_list_t error_list;
@@ -895,35 +895,49 @@ int parser_t::eval(const wcstring &cmd, const io_chain_t &io, enum block_type_t 
             /* Get a backtrace */
             wcstring backtrace_and_desc;
             this->get_backtrace(cmd, error_list, &backtrace_and_desc);
-
+            
             /* Print it */
             fprintf(stderr, "%ls", backtrace_and_desc.c_str());
         }
-
+        
         return 1;
     }
+    
+    return this->eval(cmd, tree, 0, io, block_type);
+}
 
+int parser_t::eval(const wcstring &cmd, const parse_node_tree_t &tree, node_offset_t node, const io_chain_t &io, enum block_type_t block_type)
+{
+    CHECK_BLOCK(1);
+    
+    if (block_type != TOP && block_type != SUBST)
+    {
+        debug(1, INVALID_SCOPE_ERR_MSG, parser_t::get_block_desc(block_type));
+        bugreport();
+        return 1;
+    }
     //print_stderr(block_stack_description());
-
-
+    
+    
     /* Determine the initial eval level. If this is the first context, it's -1; otherwise it's the eval level of the top context. This is sort of wonky because we're stitching together a global notion of eval level from these separate objects. A better approach would be some profile object that all contexts share, and that tracks the eval levels on its own. */
     int exec_eval_level = (execution_contexts.empty() ? -1 : execution_contexts.back()->current_eval_level());
-
+    
     /* Append to the execution context stack */
     parse_execution_context_t *ctx = new parse_execution_context_t(tree, cmd, this, exec_eval_level);
     execution_contexts.push_back(ctx);
-
+    
     /* Execute the first node */
+    int result = 1;
     if (! tree.empty())
     {
-        this->eval_block_node(0, io, block_type);
+        result = this->eval_block_node(node, io, block_type);
     }
-
+    
     /* Clean up the execution context stack */
     assert(! execution_contexts.empty() && execution_contexts.back() == ctx);
     execution_contexts.pop_back();
     delete ctx;
-
+    
     return 0;
 }
 
@@ -988,6 +1002,19 @@ int parser_t::eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum
     job_reap(0);
 
     return result;
+}
+
+int parser_t::eval_block_node_in_child(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type)
+{
+    /* Paranoia. It's a little frightening that we're given only a node_idx and we interpret this in the topmost execution context's tree. What happens if two trees were to be interleaved? Fortunately that cannot happen (yet); in the future we probably want some sort of reference counted trees.
+    */
+    parse_execution_context_t *ctx = this->execution_contexts.back();
+    assert(ctx != NULL);
+
+    CHECK_BLOCK(1);
+
+    parser_t child_parser(*this);
+    return child_parser.eval(ctx->get_source(), ctx->get_tree(), node_idx, io, block_type);
 }
 
 bool parser_t::detect_errors_in_argument_list(const wcstring &arg_list_src, wcstring *out, const wchar_t *prefix)
@@ -1232,4 +1259,9 @@ scope_block_t::scope_block_t(block_type_t type) : block_t(type)
 
 breakpoint_block_t::breakpoint_block_t() : block_t(BREAKPOINT)
 {
+}
+
+bool parser_use_threads()
+{
+    return true;
 }

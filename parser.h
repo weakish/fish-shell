@@ -239,6 +239,9 @@ class parser_t
 private:
     const enum parser_type_t parser_type;
 
+    /** Black magic */
+    explicit parser_t(const parser_t &parent);
+
     /** Whether or not we output errors */
     const bool show_errors;
 
@@ -270,7 +273,6 @@ private:
     std::vector<profile_item_t *> profile_items;
 
     /* No copying allowed */
-    parser_t(const parser_t&);
     parser_t& operator=(const parser_t&);
 
     /** Adds a job to the beginning of the job list. */
@@ -315,8 +317,15 @@ public:
     */
     int eval(const wcstring &cmd, const io_chain_t &io, enum block_type_t block_type);
 
+    /** Evaluates the given node in the given tree */
+    int eval(const wcstring &cmd, const parse_node_tree_t &tree, node_offset_t node, const io_chain_t &io, enum block_type_t block_type);
+
     /** Evaluates a block node at the given node offset in the topmost execution context */
     int eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type);
+    
+    /** Evaluates a block node as a child thread at the given node offset in the topmost execution context */
+    int eval_block_node_in_child(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type);
+
 
     /**
       Evaluate line as a list of parameters, i.e. tokenize it and perform parameter expansion and cmdsubst execution on the tokens.
@@ -453,5 +462,7 @@ public:
     */
     void stack_trace(size_t block_idx, wcstring &buff) const;
 };
+
+bool parser_use_threads();
 
 #endif

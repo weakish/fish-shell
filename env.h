@@ -173,11 +173,19 @@ typedef shared_ptr<env_node_t> env_node_ref_t;
 
 class env_stack_t : public environment_t
 {
+    friend class parser_t;
+    
     /** Bottom node on the function stack */
     const env_node_ref_t global;
     
     /** Top node on the function stack */
     env_node_ref_t top;
+    
+    /** The stack element that we must not pop */
+    const env_node_ref_t boundary;
+    
+    /** Child stacks */
+    explicit env_stack_t(const env_stack_t &parent);
     
     env_node_t *get_node(const wcstring &key);
     

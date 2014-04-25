@@ -535,7 +535,14 @@ static void internal_exec_helper(parser_t &parser,
     }
     else
     {
-        parser.eval_block_node(node_offset, morphed_chain, block_type);
+        if (parser_use_threads())
+        {
+            parser.eval_block_node_in_child(node_offset, morphed_chain, block_type);
+        }
+        else
+        {
+            parser.eval_block_node(node_offset, morphed_chain, block_type);
+        }
     }
 
     signal_block();

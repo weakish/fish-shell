@@ -134,6 +134,12 @@ public:
     {
         return src;
     }
+    
+    /* Returns the parsed tree */
+    const parse_node_tree_t &get_tree() const
+    {
+        return tree;
+    }
 
     /* Start executing at the given node offset. Returns 0 if there was no error, 1 if there was an error */
     parse_execution_result_t eval_node_at_offset(node_offset_t offset, const block_t *associated_block, const io_chain_t &io);
