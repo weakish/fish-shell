@@ -741,7 +741,10 @@ int parser_t::get_lineno() const
 
 const wchar_t *parser_t::current_filename() const
 {
-    ASSERT_IS_MAIN_THREAD();
+    if (is_principal())
+    {
+        ASSERT_IS_MAIN_THREAD();
+    }
 
     for (size_t i=0; i < this->block_count(); i++)
     {
@@ -759,7 +762,7 @@ const wchar_t *parser_t::current_filename() const
     }
 
     /* We query a global array for the current file name, but only do that if we are the principal parser */
-    if (this == &principal_parser())
+    if (this->is_principal())
     {
         return reader_current_filename();
     }

@@ -2186,7 +2186,7 @@ void assert_is_main_thread(const char *who)
 {
     if (! is_main_thread() && ! thread_assertions_configured_for_testing)
     {
-        fprintf(stderr, "Warning: %s called off of main thread. Break on debug_thread_error to debug.\n", who);
+        fprintf(stderr, "Warning: %s called off of main thread. Break on debug_thread_error in pid %d to debug.\n", who, getpid());
         debug_thread_error();
     }
 }
@@ -2195,7 +2195,7 @@ void assert_is_not_forked_child(const char *who)
 {
     if (is_forked_child())
     {
-        fprintf(stderr, "Warning: %s called in a forked child. Break on debug_thread_error to debug.\n", who);
+        fprintf(stderr, "Warning: %s called in a forked child. Break on debug_thread_error in pid %d to debug.\n", who, getpid());
         debug_thread_error();
     }
 }
@@ -2204,7 +2204,7 @@ void assert_is_background_thread(const char *who)
 {
     if (is_main_thread() && ! thread_assertions_configured_for_testing)
     {
-        fprintf(stderr, "Warning: %s called on the main thread (may block!). Break on debug_thread_error to debug.\n", who);
+        fprintf(stderr, "Warning: %s called on the main thread (may block!). Break on debug_thread_error in pid %d to debug.\n", who, getpid());
         debug_thread_error();
     }
 }
@@ -2214,7 +2214,7 @@ void assert_is_locked(void *vmutex, const char *who, const char *caller)
     pthread_mutex_t *mutex = static_cast<pthread_mutex_t*>(vmutex);
     if (0 == pthread_mutex_trylock(mutex))
     {
-        fprintf(stderr, "Warning: %s is not locked when it should be in '%s'. Break on debug_thread_error to debug.\n", who, caller);
+        fprintf(stderr, "Warning: %s is not locked when it should be in '%s'. Break on debug_thread_error in pid %d to debug.\n", who, caller, getpid());
         debug_thread_error();
         pthread_mutex_unlock(mutex);
     }

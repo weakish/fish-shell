@@ -79,11 +79,6 @@ Some of the code in this file is based on code from the Glibc manual.
 #define BUFFER_SIZE 4096
 
 /**
-	Status of last process to exit
-*/
-static int last_status=0;
-
-/**
    Signal flag
 */
 static sig_atomic_t got_signal=0;
@@ -109,7 +104,12 @@ static bool proc_had_barrier = false;
 
 int get_is_interactive(void)
 {
-    ASSERT_IS_MAIN_THREAD();
+    /* extraordarily hacktastic */
+    if (! is_main_thread())
+    {
+        return 0;
+    }
+    
     /* is_interactive is initialized to -1; ensure someone has popped/pushed it before then */
     assert(is_interactive >= 0);
     return is_interactive > 0;

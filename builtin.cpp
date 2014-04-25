@@ -2692,7 +2692,8 @@ static int builtin_read(parser_t &parser, wchar_t **argv)
     /*
       Check if we should read interactively using \c reader_readline()
     */
-    if (isatty(0) && builtin_stdin == 0 && !split_null)
+    #warning This is_principal() check is bogus. Need to rationalize how read behaves in background threads.
+    if (isatty(0) && builtin_stdin == 0 && !split_null && parser.is_principal())
     {
         const wchar_t *line;
 
@@ -2711,11 +2712,13 @@ static int builtin_read(parser_t &parser, wchar_t **argv)
         reader_set_exit_on_interrupt(true);
 
         reader_set_buffer(commandline, wcslen(commandline));
+        
         proc_push_interactive(1);
 
         event_fire_generic(L"fish_prompt");
         line = reader_readline(nchars);
         proc_pop_interactive();
+        
         if (line)
         {
             if (0 < nchars && nchars < wcslen(line))
