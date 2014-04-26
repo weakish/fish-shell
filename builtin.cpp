@@ -1582,7 +1582,7 @@ static int builtin_functions(parser_t &parser, wchar_t **argv)
             return STATUS_BUILTIN_ERROR;
         }
         func = argv[woptind];
-        if (!function_exists(func))
+        if (!function_exists(parser, func))
         {
             append_format(stderr_buffer,
                           _(L"%ls: Function '%ls' does not exist\n"),
@@ -1594,7 +1594,7 @@ static int builtin_functions(parser_t &parser, wchar_t **argv)
             return STATUS_BUILTIN_ERROR;
         }
 
-        function_set_desc(func, desc);
+        function_set_desc(parser, func, desc);
 
         return STATUS_BUILTIN_OK;
     }
@@ -1644,7 +1644,7 @@ static int builtin_functions(parser_t &parser, wchar_t **argv)
         current_func = argv[woptind];
         new_func = argv[woptind+1];
 
-        if (!function_exists(current_func))
+        if (!function_exists(parser, current_func))
         {
             append_format(stderr_buffer,
                           _(L"%ls: Function '%ls' does not exist\n"),
@@ -1666,7 +1666,7 @@ static int builtin_functions(parser_t &parser, wchar_t **argv)
         }
 
         // keep things simple: don't allow existing names to be copy targets.
-        if (function_exists(new_func))
+        if (function_exists(parser, new_func))
         {
             append_format(stderr_buffer,
                           _(L"%ls: Function '%ls' already exists. Cannot create copy '%ls'\n"),
@@ -1685,7 +1685,7 @@ static int builtin_functions(parser_t &parser, wchar_t **argv)
 
     for (i=woptind; i<argc; i++)
     {
-        if (!function_exists(argv[i]))
+        if (!function_exists(parser, argv[i]))
             res++;
         else
         {

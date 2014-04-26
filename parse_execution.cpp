@@ -177,7 +177,7 @@ enum process_type_t parse_execution_context_t::process_type_for_command(const pa
         /* What happens if this builtin is not valid? */
         process_type = INTERNAL_BUILTIN;
     }
-    else if (function_exists(cmd))
+    else if (function_exists(*this->parser, cmd))
     {
         process_type = INTERNAL_FUNCTION;
     }
@@ -941,7 +941,7 @@ parse_execution_result_t parse_execution_context_t::populate_plain_process(job_t
         path_to_external_command.clear();
 
         /* If we have defined a wrapper around cd, use it, otherwise use the cd builtin */
-        process_type = function_exists(L"cd") ? INTERNAL_FUNCTION : INTERNAL_BUILTIN;
+        process_type = function_exists(*this->parser, L"cd") ? INTERNAL_FUNCTION : INTERNAL_BUILTIN;
     }
     else
     {

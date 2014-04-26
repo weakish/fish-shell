@@ -75,11 +75,10 @@ int autoload_t::unload(const wcstring &cmd)
     return this->evict_node(cmd);
 }
 
-int autoload_t::load(const wcstring &cmd, bool reload)
+int autoload_t::load(parser_t &parser, const wcstring &cmd, bool reload)
 {
     int res;
     CHECK_BLOCK(0);
-    ASSERT_IS_MAIN_THREAD();
 
     /* We don't yet have per-context functions, so we always use the main one */
     env_var_t path_var = env_get_from_main(env_var_name);
@@ -118,7 +117,7 @@ int autoload_t::load(const wcstring &cmd, bool reload)
         return 1;
     }
     /* Try loading it */
-    res = this->locate_file_and_maybe_load_it(cmd, true, reload, this->last_path_tokenized);
+    res = this->locate_file_and_maybe_load_it(cmd, true, reload, this->last_path_tokenized, &parser);
 
     /* Clean up */
     is_loading_set.erase(where);
@@ -135,7 +134,7 @@ bool autoload_t::can_load(const wcstring &cmd)
 
     std::vector<wcstring> path_list;
     tokenize_variable_array(path_var, path_list);
-    return this->locate_file_and_maybe_load_it(cmd, false, false, path_list);
+    return this->locate_file_and_maybe_load_it(cmd, false, false, path_list, NULL);
 }
 
 static bool script_name_precedes_script_name(const builtin_script_t &script1, const builtin_script_t &script2)
@@ -194,7 +193,7 @@ autoload_function_t *autoload_t::get_autoloaded_function_with_creation(const wcs
 
      Result: if really_load is true, returns whether the function was loaded. Otherwise returns whether the function existed.
 */
-bool autoload_t::locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list)
+bool autoload_t::locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list, parser_t *out_parser)
 {
     /* Note that we are NOT locked in this function! */
     bool reloaded = 0;

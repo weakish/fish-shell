@@ -128,12 +128,12 @@ bool function_get_desc(const wcstring &name, wcstring *out_desc);
 /**
    Sets the description of the function with the name \c name.
 */
-void function_set_desc(const wcstring &name, const wcstring &desc);
+void function_set_desc(parser_t &parser, const wcstring &name, const wcstring &desc);
 
 /**
    Returns true if the function with the name name exists.
 */
-int function_exists(const wcstring &name);
+int function_exists(parser_t &parser, const wcstring &name);
 
 /**
    Returns true if the function with the name name exists, without triggering autoload.

@@ -948,7 +948,7 @@ void reader_write_title(parser_t &parser, const wcstring &cmd)
     }
 
     wcstring fish_title_command = DEFAULT_TITLE;
-    if (function_exists(L"fish_title"))
+    if (function_exists(parser, L"fish_title"))
     {
         fish_title_command = L"fish_title";
         if (! cmd.empty())
@@ -957,6 +957,8 @@ void reader_write_title(parser_t &parser, const wcstring &cmd)
             fish_title_command.append(parse_util_escape_string_with_quote(cmd, L'\0'));
         }
     }
+    if (fish_title_command.empty())
+        return;
 
     wcstring_list_t lst;
 
@@ -2944,12 +2946,12 @@ static int read_i(void)
     while ((!data->end_loop) && (!sanity_check()))
     {
         event_fire_generic(L"fish_prompt");
-        if (function_exists(LEFT_PROMPT_FUNCTION_NAME))
+        if (function_exists(parser, LEFT_PROMPT_FUNCTION_NAME))
             reader_set_left_prompt(LEFT_PROMPT_FUNCTION_NAME);
         else
             reader_set_left_prompt(DEFAULT_PROMPT);
 
-        if (function_exists(RIGHT_PROMPT_FUNCTION_NAME))
+        if (function_exists(parser, RIGHT_PROMPT_FUNCTION_NAME))
             reader_set_right_prompt(RIGHT_PROMPT_FUNCTION_NAME);
         else
             reader_set_right_prompt(L"");

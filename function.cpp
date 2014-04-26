@@ -78,7 +78,7 @@ static bool is_autoload = false;
    Make sure that if the specified function is a dynamically loaded
    function, it has been fully loaded.
 */
-static int load(const wcstring &name)
+static int load(parser_t &parser, const wcstring &name)
 {
     ASSERT_IS_MAIN_THREAD();
     scoped_lock lock(functions_lock);
@@ -92,7 +92,7 @@ static int load(const wcstring &name)
     }
 
     is_autoload = true;
-    res = function_autoloader.load(name, true);
+    res = function_autoloader.load(parser, name, true);
     is_autoload = was_autoload;
     return res;
 }
@@ -210,12 +210,12 @@ void function_add(const function_data_t &data, const parser_t &parser, int defin
     }
 }
 
-int function_exists(const wcstring &cmd)
+int function_exists(parser_t &parser, const wcstring &cmd)
 {
     if (parser_keywords_is_reserved(cmd))
         return 0;
     scoped_lock lock(functions_lock);
-    load(cmd);
+    load(parser, cmd);
     return loaded_functions.find(cmd) != loaded_functions.end();
 }
 
@@ -313,9 +313,9 @@ bool function_get_desc(const wcstring &name, wcstring *out_desc)
     }
 }
 
-void function_set_desc(const wcstring &name, const wcstring &desc)
+void function_set_desc(parser_t &parser, const wcstring &name, const wcstring &desc)
 {
-    load(name);
+    load(parser, name);
     scoped_lock lock(functions_lock);
     function_map_t::iterator iter = loaded_functions.find(name);
     if (iter != loaded_functions.end())

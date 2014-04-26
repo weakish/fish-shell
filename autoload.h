@@ -13,6 +13,8 @@
 #include "common.h"
 #include "lru.h"
 
+class parser_t;
+
 /** A struct responsible for recording an attempt to access a file. */
 struct file_access_attempt_t
 {
@@ -78,7 +80,7 @@ private:
         this->evict_all_nodes();
     }
 
-    bool locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list);
+    bool locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list, parser_t *opt_parser);
 
     virtual void node_was_evicted(autoload_function_t *node);
 
@@ -103,11 +105,12 @@ public:
 
        Autoloading one file may unload another.
 
+       \param parser the parser to use in loading
        \param cmd the filename to search for. The suffix '.fish' is always added to this name
        \param on_unload a callback function to run if a suitable file is found, which has not already been run. unload will also be called for old files which are unloaded.
        \param reload wheter to recheck file timestamps on already loaded files
     */
-    int load(const wcstring &cmd, bool reload);
+    int load(parser_t &parser, const wcstring &cmd, bool reload);
 
     /** Check whether we have tried loading the given command. Does not do any I/O. */
     bool has_tried_loading(const wcstring &cmd);

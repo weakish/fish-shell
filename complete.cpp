@@ -1107,17 +1107,17 @@ static int short_ok(const wcstring &arg_str, wchar_t nextopt, const wcstring &al
     return 1;
 }
 
-void complete_load(const wcstring &name, bool reload)
+void complete_load(parser_t &parser, const wcstring &name, bool reload)
 {
-    completion_autoloader.load(name, reload);
+    completion_autoloader.load(parser, name, reload);
 }
 
-// Performed on main thread, from background thread. Return type is ignored.
+// Performed on main thread, from background thread. Return value is ignored.
 static int complete_load_no_reload(wcstring *name)
 {
     assert(name != NULL);
     ASSERT_IS_MAIN_THREAD();
-    complete_load(*name, false);
+    complete_load(parser_t::principal_parser(), *name, false);
     return 0;
 }
 
@@ -1150,7 +1150,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
     if (this->type() == COMPLETE_DEFAULT)
     {
         ASSERT_IS_MAIN_THREAD();
-        complete_load(cmd, true);
+        complete_load(parser_t::principal_parser(), cmd, true);
     }
     else if (this->type() == COMPLETE_AUTOSUGGEST)
     {
