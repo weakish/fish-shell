@@ -1,5 +1,10 @@
-function fish_vi_key_bindings -d "vi-like key bindings for fish"
+function fish_vi_key_bindings --description 'vi-like key bindings for fish'
   bind --erase --all
+  set -l init_mode insert
+  if set -q argv[1]
+    set init_mode $argv[1]
+  end
+
 
   ##
   ## command mode
@@ -33,6 +38,7 @@ function fish_vi_key_bindings -d "vi-like key bindings for fish"
 
   bind \x24 end-of-line
   bind \x5e beginning-of-line
+  bind 0 beginning-of-line
   bind g\x24 end-of-line
   bind g\x5e beginning-of-line
   bind \e\[H beginning-of-line
@@ -175,8 +181,8 @@ function fish_vi_key_bindings -d "vi-like key bindings for fish"
   bind -M insert -k right forward-char
   bind -M insert -k left backward-char
 
-  bind -M insert -m default \cc force-repaint
-  bind -M insert -m default \e force-repaint
+  bind -M insert -m default \cc backward-char force-repaint
+  bind -M insert -m default \e backward-char force-repaint
 
   bind -M insert \cd exit
 
@@ -213,4 +219,5 @@ function fish_vi_key_bindings -d "vi-like key bindings for fish"
   bind -M visual -m default \cc end-selection force-repaint
   bind -M visual -m default \e  end-selection force-repaint
 
+  set fish_bind_mode $init_mode
 end

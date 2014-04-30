@@ -281,8 +281,6 @@ char *wcs2str(const wchar_t *in)
         }
         return wcs2str_internal(in, out);
     }
-
-    return wcs2str_internal(in, out);
 }
 
 char *wcs2str(const wcstring &in)
@@ -412,7 +410,7 @@ wcstring format_string(const wchar_t *format, ...)
     return result;
 }
 
-wcstring vformat_string(const wchar_t *format, va_list va_orig)
+void append_formatv(wcstring &target, const wchar_t *format, va_list va_orig)
 {
     const int saved_err = errno;
     /*
@@ -463,22 +461,21 @@ wcstring vformat_string(const wchar_t *format, va_list va_orig)
         va_end(va);
     }
 
-    wcstring result = wcstring(buff);
+    target.append(buff);
 
     if (buff != static_buff)
+    {
         free(buff);
+    }
 
     errno = saved_err;
-    return result;
 }
 
-void append_formatv(wcstring &str, const wchar_t *format, va_list ap)
+wcstring vformat_string(const wchar_t *format, va_list va_orig)
 {
-    /* Preserve errno across this call since it likes to stomp on it */
-    int err = errno;
-    str.append(vformat_string(format, ap));
-    errno = err;
-
+    wcstring result;
+    append_formatv(result, format, va_orig);
+    return result;
 }
 
 void append_format(wcstring &str, const wchar_t *format, ...)
@@ -718,6 +715,18 @@ void print_stderr(const wcstring &str)
     fprintf(stderr, "%ls\n", str.c_str());
 }
 
+void read_ignore(int fd, void *buff, size_t count)
+{
+    size_t ignore __attribute__((unused));
+    ignore = read(fd, buff, count);
+}
+
+void write_ignore(int fd, const void *buff, size_t count)
+{
+    size_t ignore __attribute__((unused));
+    ignore = write(fd, buff, count);
+}
+
 
 void debug_safe(int level, const char *msg, const char *param1, const char *param2, const char *param3, const char *param4, const char *param5, const char *param6, const char *param7, const char *param8, const char *param9, const char *param10, const char *param11, const char *param12)
 {
@@ -738,7 +747,7 @@ void debug_safe(int level, const char *msg, const char *param1, const char *para
         if (end == NULL)
             end = cursor + strlen(cursor);
 
-        write(STDERR_FILENO, cursor, end - cursor);
+        write_ignore(STDERR_FILENO, cursor, end - cursor);
 
         if (end[0] == '%' && end[1] == 's')
         {
@@ -747,7 +756,7 @@ void debug_safe(int level, const char *msg, const char *param1, const char *para
             const char *format = params[param_idx++];
             if (! format)
                 format = "(null)";
-            write(STDERR_FILENO, format, strlen(format));
+            write_ignore(STDERR_FILENO, format, strlen(format));
             cursor = end + 2;
         }
         else if (end[0] == '\0')
@@ -763,7 +772,7 @@ void debug_safe(int level, const char *msg, const char *param1, const char *para
     }
 
     // We always append a newline
-    write(STDERR_FILENO, "\n", 1);
+    write_ignore(STDERR_FILENO, "\n", 1);
 
     errno = errno_old;
 }

@@ -773,18 +773,6 @@ void parser_t::job_add(job_t *job)
     this->my_job_list.push_front(job);
 }
 
-job_t *parser_t::job_create(const io_chain_t &io)
-{
-    job_t *res = new job_t(acquire_job_id(), io);
-    this->my_job_list.push_front(res);
-
-    job_set_flag(res,
-                 JOB_CONTROL,
-                 (job_control_mode==JOB_CONTROL_ALL) ||
-                 ((job_control_mode == JOB_CONTROL_INTERACTIVE) && (get_is_interactive())));
-    return res;
-}
-
 bool parser_t::job_remove(job_t *j)
 {
     job_list_t::iterator iter = std::find(my_job_list.begin(), my_job_list.end(), j);
@@ -878,10 +866,9 @@ int parser_t::eval(const wcstring &cmd, const io_chain_t &io, enum block_type_t 
     execution_contexts.push_back(ctx);
 
     /* Execute the first node */
-    int result = 1;
     if (! tree.empty())
     {
-        result = this->eval_block_node(0, io, block_type);
+        this->eval_block_node(0, io, block_type);
     }
 
     /* Clean up the execution context stack */
@@ -1204,17 +1191,4 @@ scope_block_t::scope_block_t(block_type_t type) : block_t(type)
 
 breakpoint_block_t::breakpoint_block_t() : block_t(BREAKPOINT)
 {
-}
-
-bool parser_use_ast(void)
-{
-    env_var_t var = env_get_string(L"fish_new_parser");
-    if (var.missing_or_empty())
-    {
-        return 1;
-    }
-    else
-    {
-        return from_string<bool>(var);
-    }
 }

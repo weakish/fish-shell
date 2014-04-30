@@ -720,8 +720,7 @@ static env_var_t fishd_env_get(const char *key)
     else
     {
         const wcstring wkey = str2wcstring(key);
-        const wchar_t *tmp = env_universal_common_get(wkey);
-        return tmp ? env_var_t(tmp) : env_var_t::missing_var();
+        return env_universal_common_get(wkey);
     }
 }
 
@@ -881,6 +880,8 @@ int main(int argc, char ** argv)
     int child_socket;
     struct sockaddr_un remote;
     socklen_t t;
+    uid_t sock_euid;
+    gid_t sock_egid;
     int max_fd;
     int update_count=0;
 
@@ -1001,7 +1002,12 @@ int main(int argc, char ** argv)
             {
                 debug(4, L"Connected with new child on fd %d", child_socket);
 
-                if (make_fd_nonblocking(child_socket) != 0)
+                if (((getpeereid(child_socket, &sock_euid, &sock_egid) != 0) || sock_euid != geteuid()))
+                {
+                    debug(1, L"Wrong credentials for child on fd %d", child_socket);
+                    close(child_socket);
+                }
+                else if (make_fd_nonblocking(child_socket) != 0)
                 {
                     wperror(L"fcntl");
                     close(child_socket);
