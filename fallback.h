@@ -94,7 +94,7 @@ int tputs(const char *str, int affcnt, int (*fish_putc)(tputs_arg_t));
 */
 
 #define tparm tparm_solaris_kludge
-char *tparm_solaris_kludge(char *str, ...);
+extern "C" char *tparm_solaris_kludge(char *str, ...);
 
 #endif
 
