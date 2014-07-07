@@ -333,6 +333,11 @@ static inline void safe_append(char *buffer, const char *s, size_t buffsize)
     strncat(buffer, s, buffsize - strlen(buffer) - 1);
 }
 
+// Solaris does not have declarations of these in the headers
+// Redeclare them so we can use them
+extern const int sys_nerr;
+extern const char *const sys_errlist[];
+
 // In general, strerror is not async-safe, and therefore we cannot use it directly
 // So instead we have to grub through sys_nerr and sys_errlist directly
 // On GNU toolchain, this will produce a deprecation warning from the linker (!!),
