@@ -65,6 +65,7 @@
 #include "path.h"
 #include "history.h"
 #include "parse_tree.h"
+#include "docopt/docopt_registration.h"
 
 /**
    The default prompt for the read command
@@ -3755,6 +3756,22 @@ static const builtin_data_t *builtin_lookup(const wcstring &name)
     }
 }
 
+static void docopt_experiment_init() {
+    const wchar_t *jobs_desc =
+    L"Usage:\n"
+    L"       jobs [options] [<pid>]\n"
+    L"\n"
+    L"Options:\n"
+    L"       -c, --command  prints the command name for each process in jobs.\n"
+    L"       -g, --group  only prints the group ID of each job.\n"
+    L"       -h, --help  displays a help message and exits.\n"
+    L"       -l, --last  prints only the last job to be started.\n"
+    L"       -p, --pid  prints the process ID for each process in all jobs.\n"
+    ;
+    
+    docopt_register_description(L"jobs", L"default", jobs_desc);
+}
+
 void builtin_init()
 {
 
@@ -3763,6 +3780,8 @@ void builtin_init()
     {
         intern_static(builtin_datas[i].name);
     }
+    
+    docopt_experiment_init();
 }
 
 void builtin_destroy()

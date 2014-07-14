@@ -36,6 +36,8 @@
 #include "path.h"
 #include "history.h"
 #include "parse_tree.h"
+#include "docopt/docopt_fish.h"
+#include "docopt/docopt_registration.h"
 
 #define CURSOR_POSITION_INVALID ((size_t)(-1))
 
@@ -943,6 +945,9 @@ class highlighter_t
 
     /* Colors the source range of a node with a given color */
     void color_node(const parse_node_t &node, highlight_spec_t color);
+    
+    /* Color via docopt */
+    void apply_docopt_coloring(const parse_node_t &plain_statement);
 
 public:
 
@@ -1428,6 +1433,17 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
                 break;
         }
     }
+    
+    /* Apply docopt color */
+    for (parse_node_tree_t::const_iterator iter = parse_tree.begin(); iter != parse_tree.end(); ++iter)
+    {
+        const parse_node_t &node = *iter;
+        if (node.type == symbol_plain_statement)
+        {
+            this->apply_docopt_coloring(node);
+        }
+    }
+
 
     if (this->io_ok && this->cursor_pos <= this->buff.size())
     {
@@ -1461,6 +1477,50 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
     }
 
     return color_array;
+}
+
+void highlighter_t::apply_docopt_coloring(const parse_node_t &statement_node)
+{
+    using namespace docopt_fish;
+    assert(statement_node.type == symbol_plain_statement);
+    wcstring_list_t argv;
+    
+    // Program name
+    const parse_node_t *name = this->parse_tree.get_child(statement_node, 0, parse_token_type_string);
+    assert(name != NULL);
+    argv.push_back(name->get_source(this->buff));
+    
+    // All arguments
+    const parse_node_tree_t::parse_node_list_t args = this->parse_tree.find_nodes(statement_node, symbol_argument);
+    for (size_t i=0; i < args.size(); i++) {
+        argv.push_back(args.at(i)->get_source(this->buff));
+    }
+    
+    // TODO: need to escape all of these!
+    const wcstring &cmd_name = argv.at(0);
+    const wcstring_list_t regs = docopt_copy_registered_descriptions(cmd_name);
+    if (! regs.empty()) {
+        const wcstring &doc = regs.at(0);
+        std::vector<error_t<wcstring> > errors;
+        argument_parser_t<wcstring> *arg_parser = argument_parser_t<wcstring>::create(doc, &errors);
+        for (size_t i=0; i < errors.size(); i++) {
+            fprintf(stderr, "Error: %ls\n", errors.at(i).text.c_str());
+        }
+        if (arg_parser) {
+            std::vector<argument_status_t> statuses = arg_parser->validate_arguments(argv, flags_default);
+            
+            /* Apply these to the nodes. Ignore the program name. */
+            assert(statuses.size() == argv.size());
+            assert(statuses.size() == args.size() + 1);
+            for (size_t i=1; i < statuses.size(); i++) {
+                const parse_node_t *arg = args.at(i - 1);
+                if (statuses.at(i) == status_invalid) {
+                    this->color_node(*arg, highlight_spec_error);
+                }
+            }
+            delete arg_parser;
+        }
+    }
 }
 
 void highlight_shell(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const env_vars_snapshot_t &vars)

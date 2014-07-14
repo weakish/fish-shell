@@ -116,6 +116,8 @@
 		D0A56501168D258300AF6161 /* man in Copy Files */ = {isa = PBXBuildFile; fileRef = D0A564F1168D0BAB00AF6161 /* man */; };
 		D0C52F371765284C00BFAB82 /* parse_tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0C52F351765284C00BFAB82 /* parse_tree.cpp */; };
 		D0C9733818DE5449002D7C81 /* utf8.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0C9733718DE5449002D7C81 /* utf8.cpp */; };
+		D0C9A72B197444E40006BE78 /* docopt_fish.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0C9A729197444E40006BE78 /* docopt_fish.cpp */; };
+		D0C9A72E19745B8E0006BE78 /* docopt_registration.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0C9A72C19745B8E0006BE78 /* docopt_registration.cpp */; };
 		D0CBD587159EF0E10024809C /* launch_fish.scpt in Resources */ = {isa = PBXBuildFile; fileRef = D0CBD586159EF0E10024809C /* launch_fish.scpt */; };
 		D0D02A67159837AD008E62BD /* complete.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0A0853713B3ACEE0099B651 /* complete.cpp */; };
 		D0D02A69159837B2008E62BD /* env.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0A0853A13B3ACEE0099B651 /* env.cpp */; };
@@ -448,6 +450,10 @@
 		D0C861EA16CC7054003B5A04 /* builtin_set_color.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = builtin_set_color.cpp; sourceTree = "<group>"; };
 		D0C9733718DE5449002D7C81 /* utf8.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = utf8.cpp; sourceTree = "<group>"; };
 		D0C9733A18DE5451002D7C81 /* utf8.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = utf8.h; sourceTree = "<group>"; };
+		D0C9A729197444E40006BE78 /* docopt_fish.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = docopt_fish.cpp; sourceTree = "<group>"; };
+		D0C9A72A197444E40006BE78 /* docopt_fish.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = docopt_fish.h; sourceTree = "<group>"; };
+		D0C9A72C19745B8E0006BE78 /* docopt_registration.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = docopt_registration.cpp; sourceTree = "<group>"; };
+		D0C9A72D19745B8E0006BE78 /* docopt_registration.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = docopt_registration.h; sourceTree = "<group>"; };
 		D0CA63F316FC275F00093BD4 /* builtin_printf.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = builtin_printf.cpp; sourceTree = "<group>"; };
 		D0CBD580159EE48F0024809C /* config.fish */ = {isa = PBXFileReference; lastKnownFileType = text; name = config.fish; path = share/config.fish; sourceTree = "<group>"; };
 		D0CBD583159EEE010024809C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -538,6 +544,17 @@
 			);
 			sourceTree = "<group>";
 		};
+		D0C9A728197444E40006BE78 /* docopt */ = {
+			isa = PBXGroup;
+			children = (
+				D0C9A72A197444E40006BE78 /* docopt_fish.h */,
+				D0C9A729197444E40006BE78 /* docopt_fish.cpp */,
+				D0C9A72D19745B8E0006BE78 /* docopt_registration.h */,
+				D0C9A72C19745B8E0006BE78 /* docopt_registration.cpp */,
+			);
+			path = docopt;
+			sourceTree = "<group>";
+		};
 		D0D02A8E15983D5F008E62BD /* Libraries */ = {
 			isa = PBXGroup;
 			children = (
@@ -550,6 +567,7 @@
 		D0D02A91159845EF008E62BD /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				D0C9A728197444E40006BE78 /* docopt */,
 				D0C6FCCB14CFA4B7004CE8AD /* autoload.h */,
 				D0C6FCC914CFA4B0004CE8AD /* autoload.cpp */,
 				D0A0850313B3ACEE0099B651 /* builtin.h */,
@@ -1107,12 +1125,14 @@
 				D0D02A7615983869008E62BD /* wutil.cpp in Sources */,
 				D0D02A7715983875008E62BD /* input.cpp in Sources */,
 				D0D02A781598387E008E62BD /* output.cpp in Sources */,
+				D0C9A72B197444E40006BE78 /* docopt_fish.cpp in Sources */,
 				D0D02A7915983888008E62BD /* intern.cpp in Sources */,
 				D0D02A7B15983928008E62BD /* env_universal_common.cpp in Sources */,
 				D032388B1849D1980032CF2C /* pager.cpp in Sources */,
 				D0D02A89159839DF008E62BD /* fish.cpp in Sources */,
 				D0C52F371765284C00BFAB82 /* parse_tree.cpp in Sources */,
 				D0FE8EE8179FB760008C9F21 /* parse_productions.cpp in Sources */,
+				D0C9A72E19745B8E0006BE78 /* docopt_registration.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
