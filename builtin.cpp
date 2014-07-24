@@ -2671,7 +2671,7 @@ static int builtin_status(parser_t &parser, wchar_t **argv)
                 {
                     append_format(stderr_buffer,
                                   L"%ls: Invalid job control mode '%ls'\n",
-                                  woptarg);
+                                  L"status", woptarg);
                     res = 1;
                 }
                 mode = DONE;
