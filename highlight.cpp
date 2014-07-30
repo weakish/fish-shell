@@ -1498,27 +1498,17 @@ void highlighter_t::apply_docopt_coloring(const parse_node_t &statement_node)
     
     // TODO: need to escape all of these!
     const wcstring &cmd_name = argv.at(0);
-    const wcstring_list_t regs = docopt_copy_registered_descriptions(cmd_name);
-    if (! regs.empty()) {
-        const wcstring &doc = regs.at(0);
-        std::vector<error_t<wcstring> > errors;
-        argument_parser_t<wcstring> *arg_parser = argument_parser_t<wcstring>::create(doc, &errors);
-        for (size_t i=0; i < errors.size(); i++) {
-            fprintf(stderr, "Error: %ls\n", errors.at(i).text.c_str());
-        }
-        if (arg_parser) {
-            std::vector<argument_status_t> statuses = arg_parser->validate_arguments(argv, flags_default);
-            
-            /* Apply these to the nodes. Ignore the program name. */
-            assert(statuses.size() == argv.size());
-            assert(statuses.size() == args.size() + 1);
-            for (size_t i=1; i < statuses.size(); i++) {
-                const parse_node_t *arg = args.at(i - 1);
-                if (statuses.at(i) == status_invalid) {
-                    this->color_node(*arg, highlight_spec_error);
-                }
+    const std::vector<argument_status_t> statuses = docopt_validate_arguments(cmd_name, argv, docopt_fish::flags_default);
+    if (! statuses.empty())
+    {
+        /* Apply these to the nodes. Ignore the program name. */
+        assert(statuses.size() == argv.size());
+        assert(statuses.size() == args.size() + 1);
+        for (size_t i=1; i < statuses.size(); i++) {
+            const parse_node_t *arg = args.at(i - 1);
+            if (statuses.at(i) == status_invalid) {
+                this->color_node(*arg, highlight_spec_error);
             }
-            delete arg_parser;
         }
     }
 }
