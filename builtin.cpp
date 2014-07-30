@@ -3777,6 +3777,8 @@ static void docopt_experiment_init() {
     L"       -h, --help  displays a help message and exits.\n"
     L"       -l, --last  prints only the last job to be started.\n"
     L"       -p, --pid  prints the process ID for each process in all jobs.\n"
+    L"Conditions:\n"
+    L"       <pid>  (jobs --pid)"
     ;
     
     docopt_register_description(L"jobs", L"default", jobs_desc);

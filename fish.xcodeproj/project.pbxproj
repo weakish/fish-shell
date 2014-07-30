@@ -55,6 +55,8 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		D007690D19899E4400CA4627 /* docopt_fish_parse_tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D007690C19899E4400CA4627 /* docopt_fish_parse_tree.cpp */; };
+		D007690F19899E7600CA4627 /* docopt_fish_parse_tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D007690C19899E4400CA4627 /* docopt_fish_parse_tree.cpp */; };
 		D00F63F119137E9D00FCCDEC /* fish_version.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D00F63F019137E9D00FCCDEC /* fish_version.cpp */; };
 		D00F63F219137E9D00FCCDEC /* fish_version.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D00F63F019137E9D00FCCDEC /* fish_version.cpp */; };
 		D01A2D24169B736200767098 /* man1 in Copy Files */ = {isa = PBXBuildFile; fileRef = D01A2D23169B730A00767098 /* man1 */; };
@@ -327,6 +329,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D007690B19899E4000CA4627 /* docopt_fish_grammar.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = docopt_fish_grammar.h; sourceTree = "<group>"; };
+		D007690C19899E4400CA4627 /* docopt_fish_parse_tree.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = docopt_fish_parse_tree.cpp; sourceTree = "<group>"; };
+		D007690E19899E4F00CA4627 /* docopt_fish_types.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = docopt_fish_types.h; sourceTree = "<group>"; };
 		D00F63F019137E9D00FCCDEC /* fish_version.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = fish_version.cpp; sourceTree = "<group>"; };
 		D01A2D23169B730A00767098 /* man1 */ = {isa = PBXFileReference; lastKnownFileType = text; name = man1; path = pages_for_manpath/man1; sourceTree = BUILT_PRODUCTS_DIR; };
 		D025C02715D1FEA100B9DB63 /* completions */ = {isa = PBXFileReference; lastKnownFileType = folder; name = completions; path = share/completions; sourceTree = "<group>"; };
@@ -547,6 +552,9 @@
 		D0C9A728197444E40006BE78 /* docopt */ = {
 			isa = PBXGroup;
 			children = (
+				D007690B19899E4000CA4627 /* docopt_fish_grammar.h */,
+				D007690C19899E4400CA4627 /* docopt_fish_parse_tree.cpp */,
+				D007690E19899E4F00CA4627 /* docopt_fish_types.h */,
 				D0C9A72A197444E40006BE78 /* docopt_fish.h */,
 				D0C9A729197444E40006BE78 /* docopt_fish.cpp */,
 				D0C9A72D19745B8E0006BE78 /* docopt_registration.h */,
@@ -1125,7 +1133,6 @@
 				D0D02A7615983869008E62BD /* wutil.cpp in Sources */,
 				D0D02A7715983875008E62BD /* input.cpp in Sources */,
 				D0D02A781598387E008E62BD /* output.cpp in Sources */,
-				D0C9A72B197444E40006BE78 /* docopt_fish.cpp in Sources */,
 				D0D02A7915983888008E62BD /* intern.cpp in Sources */,
 				D0D02A7B15983928008E62BD /* env_universal_common.cpp in Sources */,
 				D032388B1849D1980032CF2C /* pager.cpp in Sources */,
@@ -1133,6 +1140,8 @@
 				D0C52F371765284C00BFAB82 /* parse_tree.cpp in Sources */,
 				D0FE8EE8179FB760008C9F21 /* parse_productions.cpp in Sources */,
 				D0C9A72E19745B8E0006BE78 /* docopt_registration.cpp in Sources */,
+				D0C9A72B197444E40006BE78 /* docopt_fish.cpp in Sources */,
+				D007690F19899E7600CA4627 /* docopt_fish_parse_tree.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1140,6 +1149,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D007690D19899E4400CA4627 /* docopt_fish_parse_tree.cpp in Sources */,
 				D0F01A0315A978910034B3B1 /* osx_fish_launcher.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
