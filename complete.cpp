@@ -46,6 +46,7 @@
 #include "path.h"
 #include "parse_tree.h"
 #include "iothread.h"
+#include "docopt/docopt_registration.h"
 
 /*
   Completion description strings, mostly for different types of files, such as sockets, block devices, etc.
@@ -404,6 +405,8 @@ public:
                         const wcstring &popt,
                         const wcstring &str,
                         bool use_switches);
+    
+    bool complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src);
 
     void complete_param_expand(const wcstring &str, bool do_file);
 
@@ -1609,6 +1612,40 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
     return use_files;
 }
 
+// Attempts to fetch completions from docopt
+bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src)
+{
+    bool success = false;
+    wcstring current_command_unescape;
+    if (unescape_string(cmd_orig, &current_command_unescape, UNESCAPE_DEFAULT))
+    {
+        wcstring_list_t argv;
+        argv.push_back(current_command_unescape);
+        for (size_t i=0; i < arg_nodes.size(); i++)
+        {
+            // TODO: need to escape all of these!
+            argv.push_back(arg_nodes.at(i)->get_source(src));
+        }
+        const wcstring_list_t suggestions = docopt_suggest_next_argument(current_command_unescape, argv);
+        for (size_t i=0; i < suggestions.size(); i++)
+        {
+            const wcstring &suggestion = suggestions.at(i);
+            if (string_prefixes_string(L"<", suggestion))
+            {
+                // Variable, ignore it
+            }
+            else
+            {
+                // TODO: descriptions
+                append_completion(this->completions, suggestion, L"", COMPLETE_REPLACES_TOKEN);
+                success = true;
+                break;
+            }
+        }
+    }
+    return success;
+}
+
 /**
    Perform file completion on the specified string
 */
@@ -1989,6 +2026,10 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                 if (in_redirection)
                 {
                     do_file = true;
+                }
+                else if (completer.complete_from_docopt(current_command, tree, all_arguments, cmd))
+                {
+                    do_file = false;
                 }
                 else
                 {

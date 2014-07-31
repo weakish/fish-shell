@@ -1493,10 +1493,10 @@ void highlighter_t::apply_docopt_coloring(const parse_node_t &statement_node)
     // All arguments
     const parse_node_tree_t::parse_node_list_t args = this->parse_tree.find_nodes(statement_node, symbol_argument);
     for (size_t i=0; i < args.size(); i++) {
+        // TODO: need to escape all of these!
         argv.push_back(args.at(i)->get_source(this->buff));
     }
     
-    // TODO: need to escape all of these!
     const wcstring &cmd_name = argv.at(0);
     const std::vector<argument_status_t> statuses = docopt_validate_arguments(cmd_name, argv, docopt_fish::flags_default);
     if (! statuses.empty())
