@@ -1927,17 +1927,36 @@ static void test_docopt_complete(void)
     L"\n"
     L"Options:\n"
     L"       -c, --command  Command Description\n"
-    L"       -g, --group  Group Description\n"
+    L"       -g <val>, --group <val>\n"
+    L"       -x <dynval>\n"
     L"       -h, --help  Help Description\n"
+    L"Conditions:\n"
+    L"       <val>  ONE TWO THREE\n"
+    L"       <dynval>  (echo -n ONE) (echo -n TWO) (echo -n THREE)"
     ;
     
     docopt_register_description(cmd, L"fish_test", desc);
-    
     completion_list_t completions;
+
     complete(L"flea --c", completions, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);
     do_test(completions.at(0).completion == L"ommand");
     do_test(completions.at(0).description == L"Command Description");
+    
+    completions.clear();
+    complete(L"flea --group ", completions, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 3);
+    do_test(completions.at(0).completion == L"ONE");
+    do_test(completions.at(1).completion == L"TWO");
+    do_test(completions.at(2).completion == L"THREE");
+
+    completions.clear();
+    complete(L"flea -x ", completions, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 3);
+    do_test(completions.at(0).completion == L"ONE");
+    do_test(completions.at(1).completion == L"TWO");
+    do_test(completions.at(2).completion == L"THREE");
+
 }
 
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)

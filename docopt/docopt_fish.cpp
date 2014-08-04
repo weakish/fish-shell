@@ -395,6 +395,19 @@ static bool get_next_line(const string_t &str, range_t *inout_range, size_t end 
     return success;
 }
 
+/* Returns true if the given range of this->source equals the given string. Optionally specify a start and length in the given string. */
+bool range_equals_string(const range_t &range, const string_t &str, size_t start_in_str = 0, size_t len_in_str = npos) const {
+    assert(range.end() <= this->source.size());
+    assert(start_in_str <= str.size());
+    // clamp length to the maximum allowed
+    len_in_str = std::min(len_in_str, str.size() - start_in_str);
+    bool result = false;
+    if (range.length == len_in_str) {
+        result = ! this->source.compare(range.start, range.length, str, start_in_str, len_in_str);
+    }
+    return result;
+}
+
 /* Returns true if the two strings are equal. */
 static bool str_equals(const char *a, const string_t &str) {
     size_t len = str.size();
@@ -508,9 +521,9 @@ option_list_t parse_one_option_spec(const range_t &range, error_list_t *errors) 
         options_end = end; // no description
     }
 
-    // Determine the description range (possibly empty). Skip over its leading whitespace
+    // Determine the description range (possibly empty). Trim leading and trailing whitespace
     range_t description_range = range_t(options_end, end - options_end);
-    scan_while(this->source, &description_range, isspace);
+    description_range = trim_whitespace(description_range, this->source);
     
     // Parse out a "default:" value.
     range_t default_value_range;
@@ -698,14 +711,15 @@ condition_map_t parse_conditions_spec(error_list_t *errors) const {
         while (get_next_line(this->source, &line_range, section_end)) {
             // A specification look like this:
             // <pid>  stuff
-            // Two spaces are the separator
+            // Two spaces are the separator. But make sure we skip leading spaces!
             // TODO: actual error reporting, etc.
+            range_t trimmed_line_range = trim_whitespace(line_range, this->source);
             const char_t two_spaces[] = {char_t(' '), char_t(' '), char_t('\0')};
-            size_t sep = this->source.find(two_spaces, line_range.start);
-            if (sep < line_range.end())
+            size_t sep = this->source.find(two_spaces, trimmed_line_range.start);
+            if (sep < trimmed_line_range.end())
             {
-                range_t key(line_range.start, sep - line_range.start);
-                range_t value(sep, line_range.end() - sep);
+                range_t key(trimmed_line_range.start, sep - trimmed_line_range.start);
+                range_t value(sep, trimmed_line_range.end() - sep);
                 
                 // Trim whitespace off of both sides and then populate our map
                 // TODO: verify that the variable was found
@@ -771,7 +785,9 @@ void uniqueize_options(option_list_t *options, error_list_t *errors UNUSED) cons
     }
 }
 
-/* Extracts a long option from the arg at idx, and appends the result to out_result. Updates idx. */
+/* Extracts a long option from the arg at idx, and appends the result to out_result. Updates idx.
+TODO: merge with parse_unseparated_short, etc
+*/
 bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t flags, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors, string_t *out_suggestion = NULL) const {
     const string_t &arg = argv.at(*idx);
     assert(type == option_t::single_long || type == option_t::double_long);
@@ -794,7 +810,7 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
     for (size_t i=0; i < options.size(); i++) {
         const option_t &opt = options.at(i);
         // This comparison is terrifying. It's just comparing two substrings: one in source (the given option) and the name portion of the argument
-        if (opt.type == type && this->source.compare(opt.name.start, opt.name.length, arg, arg_as_option.name.start, arg_as_option.name.length) == 0) {
+        if (opt.type == type && this->range_equals_string(opt.name, arg, arg_as_option.name.start, arg_as_option.name.length)) {
             matches.push_back(opt);
         }
     }
@@ -876,8 +892,8 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
     return success;
 }
 
-// Given a list of short options, try parsing out an unseparated short, i.e. -DNDEBUG. We only look at short options with no separator.
-bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors) const {
+// Given a list of short options, try parsing out an unseparated short, i.e. -DNDEBUG. We only look at short options with no separator. TODO: Use out_suggestion
+bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors, string_t *out_suggestion) const {
     const string_t &arg = argv.at(*idx);
     assert(substr_equals("-", arg, 1));
     assert(arg.size() > 1); // must not be just a single dash
@@ -892,7 +908,7 @@ bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const optio
             // Candidate short option.
             // This looks something like -DNDEBUG. We want to see if the D matches.
             // Compare the character at offset 1 (to account for the dash) and length 1 (since it's a short option)
-            if (this->source.compare(opt.name.start, opt.name.length, arg, 1, 1) == 0) {
+            if (this->range_equals_string(opt.name, arg, 1, 1)) {
                 // Expect to always want a value here
                 assert(opt.has_value());
                 matches.push_back(opt);
@@ -926,7 +942,7 @@ bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const optio
 
 
 // Given a list of short options, parse out an argument
-bool parse_short(const string_list_t &argv, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors) const {
+bool parse_short(const string_list_t &argv, parse_flags_t flags, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors, string_t *out_suggestion) const {
     const string_t &arg = argv.at(*idx);
     assert(substr_equals("-", arg, 1));
     assert(arg.size() > 1); // must not be just a single dash
@@ -942,8 +958,8 @@ bool parse_short(const string_list_t &argv, size_t *idx, const option_list_t &op
         matches.clear();
         for (size_t i=0; i < options.size(); i++) {
             const option_t &opt = options.at(i);
-            // This comparison is terrifying. It's just comparing two substrings: one in source (the given option) and the name portion of the argument. We pass 1 because the length of the string i1.
-            if (opt.type == option_t::single_short && this->source.compare(opt.name.start, opt.name.length, arg, idx_in_arg, 1) == 0) {
+            // This comparison is terrifying. It's just comparing two substrings: one in source (the given option) and the name portion of the argument. We pass 1 because the length of the string is 1.
+            if (opt.type == option_t::single_short && this->range_equals_string(opt.name, arg, idx_in_arg, 1)) {
                 matches.push_back(opt);
             }
         }
@@ -988,6 +1004,11 @@ bool parse_short(const string_list_t &argv, size_t *idx, const option_list_t &op
         if (*idx + 1 < argv.size()) {
             val_idx_for_last_option = *idx + 1;
             val_range_for_last_option = range_t(0, argv.at(*idx + 1).size());
+        } else if ((flags & flag_generate_suggestions) && out_suggestion != NULL) {
+            // We are at the last argument, and we expect a value. Return the value as a suggestion.
+            const option_t &match = options_for_argument.back();
+            out_suggestion->assign(this->source, match.value.start, match.value.length);
+            errored = true;
         } else {
             append_error(out_errors, options_for_argument.back().value.start, "Option expects an argument");
             errored = true;
@@ -1044,11 +1065,11 @@ void separate_argv_into_options_and_positionals(const string_list_t &argv, const
                3. A short option with a value: -DNDEBUG
              Try to parse it as a long option; if that fails try to parse it as a short option
              */
-            if (parse_long(argv, option_t::single_long, flags, &idx, options, out_resolved_options, out_errors)) {
+            if (parse_long(argv, option_t::single_long, flags, &idx, options, out_resolved_options, out_errors, out_suggestion)) {
                 // parse_long succeeded. TODO: implement this.
-            } else if (parse_unseparated_short(argv, &idx, options, out_resolved_options, out_errors)) {
+            } else if (parse_unseparated_short(argv, &idx, options, out_resolved_options, out_errors, out_suggestion)) {
                 // parse_unseparated_short will have updated idx and out_resolved_options
-            } else if (parse_short(argv, &idx, options, out_resolved_options, out_errors)) {
+            } else if (parse_short(argv, flags, &idx, options, out_resolved_options, out_errors, out_suggestion)) {
                 // parse_short succeeded.
             } else {
                 // Unparseable argument
@@ -1540,7 +1561,7 @@ match_state_list_t match(const simple_clause_t &node, match_state_t *state, matc
         if (ctx->has_more_positionals(state)) {
             const positional_argument_t &positional = ctx->next_positional(state);
             const string_t &name = ctx->argv.at(positional.idx_in_argv);
-            if (name.size() == range.length && this->source.compare(range.start, range.length, name) == 0) {
+            if (name.size() == range.length && this->range_equals_string(range, name)) {
                 // The static argument matches
                 arg_t *arg = &state->option_map[name];
                 arg->count += 1;
@@ -1851,6 +1872,40 @@ string_t conditions_for_variable(const string_t &var_name) const {
     return result;
 }
 
+string_t description_for_option(const string_t &given_option_name) const {
+    if (given_option_name.size() < 2 || given_option_name.at(0) != '-')
+    {
+        return string_t();
+    }
+
+    string_t result;
+    const bool has_double_dash = (given_option_name.at(1) == '-');
+    // We have to go through our options and compare their short_name or corresponding_long_name to the given string
+    for (size_t i=0; i < this->all_options.size(); i++) {
+        const option_t &opt = this->all_options.at(i);
+        bool matches = false;
+        
+        // We can skip options without descriptions
+        if (opt.description_range.empty()) {
+            continue;
+        }
+        
+        // Check short options
+        if (opt.type == option_t::single_short || opt.type == option_t::single_long) {
+            // The 1 skips the leading dash
+            matches = this->range_equals_string(opt.name, given_option_name, 1);
+        } else if (opt.type == option_t::double_long && has_double_dash) {
+            matches = this->range_equals_string(opt.name, given_option_name, 2);
+        }
+        
+        if (matches) {
+            result.assign(this->source, opt.description_range.start, opt.description_range.length);
+            break;
+        }
+    }
+    return result;
+}
+
 #if SIMPLE_TEST
 static int simple_test() {
     const std::string usage =
@@ -1953,6 +2008,12 @@ template<typename string_t>
 string_t argument_parser_t<string_t>::conditions_for_variable(const string_t &var) const
 {
     return impl->conditions_for_variable(var);
+}
+
+template<typename string_t>
+string_t argument_parser_t<string_t>::description_for_option(const string_t &option) const
+{
+    return impl->description_for_option(option);
 }
 
 /* Constructor */

@@ -1616,11 +1616,11 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
 bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src, bool cursor_in_last_arg)
 {
     bool success = false;
-    wcstring current_command_unescape;
-    if (unescape_string(cmd_orig, &current_command_unescape, UNESCAPE_DEFAULT))
+    wcstring cmd_unescape;
+    if (unescape_string(cmd_orig, &cmd_unescape, UNESCAPE_DEFAULT))
     {
         wcstring_list_t argv;
-        argv.push_back(current_command_unescape);
+        argv.push_back(cmd_unescape);
         for (size_t i=0; i < arg_nodes.size(); i++)
         {
             // TODO: need to escape all of these!
@@ -1634,13 +1634,20 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_nod
             argv.pop_back();
         }
         
-        const wcstring_list_t suggestions = docopt_suggest_next_argument(current_command_unescape, argv);
+        const wcstring_list_t suggestions = docopt_suggest_next_argument(cmd_unescape, argv);
         for (size_t i=0; i < suggestions.size(); i++)
         {
             const wcstring &suggestion = suggestions.at(i);
             if (string_prefixes_string(L"<", suggestion))
             {
-                // Variable, ignore it
+                // Variable. Handle any conditions. If there are no conditions, we may return false, which allows for file completions.
+                const wcstring conditions = docopt_conditions_for_variable(cmd_unescape, suggestion);
+                if (! conditions.empty())
+                {
+                    this->complete_from_args(last_arg, conditions, docopt_description_for_option(cmd_unescape, suggestion), 0);
+                    // Indicate success even if there were no successful arguments, so that we don't try to do file completions when the variable has conditions
+                    success = true;
+                }
             }
             else
             {
@@ -1648,7 +1655,7 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_nod
                 if (last_arg.empty())
                 {
                     // No partial argument to complete, just dump it in
-                    append_completion(this->completions, suggestion, L"", 0);
+                    append_completion(this->completions, suggestion, docopt_description_for_option(cmd_unescape, suggestion), 0);
                     success = true;
                 }
                 else
@@ -1658,12 +1665,12 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_nod
                     {
                         if (match_type_requires_full_replacement(match.type))
                         {
-                            append_completion(this->completions, suggestion, L"", COMPLETE_REPLACES_TOKEN, match);
+                            append_completion(this->completions, suggestion, docopt_description_for_option(cmd_unescape, suggestion), COMPLETE_REPLACES_TOKEN, match);
                         }
                         else
                         {
                             // Append a prefix completion that starts after the last argument
-                            append_completion(this->completions, wcstring(suggestion, last_arg.size()), L"", 0, match);
+                            append_completion(this->completions, wcstring(suggestion, last_arg.size()), docopt_description_for_option(cmd_unescape, suggestion), 0, match);
                         }
                         success = true;
                     }
@@ -2029,7 +2036,9 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                     current_argument = all_arguments.at(matching_arg_index)->get_source(cmd);
 
                     if (matching_arg_index > 0)
+                    {
                         previous_argument = all_arguments.at(matching_arg_index - 1)->get_source(cmd);
+                    }
 
                     /* Check to see if we have a preceding double-dash */
                     for (size_t i=0; i < matching_arg_index; i++)

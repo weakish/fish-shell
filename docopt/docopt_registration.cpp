@@ -128,6 +128,17 @@ class doc_register_t {
         return result;
     }
 
+    wcstring description_for_option(const wcstring &cmd, const wcstring &option)
+    {
+        scoped_lock locker(lock);
+        wcstring result;
+        const docopt_parser_t *p = this->first_parser(cmd);
+        if (p)
+        {
+            result = p->description_for_option(option);
+        }
+        return result;
+    }
 
 };
 static doc_register_t default_register;
@@ -156,4 +167,9 @@ wcstring_list_t docopt_suggest_next_argument(const wcstring &cmd, const wcstring
 wcstring docopt_conditions_for_variable(const wcstring &cmd, const wcstring &var)
 {
     return default_register.conditions_for_variable(cmd, var);
+}
+
+wcstring docopt_description_for_option(const wcstring &cmd, const wcstring &option)
+{
+    return default_register.description_for_option(cmd, option);
 }

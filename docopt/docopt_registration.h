@@ -22,6 +22,7 @@ wcstring_list_t docopt_copy_registered_descriptions(const wcstring &cmd);
 std::vector<docopt_fish::argument_status_t> docopt_validate_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_fish::parse_flags_t flags = docopt_fish::flags_default);
 wcstring_list_t docopt_suggest_next_argument(const wcstring &cmd, const wcstring_list_t &argv, docopt_fish::parse_flags_t flags = docopt_fish::flags_default);
 wcstring docopt_conditions_for_variable(const wcstring &cmd, const wcstring &var);
+wcstring docopt_description_for_option(const wcstring &cmd, const wcstring &option);
 
 
 #endif
