@@ -7,9 +7,9 @@
 
 #include <wchar.h>
 
-#include "util.h"
-#include "common.h"
-#include "io.h"
+#include "../util.h"
+#include "../common.h"
+#include "../io.h"
 #include "docopt_fish.h"
 
 /* Given a command and a name, register a description */

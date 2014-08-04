@@ -4,9 +4,9 @@ Functions for handling the set of docopt descriptions
 
 */
 
-#include "config.h"
+#include "../config.h"
 #include "docopt_registration.h"
-#include "common.h"
+#include "../common.h"
 #include <map>
 #include <vector>
 #include <list>

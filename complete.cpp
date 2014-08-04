@@ -406,7 +406,7 @@ public:
                         const wcstring &str,
                         bool use_switches);
     
-    bool complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src);
+    bool complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src, bool cursor_in_last_arg);
 
     void complete_param_expand(const wcstring &str, bool do_file);
 
@@ -1552,7 +1552,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
                         whole_opt.append(o->long_opt);
 
                         match = string_prefixes_string(str, whole_opt);
-
+                        
                         if (!match)
                         {
                             match_no_case = wcsncasecmp(str, whole_opt.c_str(), wcslen(str))==0;
@@ -1613,7 +1613,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
 }
 
 // Attempts to fetch completions from docopt
-bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src)
+bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src, bool cursor_in_last_arg)
 {
     bool success = false;
     wcstring current_command_unescape;
@@ -1626,6 +1626,14 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_nod
             // TODO: need to escape all of these!
             argv.push_back(arg_nodes.at(i)->get_source(src));
         }
+        
+        wcstring last_arg;
+        if (cursor_in_last_arg && ! argv.empty())
+        {
+            last_arg = argv.back();
+            argv.pop_back();
+        }
+        
         const wcstring_list_t suggestions = docopt_suggest_next_argument(current_command_unescape, argv);
         for (size_t i=0; i < suggestions.size(); i++)
         {
@@ -1637,9 +1645,29 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_nod
             else
             {
                 // TODO: descriptions
-                append_completion(this->completions, suggestion, L"", COMPLETE_REPLACES_TOKEN);
-                success = true;
-                break;
+                if (last_arg.empty())
+                {
+                    // No partial argument to complete, just dump it in
+                    append_completion(this->completions, suggestion, L"", 0);
+                    success = true;
+                }
+                else
+                {
+                    string_fuzzy_match_t match = string_fuzzy_match_string(last_arg, suggestion, this->max_fuzzy_match_type());
+                    if (match.type != fuzzy_match_none)
+                    {
+                        if (match_type_requires_full_replacement(match.type))
+                        {
+                            append_completion(this->completions, suggestion, L"", COMPLETE_REPLACES_TOKEN, match);
+                        }
+                        else
+                        {
+                            // Append a prefix completion that starts after the last argument
+                            append_completion(this->completions, wcstring(suggestion, last_arg.size()), L"", 0, match);
+                        }
+                        success = true;
+                    }
+                }
             }
         }
     }
@@ -2027,7 +2055,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                 {
                     do_file = true;
                 }
-                else if (completer.complete_from_docopt(current_command, tree, all_arguments, cmd))
+                else if (completer.complete_from_docopt(current_command, tree, all_arguments, cmd, adjusted_pos == pos))
                 {
                     do_file = false;
                 }

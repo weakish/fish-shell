@@ -1761,6 +1761,13 @@ static bool handle_completions(const std::vector<completion_t> &comp, bool conti
 
     const wcstring tok(begin, end - begin);
 
+#if 0
+    for (size_t i=0; i < comp.size(); i++)
+    {
+        fprintf(stderr, "completion %lu: %ls\n", i, comp.at(i).completion.c_str());
+    }
+#endif
+
     /*
       Check trivial cases
      */

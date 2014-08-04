@@ -64,6 +64,7 @@
 #include "input.h"
 #include "utf8.h"
 #include "env_universal_common.h"
+#include "docopt/docopt_registration.h"
 
 static const char * const * s_arguments;
 static int s_test_run_count = 0;
@@ -1835,7 +1836,7 @@ static void test_complete(void)
 
     complete_set_variable_names(&names);
 
-    std::vector<completion_t> completions;
+    completion_list_t completions;
     complete(L"$F", completions, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 3);
     do_test(completions.at(0).completion == L"oo1");
@@ -1910,6 +1911,33 @@ static void test_complete(void)
     do_test(completions.empty());
 
     complete_set_variable_names(NULL);
+}
+
+static void test_docopt_complete(void)
+{
+    say(L"Testing complete with docopt");
+    
+    // any fake command
+    const wcstring cmd = L"flea";
+    
+    // docopt description
+    const wchar_t *desc =
+    L"Usage:\n"
+    L"       flea [options] [<pid>]\n"
+    L"\n"
+    L"Options:\n"
+    L"       -c, --command  Command Description\n"
+    L"       -g, --group  Group Description\n"
+    L"       -h, --help  Help Description\n"
+    ;
+    
+    docopt_register_description(cmd, L"fish_test", desc);
+    
+    completion_list_t completions;
+    complete(L"flea --c", completions, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 1);
+    do_test(completions.at(0).completion == L"ommand");
+    do_test(completions.at(0).description == L"Command Description");
 }
 
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)
@@ -3566,6 +3594,7 @@ int main(int argc, char **argv)
     if (should_test_function("is_potential_path")) test_is_potential_path();
     if (should_test_function("colors")) test_colors();
     if (should_test_function("complete")) test_complete();
+    if (should_test_function("docopt_complete")) test_docopt_complete();
     if (should_test_function("input")) test_input();
     if (should_test_function("universal")) test_universal();
     if (should_test_function("universal")) test_universal_callbacks();
