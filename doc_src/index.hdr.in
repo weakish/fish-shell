@@ -168,16 +168,16 @@ default through a simple mechanism called a redirection.
 An example of a file redirection is <code> echo hello \>output.txt</code>,
 which directs the output of the echo command to the file output.txt.
 
-- To redirect standard input, write <code>\<SOURCE_FILE</code>
-- To redirect standard output, write <code>\>DESTINATION</code>
-- To redirect standard error, write <code>^DESTINATION</code>
-- To redirect standard output to a file which will be appended, write <code>\>\>DESTINATION_FILE</code>
-- To redirect standard error to a file which will be appended, write <code>^^DESTINATION_FILE</code>
+- To read standard input from a file, write <code>\<SOURCE_FILE</code>
+- To write standard output to a file, write <code>\>DESTINATION</code>
+- To write standard error to a file, write <code>^DESTINATION</code>
+- To append standard output to a file, write <code>\>\>DESTINATION_FILE</code>
+- To append standard error to a file, write <code>^^DESTINATION_FILE</code>
 
 <code>DESTINATION</code> can be one of the following:
 
 - A filename. The output will be written to the specified file.
-- An ampersand (\&) followed by the number of another file descriptor. The file descriptor will be a duplicate of the specified file descriptor.
+- An ampersand (\&) followed by the number of another file descriptor. The output will be written to that file descriptor instead.
 - An ampersand followed by a minus sign (\&-). The file descriptor will be closed.
 
 Example:
@@ -186,15 +186,16 @@ To redirect both standard output and standard error to the file
 all_output.txt, you can write <code>echo Hello \>all_output.txt
 ^\&1</code>.
 
-Any FD can be redirected in an arbitrary way by prefixing the
-redirection with the number of the FD.
+Any file descriptor can be redirected in an arbitrary way by prefixing the
+redirection with the file descriptor.
 
-- To redirect input of FD number N, write <code>N\<DESTINATION</code>
-- To redirect output of FD number N, write <code>N\>DESTINATION</code>
-- To redirect output of FD number N to a file which will be appended, write <code>N\>\>DESTINATION_FILE</code>
+- To redirect input of FD N, write <code>N\<DESTINATION</code>
+- To redirect output of FD N, write <code>N\>DESTINATION</code>
+- To append the output of FD N to a file, write <code>N\>\>DESTINATION_FILE</code>
 
-Example: <code>echo Hello 2\>-</code> and <code>echo Hello ^-</code> are
-equivalent.
+Example: <code>echo Hello 2\>output.stderr</code> and <code>echo Hello
+^output.stderr</code> are equivalent, and write the standard error (file
+descriptor 2) of the target program to <code>output.stderr</code>.
 
 \subsection piping Piping
 
@@ -1008,6 +1009,7 @@ values of most of these variables.
 - \c PWD, the current working directory.
 - \c status, the <a href="#variables-status">exit status</a> of the last foreground job to exit. If the job was terminated through a signal, the exit status will be 128 plus the signal number.
 - \c USER, the current username. This variable can only be changed by the root user.
+- \c CMD_DURATION, the runtime of the last command in milliseconds.
 
 The names of these variables are mostly derived from the csh family of
 shells and differ from the ones used by Bourne style shells such as
@@ -1326,16 +1328,29 @@ executed or put into the foreground and the output is used as a
 titlebar message. The $_ environment variable will always contain the
 name of the job to be put into the foreground (Or 'fish' if control is
 returning to the shell) when the \c fish_prompt function is called.
+The first argument to fish_title will contain the most
+recently executed foreground command as a string, starting with fish 2.2.
 
-Example:
+Examples:
 <p>
 The default \c fish title is
 </p>
 <p>
 <pre>
 function fish_title
-	echo $_ ' '
-	pwd
+    echo $_ ' '
+    pwd
+end
+</pre>
+</p>
+
+<p>
+To show the last command in the title:
+</p>
+<p>
+<pre>
+function fish_title
+    echo $argv[1]
 end
 </pre>
 </p>
