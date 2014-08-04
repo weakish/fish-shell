@@ -1545,8 +1545,12 @@ static int exec_subshell_internal(const wcstring &cmd, wcstring_list_t *lst, boo
     //fprintf(stderr, "subcmd %ls\n", cmd.c_str());
 
     const env_var_t ifs = env_get_string(L"IFS");
-
-    if (! ifs.missing_or_empty())
+    if (ifs.missing())
+    {
+        // IFS will be missing if run as part of the test suite
+        sep = '\n';
+    }
+    else if (! ifs.empty())
     {
         if (ifs.at(0) < 128)
         {
@@ -1557,7 +1561,6 @@ static int exec_subshell_internal(const wcstring &cmd, wcstring_list_t *lst, boo
             sep = 0;
             debug(0, L"Warning - invalid command substitution separator '%lc'. Please change the first character of IFS", ifs[0]);
         }
-
     }
 
     is_subshell=1;

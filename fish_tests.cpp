@@ -1946,7 +1946,7 @@ static void test_docopt_complete(void)
     L"       -h, --help  Help Description\n"
     L"Conditions:\n"
     L"       <val>  ONE TWO THREE\n"
-    L"       <dynval>  (echo -n ONE) (echo -n TWO) (echo -n THREE)"
+    L"       <dynval>  (echo ONE\\nTWO\\nTHREE)\n"
     ;
     
     docopt_register_description(cmd, L"fish_test", desc);
