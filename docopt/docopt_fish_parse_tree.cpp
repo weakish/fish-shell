@@ -9,14 +9,18 @@
 #include <numeric>
 #include <set>
 
+using std::vector;
+using std::string;
+using std::wstring;
+
 UNUSED
-static const std::wstring &widen(const std::wstring &t) {
+static const wstring &widen(const wstring &t) {
     return t;
 }
 
 UNUSED
-static std::wstring widen(const std::string &t) {
-    std::wstring result;
+static wstring widen(const string &t) {
+    wstring result;
     result.insert(result.begin(), t.begin(), t.end());
     return result;
 }
@@ -83,6 +87,7 @@ struct parse_context_t {
     const string_t *source;
     const option_list_t *shortcut_options;
     range_t remaining_range;
+    vector<error_t<string_t> > errors;
     
     parse_context_t(const string_t &src, const range_t &usage_range, const option_list_t &shortcuts) : source(&src), shortcut_options(&shortcuts), remaining_range(usage_range)
     {}
@@ -161,6 +166,14 @@ struct parse_context_t {
         return ! tok->range.empty();
     }
     
+    bool peek(const char *s) {
+        const range_t saved_range = remaining_range;
+        token_t tok;
+        bool result = scan(s, &tok);
+        remaining_range = saved_range;
+        return result;
+    }
+    
     token_t peek_word() {
         const range_t saved_range = remaining_range;
         token_t tok;
@@ -179,6 +192,16 @@ struct parse_context_t {
             if (child2.get()) {
                 result = new PARENT(child1, child2);
             }
+        }
+        return result;
+    }
+
+    template<typename PARENT, typename CHILD>
+    PARENT *parse_1() {
+        PARENT *result = NULL;
+        auto_ptr<CHILD> child(parse<CHILD>());
+        if (child.get()) {
+            result = new PARENT(child);
         }
         return result;
     }
@@ -204,22 +227,22 @@ struct parse_context_t {
         return this->parse(dummy);
     }
     
-    alternation_list_t *parse(alternation_list_t *dummy)
+    alternation_list_t *parse(alternation_list_t *dummy UNUSED)
     {
         return parse_2<alternation_list_t, expression_list_t, or_continuation_t>();
     }
     
-    expression_list_t *parse(expression_list_t *dummy)
+    expression_list_t *parse(expression_list_t *dummy UNUSED)
     {
         return parse_2<expression_list_t, expression_t, opt_expression_list_t>();
     }
     
-    opt_expression_list_t *parse(opt_expression_list_t *dummy)
+    opt_expression_list_t *parse(opt_expression_list_t *dummy UNUSED)
     {
         return parse_1_or_empty<opt_expression_list_t, expression_list_t>();
     }
     
-    usage_t *parse(usage_t *dummy)
+    usage_t *parse(usage_t *dummy UNUSED)
     {
         // Suck up leading newlines
         while (this->scan('\n')) {
@@ -233,9 +256,10 @@ struct parse_context_t {
         
         usage_t *result = NULL;
         
-        // TODO: generate error for missing word name
         token_t word;
-        if (this->scan_word(&word)) {
+        if (! this->scan_word(&word)) {
+            append_error(&this->errors, this->remaining_range.start, error_missing_program_name, "Missing program name");
+        } else {
             auto_ptr<alternation_list_t> el(parse<alternation_list_t>());
             // Consume as many newlines as we can, and then try to generate the tail
             while (this->scan('\n')) {
@@ -248,12 +272,11 @@ struct parse_context_t {
             } else {
                 result = new usage_t(word, next);
             }
-
         }
         return result;
     }
 
-    or_continuation_t *parse(or_continuation_t *dummy) {
+    or_continuation_t *parse(or_continuation_t *dummy UNUSED) {
         or_continuation_t *result = NULL;
         token_t bar;
         if (this->scan('|', &bar)) {
@@ -261,27 +284,44 @@ struct parse_context_t {
             if (al.get()) {
                 result = new or_continuation_t(bar, al);
             } else {
-                // TODO: generate an error about trailing bar
-                fprintf(stderr, "Trailing bar\n");
+                append_error(&this->errors, bar.range.start, error_trailing_vertical_bar, "Extra vertical bar");
             }
-        } else {
+        }
+        if (! result) {
             result = new or_continuation_t();
         }
         return result;
     }
 
-    opt_ellipsis_t *parse(opt_ellipsis_t *dummy) {
+    opt_ellipsis_t *parse(opt_ellipsis_t *dummy UNUSED) {
         token_t ellipsis;
         this->scan("...", &ellipsis);
         return new opt_ellipsis_t(ellipsis);
     }
     
-    options_shortcut_t *parse(options_shortcut_t *dummy) {
+    options_shortcut_t *parse(options_shortcut_t *dummy UNUSED) {
         return new options_shortcut_t();
     }
     
-    simple_clause_t *parse(simple_clause_t *dummy) {
-        simple_clause_t *result = NULL;
+    simple_clause_t *parse(simple_clause_t *dummy UNUSED) {
+        token_t word = this->peek_word();
+        if (word.range.empty()) {
+            return NULL;
+        }
+        
+        char_t c = this->source->at(word.range.start);
+        if (c == '<') {
+            return parse_1<simple_clause_t, variable_clause_t>();
+        } else if (c == '-' && word.range.length > 1) {
+            // A naked '-', is to be treated as a fixed value
+            return parse_1<simple_clause_t, option_clause_t>();
+        } else {
+            return parse_1<simple_clause_t, fixed_clause_t>();
+        }
+    }
+    
+    option_clause_t *parse(option_clause_t *dummy UNUSED) {
+        option_clause_t *result = NULL;
         token_t word;
         if (this->scan_word(&word)) {
             /* Hack to support specifying parameter names inline.
@@ -319,7 +359,7 @@ struct parse_context_t {
             // TODO: don't match '--'
             if (range.length > 1 && src.at(range.start) == '-') {
                 // It's an option
-                option_t opt = option_t::parse_from_string(src, &range);
+                option_t opt = option_t::parse_from_string(src, &range, &this->errors);
                 if (opt.name.length > 0 && opt.separator == option_t::sep_space) {
                     // Looks like an option without a separator. See if the next token is a variable
                     range_t next = this->peek_word().range;
@@ -340,17 +380,39 @@ struct parse_context_t {
                             bool scanned = this->scan_word(&variable);
                             assert(scanned); // Should always succeed, since we peeked at the word
                             word.range.merge(variable.range);
+                            opt.value = variable.range;
                         }
                     }
                 }
+                
+                result = new option_clause_t(word, opt);
             }
-            
-            result = new simple_clause_t(word);
         }
         return result;
     }
     
-    expression_t *parse(expression_t *dummy) {
+    fixed_clause_t *parse(fixed_clause_t *dummy UNUSED) {
+        fixed_clause_t *result = NULL;
+        token_t word;
+        if (this->scan_word(&word)) {
+            // TODO: handle invalid commands like foo<bar>
+            result = new fixed_clause_t(word);
+        }
+        return result;
+    }
+    
+    variable_clause_t *parse(variable_clause_t *dummy UNUSED) {
+        variable_clause_t *result = NULL;
+        token_t word;
+        if (this->scan_word(&word)) {
+            // TODO: handle invalid variables like foo<bar>
+            result = new variable_clause_t(word);
+        }
+        return result;
+    }
+
+    
+    expression_t *parse(expression_t *dummy UNUSED) {
         expression_t *result = NULL;
         if (this->is_at_end()) {
             return NULL;
@@ -375,12 +437,20 @@ struct parse_context_t {
                     assert(ellipsis.get() != NULL); // should never fail
                     result = new expression_t(token, is_paren, contents, close_token, ellipsis);
                 } else {
-                    // TODO: generate error of unclosed paren
+                    // No closing bracket or paren
+                    if (is_paren) {
+                        append_error(&this->errors, token.range.start, error_missing_close_paren, "Missing ')' to match opening '('");
+                    } else {
+                        append_error(&this->errors, token.range.start, error_missing_close_bracket, "Missing ']' to match opening '['");
+                    }
                 }
             }
         } else if (this->scan("...", &token)) {
             // Indicates leading ellipsis
             // TODO: generate error
+        } else if (this->peek("|")) {
+            // End of an alternation list
+            result = NULL;
         } else {
             auto_ptr<simple_clause_t> simple_clause(parse<simple_clause_t>());
             if (simple_clause.get()) {
@@ -395,15 +465,21 @@ struct parse_context_t {
 };
 
 template<typename string_t>
-usage_t *parse_usage(const string_t &src, const range_t &src_range, const option_list_t &shortcut_options)
+usage_t *parse_usage(const string_t &src, const range_t &src_range, const option_list_t &shortcut_options, vector<error_t<string_t> > *out_errors)
 {
     parse_context_t<string_t> ctx(src, src_range, shortcut_options);
-    return ctx.template parse<usage_t>();
+    usage_t *result = ctx.template parse<usage_t>();
+    // If we get NULL back, we should always have an error
+    assert(! (result == NULL && ctx.errors.empty()));
+    if (out_errors) {
+        out_errors->insert(out_errors->end(), ctx.errors.begin(), ctx.errors.end());
+    }
+    return result;
 }
 
 // Force template instantiation
-template usage_t *parse_usage<std::string>(const std::string &src, const range_t &src_range, const option_list_t &shortcut_options);
-template usage_t *parse_usage<std::wstring>(const std::wstring &src, const range_t &src_range, const option_list_t &shortcut_options);
+template usage_t *parse_usage<string>(const string &, const range_t &, const option_list_t &, vector<error_t<string> > *);
+template usage_t *parse_usage<wstring>(const wstring &, const range_t &, const option_list_t &shortcut_options, vector<error_t<wstring> > *);
 
 
 CLOSE_DOCOPT_IMPL /* namespace */

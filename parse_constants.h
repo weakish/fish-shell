@@ -132,7 +132,10 @@ enum parse_error_code_t
     parse_error_unbalancing_case, //case outside of switch
 
     parse_error_double_pipe, // foo || bar, has special error message
-    parse_error_double_background // foo && bar, has special error message
+    parse_error_double_background, // foo && bar, has special error message
+    
+    // Error in docopt syntax
+    parse_error_docopt
 };
 
 enum

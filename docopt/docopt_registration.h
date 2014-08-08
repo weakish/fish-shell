@@ -11,9 +11,13 @@
 #include "../common.h"
 #include "../io.h"
 #include "docopt_fish.h"
+#include <vector>
+
+struct parse_error_t;
+typedef std::vector<parse_error_t> parse_error_list_t;
 
 /* Given a command and a name, register a description */
-void docopt_register_description(const wcstring &cmd, const wcstring &name, const wcstring &description);
+bool docopt_register_description(const wcstring &cmd, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors);
 
 /* Fetch registered descriptions */
 wcstring_list_t docopt_copy_registered_descriptions(const wcstring &cmd);

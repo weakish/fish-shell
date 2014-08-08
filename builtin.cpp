@@ -3781,7 +3781,7 @@ static void docopt_experiment_init() {
     L"       <pid>  (jobs --pid)"
     ;
     
-    docopt_register_description(L"jobs", L"default", jobs_desc);
+    docopt_register_description(L"jobs", L"default", jobs_desc, NULL);
 }
 
 void builtin_init()

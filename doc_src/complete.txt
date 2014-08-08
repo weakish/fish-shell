@@ -1,7 +1,7 @@
 \section complete complete - edit command specific tab-completions
 
 \subsection complete-synopsis Synopsis
-<tt>complete (-c|--command|-p|--path) COMMAND [(-s|--short-option) SHORT_OPTION] [(-l|--long-option|-o|--old-option) LONG_OPTION [(-a||--arguments) OPTION_ARGUMENTS] [(-d|--description) DESCRIPTION] </tt>
+<tt>complete (-c|--command|-p|--path) COMMAND [(-g|--signature) SIGNATURE] [(-s|--short-option) SHORT_OPTION] [(-l|--long-option|-o|--old-option) LONG_OPTION [(-a||--arguments) OPTION_ARGUMENTS] [(-d|--description) DESCRIPTION] </tt>
 
 \subsection complete-description Description
 

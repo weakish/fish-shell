@@ -300,6 +300,9 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
 
     wcstring_list_t cmd;
     wcstring_list_t path;
+    
+    bool do_signature = false;
+    wcstring signature;
 
     static int recursion_level=0;
 
@@ -327,6 +330,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             { L"authoritative", no_argument, 0, 'A' },
             { L"condition", required_argument, 0, 'n' },
             { L"do-complete", optional_argument, 0, 'C' },
+            { L"signature", required_argument, 0, 'g' },
             { L"help", no_argument, 0, 'h' },
             { 0, 0, 0, 0 }
         };
@@ -335,7 +339,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
 
         int opt = wgetopt_long(argc,
                                argv,
-                               L"a:c:p:s:l:o:d:frxeuAn:C::h",
+                               L"a:c:p:s:l:o:d:g:frxeuAn:C::h",
                                long_options,
                                &opt_index);
         if (opt == -1)
@@ -427,6 +431,11 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                 do_complete = true;
                 do_complete_param = woptarg ? woptarg : reader_get_buffer();
                 break;
+                
+            case 'g':
+                do_signature = true;
+                signature = woptarg;
+                break;
 
             case 'h':
                 builtin_print_help(parser, argv[0], stdout_buffer);
@@ -438,9 +447,8 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                 break;
 
         }
-
     }
-
+    
     if (!res)
     {
         if (condition && wcslen(condition))
@@ -583,6 +591,44 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             }
 
         }
+    }
+    
+    if (do_signature)
+    {
+        if (cmd.empty() && path.empty())
+        {
+            append_format(stderr_buffer,
+                          L"%ls: No command specified for function signature\n",
+                          argv[0]);
+            stderr_buffer.push_back(L'\n');
+            res = true;
+        }
+        else
+        {
+            // Use a silly loop to handle commands and paths uniformly
+            for (size_t which=0; which < 2; which++)
+            {
+                const wcstring_list_t &cmd_or_path = (which ? cmd : path);
+                for (size_t i=0; i < cmd_or_path.size(); i++)
+                {
+                    parse_error_list_t errors;
+                    docopt_register_description(cmd_or_path.at(i), L"default", signature, &errors);
+                    
+                    // Report only the first error, if we have one
+                    if (! errors.empty())
+                    {
+                        const parse_error_t &err = errors.front();
+                        // The "is_interactive" param determines if we avoid the caret for really simple cases, like "command not found" for the first line
+                        // We always show the caret for docopt signatures
+                        bool is_interactive = false, skip_caret = false;
+                        wcstring err_desc = err.describe_with_prefix(signature, wcstring(), is_interactive, skip_caret);
+                        append_format(stderr_buffer, L"%ls: %ls\n", argv[0], err_desc.c_str());
+                    }
+                }
+            }
+        }
+        // TODO: ought to be able to return failure here
+        res = true;
     }
 
     return res ? 1 : 0;

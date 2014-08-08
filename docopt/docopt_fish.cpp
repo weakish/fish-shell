@@ -57,15 +57,12 @@ static size_t find_case_insensitive(const std::wstring &haystack, const char *ne
     return std::wstring::npos;
 }
 
+// This represents an error in argv, i.e. the docopt description was OK but a parameter contained an error
 template <typename string_t>
-static void append_error(std::vector<error_t<string_t> > *errors, size_t where, const char *txt) {
-    if (errors != NULL) {
-        errors->resize(errors->size() + 1);
-        error_t<string_t> *error = &errors->back();
-        error->location = where;
-        assign_narrow_string_to_string(txt, &error->text);
-    }
+static void append_argv_error(std::vector<error_t<string_t> > *errors, size_t arg_idx, int code, const char *txt, size_t pos_in_arg = 0) {
+    append_error(errors, pos_in_arg, code, txt, arg_idx);
 }
+
 
 template<char T>
 static bool it_equals(int c) { return c == T; }
@@ -136,7 +133,7 @@ option_t option_t::parse_from_string(const string_t &str, range_t *remaining, st
     range_t leading_dash_range = scan_while(str, remaining, it_equals<'-'>);
     assert(leading_dash_range.length > 0);
     if (leading_dash_range.length > 2) {
-        append_error(errors, start, "Too many dashes");
+        append_error(errors, start, error_excessive_dashes, "Too many dashes");
     }
 
     // Walk over characters valid in a name
@@ -148,7 +145,7 @@ option_t option_t::parse_from_string(const string_t &str, range_t *remaining, st
     // Check to see if there's an = sign
     const range_t equals_range = scan_while(str, remaining, it_equals<'='>);
     if (equals_range.length > 1) {
-        append_error(errors, equals_range.start, "Too many equal signs");
+        append_error(errors, equals_range.start, error_excessive_equal_signs, "Too many equal signs");
     }
 
     // Try to scan a variable
@@ -160,13 +157,26 @@ option_t option_t::parse_from_string(const string_t &str, range_t *remaining, st
     if (! open_sign.empty()) {
         range_t variable_name_range = scan_while(str, remaining, char_is_valid_in_bracketed_word<char_t>);
         range_t close_sign = scan_1_char(str, remaining, '>');
-        if (! variable_name_range.empty() && ! close_sign.empty()) {
+        if (variable_name_range.empty()) {
+            append_error(errors, variable_name_range.start, error_invalid_variable_name, "Missing variable name");
+        } else if (close_sign.empty()) {
+            append_error(errors, open_sign.start, error_invalid_variable_name, "Missing '>' to match this '<'");
+        } else {
             variable_range.merge(open_sign);
             variable_range.merge(variable_name_range);
             variable_range.merge(close_sign);
         }
+        
+        // Check to see what the next character is. If it's not whitespace or the end of the string, generate an error.
+        if (! close_sign.empty() && ! remaining->empty() && char_is_valid_in_parameter(str.at(remaining->start))) {
+            append_error(errors, remaining->start, error_invalid_variable_name, "Extra stuff after closing '>'");
+        }
     }
-    // TODO: generate error for wrong-looking variables
+    
+    // Report an error for cases like --foo=
+    if (variable_range.empty() && ! equals_range.empty()) {
+        append_error(errors, equals_range.start, error_invalid_variable_name, "Missing variable for this assignment");
+    }
     
     // Determine the separator type
     // If we got an equals range, it's something like 'foo = <bar>' or 'foo=<bar>'. The separator is equals and the space is ignored.
@@ -185,7 +195,12 @@ option_t option_t::parse_from_string(const string_t &str, range_t *remaining, st
     
     // TODO: generate an error on long options with no separators (--foo<bar>). Only short options support these.
     if (separator == option_t::sep_none && (leading_dash_range.length > 1 || name_range.length > 1)) {
-        append_error(errors, name_range.start, "Long options must use a space or equals separator");
+        append_error(errors, name_range.start, error_bad_option_separator, "Long options must use a space or equals separator");
+    }
+    
+    // Generate errors
+    if (name_range.empty()) {
+        append_error(errors, name_range.start, error_invalid_option_name, "Missing option name");
     }
     
     // Create and return the option
@@ -269,31 +284,29 @@ public:
 };
 
 
-/* Helper class for collecting options from a tree */
-template<typename NODE_TYPE>
-struct node_collector_t : public node_visitor_t<node_collector_t<NODE_TYPE> > {
-    std::vector<const NODE_TYPE *> results;
+/* Helper class for collecting clauses from a tree */
+struct clause_collector_t : public node_visitor_t<clause_collector_t> {
+    option_list_t options;
+    range_list_t fixeds;
+    range_list_t variables;
     
-    // The requested type we capture
-    void accept(const NODE_TYPE& node) {
-        results.push_back(&node);
+    // The requested types we capture
+    void accept(const option_clause_t& node) {
+        options.push_back(node.option);
+    }
+    
+    void accept(const fixed_clause_t& node) {
+        fixeds.push_back(node.word.range);
+    }
+    
+    void accept(const variable_clause_t& node) {
+        variables.push_back(node.word.range);
     }
     
     // Other types we ignore
     template<typename IGNORED_TYPE>
     void accept(const IGNORED_TYPE& t UNUSED) {}
 };
-
-
-/* Helper class for collecting all nodes of a given type */
-template<typename ENTRY_TYPE, typename TYPE_TO_COLLECT>
-std::vector<const TYPE_TO_COLLECT *> collect_nodes(const ENTRY_TYPE &entry) const {
-    node_collector_t<TYPE_TO_COLLECT> collector;
-    collector.begin(entry);
-    std::vector<const TYPE_TO_COLLECT *> result;
-    result.swap(collector.results);
-    return result;
-}
 
 /* Class representing an error */
 typedef error_t<string_t> error_t;
@@ -459,20 +472,13 @@ bool token_substr_equals(const token_t &tok, const char *str, size_t len) const 
 /* Collects options, i.e. tokens of the form --foo */
 template<typename ENTRY_TYPE>
 void collect_options_and_variables(const ENTRY_TYPE &entry, option_list_t *out_options, range_list_t *out_variables, range_list_t *out_static_arguments) const {
-    std::vector<const simple_clause_t *> nodes = collect_nodes<ENTRY_TYPE, simple_clause_t>(entry);
-    for (size_t i=0; i < nodes.size(); i++) {
-        const token_t &tok = nodes.at(i)->word;
-        if (this->token_substr_equals(tok, "-", 1)) {
-            // It's an option
-            out_options->push_back(option_t::parse_from_string(this->source, tok.range));
-        } else if (this->token_substr_equals(tok, "<", 1)) {
-            // It's a variable
-            out_variables->push_back(tok.range);
-        } else {
-            // It's a static arg
-            out_static_arguments->push_back(tok.range);
-        }
-    }
+    clause_collector_t collector;
+    collector.begin(entry);
+    
+    // "Return" the values
+    out_options->swap(collector.options);
+    out_variables->swap(collector.variables);
+    out_static_arguments->swap(collector.fixeds);
 }
 
 /* Like parse_option_from_string, but parses an argument (as in argv) */
@@ -543,7 +549,7 @@ option_list_t parse_one_option_spec(const range_t &range, error_list_t *errors) 
             size_t default_value_end = this->source.find(char_t(']'), default_value_start);
             if (default_value_end >= description_range.end()) {
                 // Note: The above check covers npos too
-                append_error(errors, default_prefix_loc, "Missing ']'");
+                append_error(errors, default_prefix_loc, error_missing_close_bracket_in_default, "Missing ']' to match opening '['");
             } else {
                 default_value_range.start = default_value_start;
                 default_value_range.length = default_value_end - default_value_start;
@@ -560,7 +566,7 @@ option_list_t parse_one_option_spec(const range_t &range, error_list_t *errors) 
     while (! remaining.empty()) {
     
         if (this->source.at(remaining.start) != char_t('-')) {
-            append_error(errors, remaining.start, "Not an option");
+            append_error(errors, remaining.start, error_invalid_option_name, "Not an option");
             break;
         }
     
@@ -619,20 +625,27 @@ static bool line_contains_option_spec(const string_t &str, const range_t &range)
     return space.length > 0 && dashes.length > 0;
 }
 
-/* Finds the headers containing name (for example, "Options:") and returns source ranges for them. Header lines are not included. */
+/* Finds the headers containing name (for example, "Options:") and returns source ranges for them. Header lines are not included. We allow the section names to be indented, but must be less idented than the previous line */
 range_list_t source_ranges_for_section(const char *name) const {
     range_list_t result;
     bool in_desired_section = false;
     range_t line_range;
+    size_t current_header_indent = -1; //note: is huge
     while (get_next_line(this->source, &line_range)) {
-        size_t line_start = line_range.start;
-        // It's a header line if the first character is not whitespace
-        bool is_header = ! isspace(source.at(line_start));
+        range_t trimmed_line_range = trim_whitespace(line_range, this->source);
+        assert(trimmed_line_range.start >= line_range.start);
+        size_t line_start = trimmed_line_range.start;
+        size_t line_indent = line_start - line_range.start;
+        
+        // It's a header line if its indent is not greater than the previous header and it's empty
+        bool is_header = (! trimmed_line_range.empty() && line_indent <= current_header_indent);
         if (is_header) {
+            current_header_indent = line_indent;
+            
             // Check to see if the name is found before the first colon
             // Note that if name is not found at all, name_pos will have value npos, which is huge (and therefore not smaller than line_end)
             size_t name_pos = find_case_insensitive(source, name, line_start);
-            size_t line_end = line_range.end();
+            size_t line_end = trimmed_line_range.end();
             in_desired_section = (name_pos < line_end && name_pos < source.find(':', line_start));
 
             if (in_desired_section) {
@@ -675,7 +688,13 @@ option_list_t parse_options_spec(error_list_t *errors) const {
             // The description may span multiple lines.
 
             // Check to see if this line starts with a -
-            if (line_contains_option_spec(this->source, line_range)) {
+            range_t trimmed_line = trim_whitespace(line_range, this->source);
+            if (trimmed_line.empty()) {
+                // Empty line in Options, just skip it
+                continue;
+            } else if (! line_contains_option_spec(this->source, line_range)) {
+                append_error(errors, line_range.start, error_invalid_option_name, "Invalid option name. Options must start with a leading space and a dash.");
+            } else {
                 // It's a new option. Determine how long its description goes.
                 range_t option_spec_range = line_range;
                 range_t local_range = line_range;
@@ -727,7 +746,7 @@ condition_map_t parse_conditions_spec(error_list_t *errors) const {
                 value = trim_whitespace(value, this->source);
                 const string_t key_str(this->source, key.start, key.length);
                 if (! result.insert(typename condition_map_t::value_type(key_str, value)).second) {
-                    append_error(errors, key.start, "Variable already has a condition");
+                    append_error(errors, key.start, error_one_variable_multiple_conditions, "Variable already has a condition");
                 }
             }
         }
@@ -742,7 +761,7 @@ bool options_have_same_name(const option_t &opt1, const option_t &opt2) const {
 }
 
 /* Given a list of options, verify that any duplicate options are in agreement, and remove all but one. TODO: make this not N^2. */
-void uniqueize_options(option_list_t *options, error_list_t *errors UNUSED) const {
+void uniqueize_options(option_list_t *options, bool error_on_duplicates, error_list_t *errors) const {
     std::vector<size_t> matching_indexes;
     for (size_t cursor=0; cursor < options->size(); cursor++) {
         // Determine the set of matches
@@ -754,11 +773,15 @@ void uniqueize_options(option_list_t *options, error_list_t *errors UNUSED) cons
             const option_t &current_match = options->at(best_match_idx);
             const option_t &maybe_match = options->at(match_cursor);
             if (this->options_have_same_name(current_match, maybe_match)) {
+                if (error_on_duplicates) {
+                    // Generate an error, and then continue on
+                    append_error(errors, maybe_match.name.start, error_option_duplicated_in_options_section, "Option specified more than once");
+                }
                 // This index matched
                 matching_indexes.push_back(match_cursor);
                 
                 // This argument matches.
-                // TODO: verify agreement in the parameters, etc.
+                // x: verify agreement in the parameters, etc.
                 if (maybe_match.description_range.length > current_match.description_range.length) {
                     // The second one has a better description. Keep it.
                     best_match_idx = match_cursor;
@@ -828,8 +851,8 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
             }
         }
         if (prefix_matches.size() > 1) {
-            // Todo: need to specify the argument index
-            append_error(out_errors, -1, "Option specified too many times");
+            // Todo: list exactly the different options that this prefix can correspond to
+            append_argv_error(out_errors, *idx, error_ambiguous_prefix_match, "Ambiguous prefix match");
         } else if (prefix_matches.size() == 1) {
             // We have one unambiguous prefix match. Swap it into the true matches array, which is currently empty.
             matches.swap(prefix_matches);
@@ -844,10 +867,10 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
 
     bool success = false;
     size_t match_count = matches.size();
-    if (match_count > 1) {
-        append_error(out_errors, matches.at(0).name.start, "Option specified too many times");
-    } else if (match_count < 1) {
-        append_error(out_errors, -1, "Unknown option");
+    // Our option de-duplication ensures we should never have more than one match
+    assert(match_count <= 1);
+    if (match_count < 1) {
+        append_argv_error(out_errors, *idx, error_unknown_option, "Unknown long option");
     } else {
         bool errored = false;
         assert(match_count == 1);
@@ -874,13 +897,13 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
                     out_suggestion->assign(this->source, match.value.start, match.value.length);
                     errored = true;
                 } else {
-                    append_error(out_errors, match.value.start, "Option expects an argument");
+                    append_argv_error(out_errors, *idx, error_option_has_missing_argument, "Option expects an argument");
                     errored = true;
                 }
             }
         } else if (arg_as_option.has_value()) {
             // A value was specified as --foo=bar, but none was expected
-            append_error(out_errors, match.name.start, "Option does not expect an argument");
+            append_argv_error(out_errors, *idx, error_option_unexpected_argument, "Option does not expect an argument");
             errored = true;
         }
         if (! errored) {
@@ -893,7 +916,7 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
 }
 
 // Given a list of short options, try parsing out an unseparated short, i.e. -DNDEBUG. We only look at short options with no separator. TODO: Use out_suggestion
-bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors, string_t *out_suggestion) const {
+bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors, string_t *out_suggestion UNUSED) const {
     const string_t &arg = argv.at(*idx);
     assert(substr_equals("-", arg, 1));
     assert(arg.size() > 1); // must not be just a single dash
@@ -915,15 +938,14 @@ bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const optio
             }
         }
     }
-
-    if (matches.size() > 1) {
-        // This is an error in the usage - should catch this earlier?
-        append_error(out_errors, matches.at(0).name.start, "Option specified too many times");
-    } else if (matches.size() == 1) {
+    
+    // Our option de-duplication should ensure we should never have more than one match
+    assert(matches.size() <= 1);
+    if (matches.size() == 1) {
         // Try to extract the value. This is very simple: it starts at index 2 and goes to the end of the arg.
         const option_t &match = matches.at(0);
         if (arg.size() <= 2) {
-            append_error(out_errors, match.name.start, "Option expects an argument");
+            append_argv_error(out_errors, *idx, error_option_has_missing_argument, "Option expects an argument");
         } else {
             // Got one
             size_t name_idx = *idx;
@@ -965,11 +987,10 @@ bool parse_short(const string_list_t &argv, parse_flags_t flags, size_t *idx, co
         }
         
         size_t match_count = matches.size();
-        if (match_count > 1) {
-            append_error(out_errors, matches.at(0).name.start, "Option specified too many times");
-            errored = true;
-        } else if (match_count < 1) {
-            append_error(out_errors, -1, "Unknown option");
+        // We should catch all duplicates during the preflight phase
+        assert(match_count <= 1);
+        if (match_count < 1) {
+            append_argv_error(out_errors, *idx, error_unknown_option, "Unknown short option", idx_in_arg);
             errored = true;
         } else {
             // Just one match, add it to the global array
@@ -987,8 +1008,8 @@ bool parse_short(const string_list_t &argv, parse_flags_t flags, size_t *idx, co
                     last_option_has_argument = true;
                 } else {
                     // This is not the last option
-                    // TODO: this location (opt.name.start) is the location in the usage doc. It ought to be the location in the argument.
-                    append_error(out_errors, opt.name.start, "Option requires an argument");
+                    // This i+1 is the position in the argument and needs some explanation. Since we have a leading dash and then an argument, which is parsed into short options - one per character (except for the dash). Hence we can map from index-in-option to index-in-argument, unless there was an unknown option error above. In that case this will be wrong (but we typically only show the first error anyways).
+                    append_argv_error(out_errors, *idx, error_option_unexpected_argument, "Option may not have a value unless it is the last option", i + 1);
                 }
             }
         }
@@ -1010,7 +1031,7 @@ bool parse_short(const string_list_t &argv, parse_flags_t flags, size_t *idx, co
             out_suggestion->assign(this->source, match.value.start, match.value.length);
             errored = true;
         } else {
-            append_error(out_errors, options_for_argument.back().value.start, "Option expects an argument");
+            append_argv_error(out_errors, *idx, error_option_has_missing_argument, "Option expects an argument");
             errored = true;
         }
     }
@@ -1063,16 +1084,21 @@ void separate_argv_into_options_and_positionals(const string_list_t &argv, const
                1. A combined short option: tar -cf ...
                2. A long option with a single dash: -std=c++
                3. A short option with a value: -DNDEBUG
-             Try to parse it as a long option; if that fails try to parse it as a short option
+             Try to parse it as a long option; if that fails try to parse it as a short option.
+             We cache the errors locally so that failing to parse it as a long option doesn't report an error if it parses successfully as a short option. This may result in duplicate error messages.
              */
-            if (parse_long(argv, option_t::single_long, flags, &idx, options, out_resolved_options, out_errors, out_suggestion)) {
-                // parse_long succeeded. TODO: implement this.
-            } else if (parse_unseparated_short(argv, &idx, options, out_resolved_options, out_errors, out_suggestion)) {
+            error_list_t local_errors;
+            if (parse_long(argv, option_t::single_long, flags, &idx, options, out_resolved_options, &local_errors, out_suggestion)) {
+                // parse_long succeeded
+            } else if (parse_unseparated_short(argv, &idx, options, out_resolved_options, &local_errors, out_suggestion)) {
                 // parse_unseparated_short will have updated idx and out_resolved_options
-            } else if (parse_short(argv, flags, &idx, options, out_resolved_options, out_errors, out_suggestion)) {
+            } else if (parse_short(argv, flags, &idx, options, out_resolved_options, &local_errors, out_suggestion)) {
                 // parse_short succeeded.
             } else {
                 // Unparseable argument
+                if (out_errors) {
+                    out_errors->insert(out_errors->begin(), local_errors.begin(), local_errors.end());
+                }
                 idx += 1;
             }
         } else {
@@ -1312,7 +1338,6 @@ match_state_list_t match(const expression_list_t &node, match_state_t *state, ma
 }
 
 match_state_list_t match(const opt_expression_list_t &node, match_state_t *state, match_context_t *ctx) const {
-    match_state_list_t result;
     if (node.expression_list.get()) {
         return match(*node.expression_list, state, ctx);
     } else {
@@ -1517,63 +1542,77 @@ match_state_list_t match_options(const option_list_t &options_in_doc, match_stat
 }
 
 match_state_list_t match(const simple_clause_t &node, match_state_t *state, match_context_t *ctx) const {
-    // Check to see if this is an argument or a variable
+    if (node.option.get()) {
+        return try_match(node.option, state, ctx);
+    } else if (node.fixed.get()) {
+        return try_match(node.fixed, state, ctx);
+    } else if (node.variable.get()) {
+        return try_match(node.variable, state, ctx);
+    } else {
+        assert(0 && "Bug in docopt parser: No children of simple_clause.");
+        return match_state_list_t();
+    }
+}
+
+match_state_list_t match(const option_clause_t &node, match_state_t *state, match_context_t *ctx) const {
+    option_list_t options_in_doc(1, node.option);
+    match_state_list_t result = this->match_options(options_in_doc, state, ctx);
+    if (result.empty()) {
+        // Didn't get any options. Maybe we suggest one.
+        // We want to return this state if either we were in square brackets (so we don't require a match), OR we are accepting incomplete
+        bool wants_append_state = ctx->is_in_square_brackets;
+        if (ctx->flags & flag_generate_suggestions) {
+            state->suggested_next_arguments.insert(options_in_doc.back().name_as_string(this->source));
+            wants_append_state = true;
+        }
+        if (wants_append_state) {
+            state_destructive_append_to(state, &result);
+        }
+    }
+    return result;
+}
+
+match_state_list_t match(const fixed_clause_t &node, match_state_t *state, match_context_t *ctx) const {
+    // Fixed argument
+    // Compare the next positional to this static argument
     match_state_list_t result;
     const range_t &range = node.word.range;
-    char_t first_char = this->source.at(range.start);
-
-    if (first_char == char_t('<')) {
-        if (ctx->has_more_positionals(state)) {
-            // Variable argument. Modify the state.
-            // Note we retain the brackets <> in the variable name
-            const string_t name = string_t(this->source, range.start, range.length);
+    if (ctx->has_more_positionals(state)) {
+        const positional_argument_t &positional = ctx->next_positional(state);
+        const string_t &name = ctx->argv.at(positional.idx_in_argv);
+        if (name.size() == range.length && this->range_equals_string(range, name)) {
+            // The static argument matches
             arg_t *arg = &state->option_map[name];
-            const positional_argument_t &positional = ctx->acquire_next_positional(state);
-            arg->values.push_back(ctx->argv.at(positional.idx_in_argv));
+            arg->count += 1;
+            ctx->acquire_next_positional(state);
             state_destructive_append_to(state, &result);
-        } else {
-            // No more positionals. Suggest one.
-            if (ctx->flags & flag_generate_suggestions) {
-                state->suggested_next_arguments.insert(string_t(this->source, range.start, range.length));
-                state_destructive_append_to(state, &result);
-            }
-        }
-    } else if (first_char == char_t('-') && range.length > 1) {
-        // Option. Use match_options() on an array containing exactly this option.
-        option_list_t options_in_doc;
-        options_in_doc.push_back(option_t::parse_from_string(this->source, range));
-        result = this->match_options(options_in_doc, state, ctx);
-        if (result.empty()) {
-            // Didn't get any options. Maybe we suggest one.
-            // We want to return this state if either we were in square brackets (so we don't require a match), OR we are accepting incomplete
-            bool wants_append_state = ctx->is_in_square_brackets;
-            if (ctx->flags & flag_generate_suggestions) {
-                state->suggested_next_arguments.insert(options_in_doc.back().name_as_string(this->source));
-                wants_append_state = true;
-            }
-            if (wants_append_state) {
-                state_destructive_append_to(state, &result);
-            }
         }
     } else {
-        // Fixed argument
-        // Compare the next positional to this static argument
-        if (ctx->has_more_positionals(state)) {
-            const positional_argument_t &positional = ctx->next_positional(state);
-            const string_t &name = ctx->argv.at(positional.idx_in_argv);
-            if (name.size() == range.length && this->range_equals_string(range, name)) {
-                // The static argument matches
-                arg_t *arg = &state->option_map[name];
-                arg->count += 1;
-                ctx->acquire_next_positional(state);
-                state_destructive_append_to(state, &result);
-            }
-        } else {
-            // No more positionals. Suggest one.
-            if (ctx->flags & flag_generate_suggestions) {
-                state->suggested_next_arguments.insert(string_t(this->source, range.start, range.length));
-                state_destructive_append_to(state, &result);
-            }
+        // No more positionals. Suggest one.
+        if (ctx->flags & flag_generate_suggestions) {
+            state->suggested_next_arguments.insert(string_t(this->source, range.start, range.length));
+            state_destructive_append_to(state, &result);
+        }
+    }
+    return result;
+}
+
+match_state_list_t match(const variable_clause_t &node, match_state_t *state, match_context_t *ctx) const {
+    // Variable argument
+    match_state_list_t result;
+    const range_t &range = node.word.range;
+    if (ctx->has_more_positionals(state)) {
+        // Note we retain the brackets <> in the variable name
+        const string_t name = string_t(this->source, range.start, range.length);
+        arg_t *arg = &state->option_map[name];
+        const positional_argument_t &positional = ctx->acquire_next_positional(state);
+        arg->values.push_back(ctx->argv.at(positional.idx_in_argv));
+        state_destructive_append_to(state, &result);
+    } else {
+        // No more positionals. Suggest one.
+        if (ctx->flags & flag_generate_suggestions) {
+            state->suggested_next_arguments.insert(string_t(this->source, range.start, range.length));
+            state_destructive_append_to(state, &result);
         }
     }
     return result;
@@ -1689,10 +1728,9 @@ option_map_t match_argv(const string_list_t &argv, parse_flags_t flags, const po
 /* Parses the docopt, etc. Returns true on success, false on error */
 bool preflight() {
     /* Clean up from any prior run */
-    if (this->parse_tree) {
-        delete this->parse_tree;
-        this->parse_tree = NULL;
-    }
+    delete this->parse_tree; // may be null
+    this->parse_tree = NULL;
+
     this->shortcut_options.clear();
     this->all_options.clear();
     this->all_variables.clear();
@@ -1701,20 +1739,21 @@ bool preflight() {
 
     const range_list_t usage_ranges = this->source_ranges_for_section("Usage:");
     if (usage_ranges.empty()) {
-        append_error(&this->errors, npos, "Unable to find Usage: section");
+        append_error(&this->errors, npos, error_missing_usage_section, "Missing Usage: section");
         return false;
     } else if (usage_ranges.size() > 1) {
-        append_error(&this->errors, npos, "More than one Usage: section");
+        append_error(&this->errors, npos, error_excessive_usage_sections, "More than one Usage: section");
         return false;
     }
     
     // Extract options from the options section
     this->shortcut_options = this->parse_options_spec(&this->errors);
-    this->uniqueize_options(&this->shortcut_options, &this->errors);
+    this->uniqueize_options(&this->shortcut_options, true /* error on duplicates */, &this->errors);
     
-    this->parse_tree = parse_usage<string_t>(this->source, usage_ranges.at(0), this->shortcut_options);
+    this->parse_tree = parse_usage<string_t>(this->source, usage_ranges.at(0), this->shortcut_options, &this->errors);
     if (! this->parse_tree) {
-        append_error(&this->errors, npos, "Failed to parse");
+        // Should always produce an error here!
+        assert(! this->errors.empty());
         return false;
     }
     
@@ -1726,7 +1765,7 @@ bool preflight() {
     this->all_options.reserve(usage_options.size() + this->shortcut_options.size());
     this->all_options.insert(this->all_options.end(), usage_options.begin(), usage_options.end());
     this->all_options.insert(this->all_options.end(), this->shortcut_options.begin(), this->shortcut_options.end());
-    this->uniqueize_options(&this->all_options, &this->errors);
+    this->uniqueize_options(&this->all_options, false /* do not error on duplicates */, &this->errors);
 
     /* Hackish. Consider the following usage:
        usage: prog [options] [-a]
@@ -1761,62 +1800,25 @@ bool preflight() {
     return true;
 }
 
-option_map_t best_assignment(const string_list_t &argv, parse_flags_t flags, index_list_t *out_unused_arguments, bool log_stuff = false) {
-    // Preflight
-    if (! this->preflight()) {
-        return option_map_t();
-    }
-
-    // Dump options
-    if (log_stuff) {
-        for (size_t i=0; i < all_options.size(); i++) {
-            fprintf(stderr, "Option %lu: %ls\n", i, widen(all_options.at(i).describe(this->source)).c_str());
-        }
-    }
-
-    if (log_stuff) {
-        std::cerr << node_dumper_t::dump_tree(*this->parse_tree, this->source) << "\n";
-    }
+// TODO: make this const by stop touching error_list
+option_map_t best_assignment_for_argv(const string_list_t &argv, parse_flags_t flags, error_list_t *out_errors, index_list_t *out_unused_arguments)
+{
+    this->errors.clear();
     
     positional_argument_list_t positionals;
     resolved_option_list_t resolved_options;
-    this->separate_argv_into_options_and_positionals(argv, all_options, flags, &positionals, &resolved_options, &this->errors);
-
-    if (log_stuff) {
-        for (size_t i=0; i < positionals.size(); i++) {
-            size_t arg_idx = positionals.at(i).idx_in_argv;
-            fprintf(stderr, "positional %lu: %ls\n", i, widen(argv.at(arg_idx)).c_str());
-        }
-
-        for (size_t i=0; i < resolved_options.size(); i++) {
-            resolved_option_t &opt = resolved_options.at(i);
-            range_t range = opt.option.name;
-            const string_t name = string_t(this->source, range.start, range.length);
-                std::wstring value_str;
-                if (opt.value_idx_in_argv != npos) {
-                    const range_t &value_range = opt.value_range_in_arg;
-                    value_str = widen(string_t(argv.at(opt.value_idx_in_argv), value_range.start, value_range.length));
-                }
-                fprintf(stderr, "Resolved %lu: %ls (%ls) <%lu, %lu>\n", i, widen(name).c_str(), value_str.c_str(), opt.option.name.start, opt.option.name.length);
-        }
-    }
-
-    option_map_t result = this->match_argv(argv, flags, positionals, resolved_options, all_options, all_variables, out_unused_arguments, log_stuff);
     
-    if (log_stuff) {
-        for (typename option_map_t::const_iterator iter = result.begin(); iter != result.end(); ++iter) {
-            const string_t &name = iter->first;
-            const arg_t &arg = iter->second;
-            fprintf(stderr, "\t%ls: ", widen(name).c_str());
-            for (size_t j=0; j < arg.values.size(); j++) {
-                if (j > 0) {
-                    fprintf(stderr, ", ");
-                }
-                fprintf(stderr, "%ls", widen(arg.values.at(j)).c_str());
-            }
-            std::cerr << '\n';
-        }
+    // Extract positionals and arguments from argv
+    this->separate_argv_into_options_and_positionals(argv, all_options, flags, &positionals, &resolved_options, &this->errors);
+    
+    // Produce an option map
+    option_map_t result = this->match_argv(argv, flags, positionals, resolved_options, all_options, all_variables, out_unused_arguments);
+    
+    // Pass along any errors
+    if (out_errors) {
+        out_errors->insert(out_errors->end(), this->errors.begin(), this->errors.end());
     }
+    this->errors.clear();
     
     return result;
 }
@@ -1906,80 +1908,8 @@ string_t description_for_option(const string_t &given_option_name) const {
     return result;
 }
 
-#if SIMPLE_TEST
-static int simple_test() {
-    const std::string usage =
-#if 1
-    "Usage: prog --status\n"
-    "       prog jump [--height <in>]";
-#else
-    "Naval Fate.\n"
-    "\n"
-    "Usage:\n"
-    "  prog ship new <name>...\n"
-    "  prog ship [<name>] move <x> <y> [--speed=<kn>]\n"
-    "  prog ship shoot <x> <y>\n"
-    "  prog mine (set|remove) <x> <y> [--moored|--drifting]\n"
-    "  prog -h | --help\n"
-    "  prog --version\n"
-    "\n"
-    "Options:\n"
-    "  -h --help     Show this screen.\n"
-    "  --version     Show version.\n"
-    "  --speed=<kn>  Speed in knots [default: 10].\n"
-    "  --moored      Mored (anchored) mine.\n"
-    "  --drifting    Drifting mine.\n"
-#endif
-    ;
-    
-    const char *args[] = {
-#if 1
-        "prog"
-#else
-        "prog", "ship", "Guardian", "move", "150", "300", "--speed=20"
-#endif
-    };
-    
-    size_t arg_count = sizeof args / sizeof *args;
-    std::vector<std::string> argv(args, args + arg_count);
-    
-    docopt_impl<std::string> impl(usage);
-    std::vector<size_t> unused_arguments;
-    option_map_t match = impl.best_assignment(argv, flags_default | flag_generate_empty_args, &unused_arguments, true);
-    
-    for (size_t i=0; i < unused_arguments.size(); i++) {
-        size_t arg_idx = unused_arguments.at(i);
-        fprintf(stderr, "Unused argument: <%s>\n", argv.at(arg_idx).c_str());
-    }
-    
-    return 0;
-}
-#endif
-
 // close the class
 CLOSE_DOCOPT_IMPL;
-
-
-template<typename string_t>
-argument_parser_t<string_t> *argument_parser_t<string_t>::create(const string_t &doc, std::vector<error_t<string_t> > *out_errors)
-{
-    /* Optimistically create the parser */
-    argument_parser_t<string_t> *result = new argument_parser_t<string_t>();
-    result->src = doc;
-    
-    /* Make and store its guts */
-    result->impl = new docopt_impl<string_t>(result->src);
-
-    if (! result->impl->preflight()) {
-        /* D'oh. Note that argument_parser_t's destructor will clean up the impl.  */
-        if (out_errors != NULL) {
-            *out_errors = result->impl->errors;
-        }
-        delete result;
-        return NULL;
-    }
-    return result;
-}
 
 template<typename string_t>
 std::vector<argument_status_t> argument_parser_t<string_t>::validate_arguments(const std::vector<string_t> &argv, parse_flags_t flags) const
@@ -1988,7 +1918,7 @@ std::vector<argument_status_t> argument_parser_t<string_t>::validate_arguments(c
     std::vector<argument_status_t> result(arg_count, status_valid);
 
     index_list_t unused_args;
-    impl->best_assignment(argv, flags, &unused_args);
+    impl->best_assignment_for_argv(argv, flags, NULL /* errors */, &unused_args);
     
     // Unused arguments are all invalid
     for (size_t i=0; i < unused_args.size(); i++) {
@@ -2016,28 +1946,72 @@ string_t argument_parser_t<string_t>::description_for_option(const string_t &opt
     return impl->description_for_option(option);
 }
 
-/* Constructor */
 template<typename string_t>
-argument_parser_t<string_t>::argument_parser_t() {}
+std::map<string_t, base_argument_t<string_t> >
+argument_parser_t<string_t>::parse_arguments(const std::vector<string_t> &argv,
+                                            parse_flags_t flags,
+                                            std::vector<error_t<string_t> > *out_errors,
+                                            std::vector<size_t> *out_unused_arguments) {
+    return impl->best_assignment_for_argv(argv, flags, out_errors, out_unused_arguments);
+}
+
+
+template<typename string_t>
+bool argument_parser_t<string_t>::set_doc(const string_t &doc, std::vector<error_t<string_t> > *out_errors) {
+    docopt_impl<string_t> *new_impl = new docopt_impl<string_t>(doc);
+    
+    bool preflighted = new_impl->preflight();
+    
+    if (out_errors) {
+        out_errors->insert(out_errors->end(), new_impl->errors.begin(), new_impl->errors.end());
+    }
+    
+    if (! preflighted) {
+        delete new_impl;
+    } else {
+        delete this->impl; // may be null
+        this->impl = new_impl;
+    }
+    return preflighted;
+}
+
+/* Constructors */
+template<typename string_t>
+argument_parser_t<string_t>::argument_parser_t() : impl(NULL) {}
+
+template<typename string_t>
+argument_parser_t<string_t>::argument_parser_t(const string_t &doc, error_list_t *out_errors) : impl(NULL) {
+    this->set_doc(doc, out_errors);
+}
+
+template<typename string_t>
+argument_parser_t<string_t>::argument_parser_t(const argument_parser_t &rhs) {
+    if (rhs.impl == NULL) {
+        this->impl = NULL;
+    } else {
+        this->impl = new docopt_impl<string_t>(*rhs.impl);
+    }
+}
+
+template<typename string_t>
+argument_parser_t<string_t> &argument_parser_t<string_t>::operator=(const argument_parser_t &rhs) {
+    if (this != &rhs) {
+        delete this->impl;
+        if (rhs.impl == NULL) {
+            this->impl = NULL;
+        } else {
+            this->impl = new docopt_impl<string_t>(*rhs.impl);
+        }
+    }
+    return *this;
+}
+
 
 /* Destructor */
 template<typename string_t>
 argument_parser_t<string_t>::~argument_parser_t<string_t>() {
     /* Clean up guts */
-    docopt_impl<string_t> *typed_impl = static_cast<docopt_impl<string_t> *>(this->impl);
-    if (typed_impl != NULL) {
-        delete typed_impl;
-    }
-}
-
-std::map<std::string, argument_t> docopt_parse(const std::string &usage_doc, const std::vector<std::string> &argv, parse_flags_t flags, index_list_t *out_unused_arguments) {
-    docopt_impl<std::string> impl(usage_doc);
-    return impl.best_assignment(argv, flags, out_unused_arguments);
-}
-
-std::map<std::wstring, wargument_t> docopt_wparse(const std::wstring &usage_doc, const std::vector<std::wstring> &argv, parse_flags_t flags, index_list_t *out_unused_arguments) {
-    docopt_impl<std::wstring> impl(usage_doc);
-    return impl.best_assignment(argv, flags, out_unused_arguments);
+    delete impl; // may be null
 }
 
 // close the namespace
@@ -2047,10 +2021,4 @@ CLOSE_DOCOPT_IMPL
 template class docopt_fish::argument_parser_t<std::string>;
 template class docopt_fish::argument_parser_t<std::wstring>;
 
-#if SIMPLE_TEST
-int main(void) {
-    using namespace docopt_fish;
-    docopt_impl<std::string>::simple_test();
-    
-}
-#endif
+

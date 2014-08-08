@@ -7,18 +7,21 @@ Functions for handling the set of docopt descriptions
 #include "../config.h"
 #include "docopt_registration.h"
 #include "../common.h"
+#include "../parse_constants.h"
 #include <map>
 #include <vector>
 #include <list>
 #include <memory>
 
 typedef docopt_fish::argument_parser_t<wcstring> docopt_parser_t;
+typedef docopt_fish::error_t<wcstring> docopt_error_t;
+typedef std::vector<docopt_error_t> docopt_error_list_t;
 
 // Name, value pair
 struct registration_t {
     wcstring name;
     wcstring description;
-    std::auto_ptr<docopt_parser_t> parser;
+    docopt_parser_t parser;
     
     registration_t(const wcstring &n, const wcstring &d) : name(n), description(d)
     {}
@@ -38,31 +41,56 @@ class doc_register_t {
     mutex_lock_t lock;
     
     public:
-    void register_description(const wcstring &cmd, const wcstring &name, const wcstring &description)
+    bool register_description(const wcstring &cmd, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors)
     {
-        scoped_lock locker(lock);
-        registration_list_t &regs = cmd_to_registration[cmd];
-        
-        // Remove any with the same name
-        registration_list_t::iterator iter = regs.begin();
-        while (iter != regs.end())
+        // Try to parse it
+        docopt_parser_t parser;
+        docopt_error_list_t errors;
+        bool parsed = parser.set_doc(description, &errors);
+
+        // Translate errors from docopt to parse_error over
+        if (out_errors != NULL)
         {
-            if (iter->name == name)
+            parse_error_t parse_err;
+            for (size_t i=0; i < errors.size(); i++)
             {
-                iter = regs.erase(iter);
-            }
-            else
-            {
-                ++iter;
+                const docopt_error_t &doc_err = errors.at(i);
+                parse_err.text = doc_err.text;
+                parse_err.code = parse_error_docopt;
+                parse_err.source_start = doc_err.location;
+                parse_err.source_length = 0;
+                out_errors->push_back(parse_err);
             }
         }
         
-        // Append a new one
-        regs.push_back(registration_t());
-        registration_t *reg = &regs.back();
-        reg->name = name;
-        reg->description = description;
-        reg->parser.reset(docopt_parser_t::create(description, NULL));
+        //
+        if (parsed)
+        {
+            scoped_lock locker(lock);
+            registration_list_t &regs = cmd_to_registration[cmd];
+            
+            // Remove any with the same name
+            registration_list_t::iterator iter = regs.begin();
+            while (iter != regs.end())
+            {
+                if (iter->name == name)
+                {
+                    iter = regs.erase(iter);
+                }
+                else
+                {
+                    ++iter;
+                }
+            }
+            
+            // Append a new one
+            regs.push_back(registration_t());
+            registration_t *reg = &regs.back();
+            reg->name = name;
+            reg->description = description;
+            reg->parser = parser;
+        }
+        return parsed;
     }
     
     wcstring_list_t copy_registered_descriptions(const wcstring &cmd)
@@ -82,12 +110,12 @@ class doc_register_t {
     
     const docopt_parser_t *first_parser(const wcstring &cmd) const
     {
-        docopt_parser_t *result = NULL;
+        const docopt_parser_t *result = NULL;
         ASSERT_IS_LOCKED(lock);
         registration_map_t::const_iterator where = this->cmd_to_registration.find(cmd);
         if (where != this->cmd_to_registration.end() && ! where->second.empty())
         {
-            result = where->second.front().parser.get();
+            result = &where->second.front().parser;
         }
         return result;
     }
@@ -143,9 +171,9 @@ class doc_register_t {
 };
 static doc_register_t default_register;
 
-void docopt_register_description(const wcstring &cmd, const wcstring &name, const wcstring &description)
+bool docopt_register_description(const wcstring &cmd, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors)
 {
-    default_register.register_description(cmd, name, description);
+    return default_register.register_description(cmd, name, description, out_errors);
 }
 
 wcstring_list_t docopt_copy_registered_descriptions(const wcstring &cmd)
