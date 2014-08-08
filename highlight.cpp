@@ -36,8 +36,7 @@
 #include "path.h"
 #include "history.h"
 #include "parse_tree.h"
-#include "docopt/docopt_fish.h"
-#include "docopt/docopt_registration.h"
+#include "docopt_registration.h"
 
 #define CURSOR_POSITION_INVALID ((size_t)(-1))
 
@@ -1481,7 +1480,6 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
 
 void highlighter_t::apply_docopt_coloring(const parse_node_t &statement_node)
 {
-    using namespace docopt_fish;
     assert(statement_node.type == symbol_plain_statement);
     wcstring_list_t argv;
     
@@ -1498,7 +1496,7 @@ void highlighter_t::apply_docopt_coloring(const parse_node_t &statement_node)
     }
     
     const wcstring &cmd_name = argv.at(0);
-    const std::vector<argument_status_t> statuses = docopt_validate_arguments(cmd_name, argv, docopt_fish::flags_default);
+    const std::vector<docopt_argument_status_t> statuses = docopt_validate_arguments(cmd_name, argv, flag_match_allow_incomplete);
     if (! statuses.empty())
     {
         /* Apply these to the nodes. Ignore the program name. */

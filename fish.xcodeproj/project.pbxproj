@@ -455,7 +455,7 @@
 		D0C9A729197444E40006BE78 /* docopt_fish.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = docopt_fish.cpp; sourceTree = "<group>"; };
 		D0C9A72A197444E40006BE78 /* docopt_fish.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = docopt_fish.h; sourceTree = "<group>"; };
 		D0C9A72C19745B8E0006BE78 /* docopt_registration.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = docopt_registration.cpp; sourceTree = "<group>"; };
-		D0C9A72D19745B8E0006BE78 /* docopt_registration.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = docopt_registration.h; sourceTree = "<group>"; };
+		D0C9A72D19745B8E0006BE78 /* docopt_registration.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = docopt_registration.h; sourceTree = SOURCE_ROOT; };
 		D0CA63F316FC275F00093BD4 /* builtin_printf.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = builtin_printf.cpp; sourceTree = "<group>"; };
 		D0CBD580159EE48F0024809C /* config.fish */ = {isa = PBXFileReference; lastKnownFileType = text; name = config.fish; path = share/config.fish; sourceTree = "<group>"; };
 		D0CBD583159EEE010024809C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -554,8 +554,6 @@
 				D007690E19899E4F00CA4627 /* docopt_fish_types.h */,
 				D0C9A72A197444E40006BE78 /* docopt_fish.h */,
 				D0C9A729197444E40006BE78 /* docopt_fish.cpp */,
-				D0C9A72D19745B8E0006BE78 /* docopt_registration.h */,
-				D0C9A72C19745B8E0006BE78 /* docopt_registration.cpp */,
 			);
 			path = docopt;
 			sourceTree = "<group>";
@@ -573,6 +571,8 @@
 			isa = PBXGroup;
 			children = (
 				D0C9A728197444E40006BE78 /* docopt */,
+				D0C9A72D19745B8E0006BE78 /* docopt_registration.h */,
+				D0C9A72C19745B8E0006BE78 /* docopt_registration.cpp */,
 				D0C6FCCB14CFA4B7004CE8AD /* autoload.h */,
 				D0C6FCC914CFA4B0004CE8AD /* autoload.cpp */,
 				D0A0850313B3ACEE0099B651 /* builtin.h */,

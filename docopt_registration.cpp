@@ -4,10 +4,11 @@ Functions for handling the set of docopt descriptions
 
 */
 
-#include "../config.h"
+#include "config.h"
 #include "docopt_registration.h"
-#include "../common.h"
-#include "../parse_constants.h"
+#include "common.h"
+#include "parse_constants.h"
+#include "docopt/docopt_fish.h"
 #include <map>
 #include <vector>
 #include <list>
@@ -120,14 +121,20 @@ class doc_register_t {
         return result;
     }
 
-    std::vector<docopt_fish::argument_status_t> validate_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_fish::parse_flags_t flags)
+    std::vector<docopt_argument_status_t> validate_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_fish::parse_flags_t flags)
     {
         scoped_lock locker(lock);
-        std::vector<docopt_fish::argument_status_t> result;
+        std::vector<docopt_argument_status_t> result;
         const docopt_parser_t *p = this->first_parser(cmd);
         if (p)
         {
-            result = p->validate_arguments(argv, flags);
+            const std::vector<docopt_fish::argument_status_t> tmp = p->validate_arguments(argv, flags);
+            // Transform to our cover type
+            result.reserve(tmp.size());
+            for (size_t i=0; i < tmp.size(); i++)
+            {
+                result.push_back(static_cast<docopt_argument_status_t>(tmp.at(i)));
+            }
         }
         return result;
     }
@@ -182,12 +189,12 @@ wcstring_list_t docopt_copy_registered_descriptions(const wcstring &cmd)
 }
 
 
-std::vector<docopt_fish::argument_status_t> docopt_validate_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_fish::parse_flags_t flags)
+std::vector<docopt_argument_status_t> docopt_validate_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_parse_flags_t flags)
 {
     return default_register.validate_arguments(cmd, argv, flags);
 }
 
-wcstring_list_t docopt_suggest_next_argument(const wcstring &cmd, const wcstring_list_t &argv, docopt_fish::parse_flags_t flags)
+wcstring_list_t docopt_suggest_next_argument(const wcstring &cmd, const wcstring_list_t &argv, docopt_parse_flags_t flags)
 {
     return default_register.suggest_next_argument(cmd, argv, flags);
 }

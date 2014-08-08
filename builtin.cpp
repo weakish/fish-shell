@@ -65,7 +65,7 @@
 #include "path.h"
 #include "history.h"
 #include "parse_tree.h"
-#include "docopt/docopt_registration.h"
+#include "docopt_registration.h"
 
 /**
    The default prompt for the read command

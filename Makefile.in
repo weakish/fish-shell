@@ -90,9 +90,8 @@ FISH_OBJS := function.o builtin.o complete.o env.o exec.o expand.o		\
 	signal.o io.o parse_util.o common.o screen.o path.o autoload.o		\
 	parser_keywords.o iothread.o color.o postfork.o	\
 	builtin_test.o parse_tree.o parse_productions.o parse_execution.o \
-	pager.o utf8.o fish_version.o \
-	docopt/docopt_fish.o docopt/docopt_fish_parse_tree.o \
-	docopt/docopt_registration.o
+	pager.o utf8.o fish_version.o docopt_registration.o \
+	docopt/docopt_fish.o docopt/docopt_fish_parse_tree.o
 
 FISH_INDENT_OBJS := fish_indent.o print_help.o common.o	\
 parser_keywords.o wutil.o tokenizer.o fish_version.o

@@ -65,7 +65,7 @@
 #include "input.h"
 #include "utf8.h"
 #include "env_universal_common.h"
-#include "docopt/docopt_registration.h"
+#include "docopt_registration.h"
 
 static const char * const * s_arguments;
 static int s_test_run_count = 0;

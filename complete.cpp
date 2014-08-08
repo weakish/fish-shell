@@ -46,7 +46,7 @@
 #include "path.h"
 #include "parse_tree.h"
 #include "iothread.h"
-#include "docopt/docopt_registration.h"
+#include "docopt_registration.h"
 
 /*
   Completion description strings, mostly for different types of files, such as sockets, block devices, etc.
@@ -1634,7 +1634,7 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_nod
             argv.pop_back();
         }
         
-        const wcstring_list_t suggestions = docopt_suggest_next_argument(cmd_unescape, argv);
+        const wcstring_list_t suggestions = docopt_suggest_next_argument(cmd_unescape, argv, flag_match_allow_incomplete);
         for (size_t i=0; i < suggestions.size(); i++)
         {
             const wcstring &suggestion = suggestions.at(i);
