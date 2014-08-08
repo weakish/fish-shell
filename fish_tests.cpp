@@ -1949,7 +1949,7 @@ static void test_docopt_complete(void)
     L"       <dynval>  (echo ONE\\nTWO\\nTHREE)\n"
     ;
     
-    docopt_register_description(cmd, L"fish_test", desc);
+    docopt_register_description(cmd, L"fish_test", desc, NULL);
     completion_list_t completions;
 
     complete(L"flea --c", completions, COMPLETION_REQUEST_DEFAULT);
