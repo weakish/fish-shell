@@ -1970,7 +1970,6 @@ static void test_docopt_complete(void)
     do_test(completions.at(0).completion == L"ONE");
     do_test(completions.at(1).completion == L"TWO");
     do_test(completions.at(2).completion == L"THREE");
-
 }
 
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)
