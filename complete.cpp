@@ -1386,20 +1386,6 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
     wcstring cmd, path;
     parse_cmd_string(cmd_orig, path, cmd);
 
-    if (this->type() == COMPLETE_DEFAULT)
-    {
-        ASSERT_IS_MAIN_THREAD();
-        complete_load(cmd, true);
-    }
-    else if (this->type() == COMPLETE_AUTOSUGGEST)
-    {
-        /* Maybe load this command (on the main thread) */
-        if (! completion_autoloader.has_tried_loading(cmd))
-        {
-            iothread_perform_on_main(complete_load_no_reload, &cmd);
-        }
-    }
-
     /* Make a list of lists of all options that we care about */
     std::vector<local_options_t> all_options;
     {
@@ -1613,82 +1599,63 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
 }
 
 // Attempts to fetch completions from docopt
-bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src, bool cursor_in_last_arg)
+bool completer_t::complete_from_docopt(const wcstring &cmd_unescape, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src, bool cursor_in_last_arg)
 {
     bool success = false;
-    wcstring cmd_unescape;
-    if (unescape_string(cmd_orig, &cmd_unescape, UNESCAPE_DEFAULT))
+    wcstring_list_t argv;
+    argv.push_back(cmd_unescape);
+    for (size_t i=0; i < arg_nodes.size(); i++)
     {
+        // TODO: need to escape all of these!
+        argv.push_back(arg_nodes.at(i)->get_source(src));
+    }
     
-        if (this->type() == COMPLETE_DEFAULT)
+    wcstring last_arg;
+    if (cursor_in_last_arg && ! argv.empty())
+    {
+        last_arg = argv.back();
+        argv.pop_back();
+    }
+    
+    const wcstring_list_t suggestions = docopt_suggest_next_argument(cmd_unescape, argv, flag_match_allow_incomplete);
+    for (size_t i=0; i < suggestions.size(); i++)
+    {
+        const wcstring &suggestion = suggestions.at(i);
+        if (string_prefixes_string(L"<", suggestion))
         {
-            ASSERT_IS_MAIN_THREAD();
-            complete_load(cmd_unescape, true);
-        }
-        else if (this->type() == COMPLETE_AUTOSUGGEST)
-        {
-            /* Maybe load this command (on the main thread) */
-            if (! completion_autoloader.has_tried_loading(cmd_unescape))
+            // Variable. Handle any conditions. If there are no conditions, we may return false, which allows for file completions.
+            const wcstring conditions = docopt_conditions_for_variable(cmd_unescape, suggestion);
+            if (! conditions.empty())
             {
-                iothread_perform_on_main(complete_load_no_reload, &cmd_unescape);
+                this->complete_from_args(last_arg, conditions, docopt_description_for_option(cmd_unescape, suggestion), 0);
+                // Indicate success even if there were no successful arguments, so that we don't try to do file completions when the variable has conditions
+                success = true;
             }
         }
-    
-        wcstring_list_t argv;
-        argv.push_back(cmd_unescape);
-        for (size_t i=0; i < arg_nodes.size(); i++)
+        else
         {
-            // TODO: need to escape all of these!
-            argv.push_back(arg_nodes.at(i)->get_source(src));
-        }
-        
-        wcstring last_arg;
-        if (cursor_in_last_arg && ! argv.empty())
-        {
-            last_arg = argv.back();
-            argv.pop_back();
-        }
-        
-        const wcstring_list_t suggestions = docopt_suggest_next_argument(cmd_unescape, argv, flag_match_allow_incomplete);
-        for (size_t i=0; i < suggestions.size(); i++)
-        {
-            const wcstring &suggestion = suggestions.at(i);
-            if (string_prefixes_string(L"<", suggestion))
+            // TODO: descriptions
+            if (last_arg.empty())
             {
-                // Variable. Handle any conditions. If there are no conditions, we may return false, which allows for file completions.
-                const wcstring conditions = docopt_conditions_for_variable(cmd_unescape, suggestion);
-                if (! conditions.empty())
-                {
-                    this->complete_from_args(last_arg, conditions, docopt_description_for_option(cmd_unescape, suggestion), 0);
-                    // Indicate success even if there were no successful arguments, so that we don't try to do file completions when the variable has conditions
-                    success = true;
-                }
+                // No partial argument to complete, just dump it in
+                append_completion(this->completions, suggestion, docopt_description_for_option(cmd_unescape, suggestion), 0);
+                success = true;
             }
             else
             {
-                // TODO: descriptions
-                if (last_arg.empty())
+                string_fuzzy_match_t match = string_fuzzy_match_string(last_arg, suggestion, this->max_fuzzy_match_type());
+                if (match.type != fuzzy_match_none)
                 {
-                    // No partial argument to complete, just dump it in
-                    append_completion(this->completions, suggestion, docopt_description_for_option(cmd_unescape, suggestion), 0);
-                    success = true;
-                }
-                else
-                {
-                    string_fuzzy_match_t match = string_fuzzy_match_string(last_arg, suggestion, this->max_fuzzy_match_type());
-                    if (match.type != fuzzy_match_none)
+                    if (match_type_requires_full_replacement(match.type))
                     {
-                        if (match_type_requires_full_replacement(match.type))
-                        {
-                            append_completion(this->completions, suggestion, docopt_description_for_option(cmd_unescape, suggestion), COMPLETE_REPLACES_TOKEN, match);
-                        }
-                        else
-                        {
-                            // Append a prefix completion that starts after the last argument
-                            append_completion(this->completions, wcstring(suggestion, last_arg.size()), docopt_description_for_option(cmd_unescape, suggestion), 0, match);
-                        }
-                        success = true;
+                        append_completion(this->completions, suggestion, docopt_description_for_option(cmd_unescape, suggestion), COMPLETE_REPLACES_TOKEN, match);
                     }
+                    else
+                    {
+                        // Append a prefix completion that starts after the last argument
+                        append_completion(this->completions, wcstring(suggestion, last_arg.size()), docopt_description_for_option(cmd_unescape, suggestion), 0, match);
+                    }
+                    success = true;
                 }
             }
         }
@@ -2079,31 +2046,54 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                 {
                     do_file = true;
                 }
-                else if (completer.complete_from_docopt(current_command, tree, all_arguments, cmd, adjusted_pos == pos))
-                {
-                    do_file = false;
-                }
                 else
                 {
-                    wcstring current_command_unescape, previous_argument_unescape, current_argument_unescape;
-                    if (unescape_string(current_command, &current_command_unescape, UNESCAPE_DEFAULT) &&
-                            unescape_string(previous_argument, &previous_argument_unescape, UNESCAPE_DEFAULT) &&
-                            unescape_string(current_argument, &current_argument_unescape, UNESCAPE_INCOMPLETE))
+                    wcstring current_command_unescape;
+                    if (unescape_string(current_command, &current_command_unescape, UNESCAPE_DEFAULT))
                     {
-                        do_file = completer.complete_param(current_command_unescape,
-                                                           previous_argument_unescape,
-                                                           current_argument_unescape,
-                                                           !had_ddash);
-                    }
+                    
+                        // Maybe load this completion
+                        if (! (flags & COMPLETION_REQUEST_AUTOSUGGESTION))
+                        {
+                            ASSERT_IS_MAIN_THREAD();
+                            complete_load(current_command_unescape, true);
+                        }
+                        else
+                        {
+                            /* Maybe load this command (on the main thread) */
+                            if (! completion_autoloader.has_tried_loading(cmd))
+                            {
+                                iothread_perform_on_main(complete_load_no_reload, &current_command_unescape);
+                            }
+                        }
+                    
+                        bool cursor_in_last_arg = (adjusted_pos == pos);
+                        if (completer.complete_from_docopt(current_command_unescape, tree, all_arguments, cmd, cursor_in_last_arg))
+                        {
+                            do_file = false;
+                        }
+                        else
+                        {
+                            wcstring previous_argument_unescape, current_argument_unescape;
+                            if (unescape_string(previous_argument, &previous_argument_unescape, UNESCAPE_DEFAULT) &&
+                                unescape_string(current_argument, &current_argument_unescape, UNESCAPE_INCOMPLETE))
+                            {
+                                do_file = completer.complete_param(current_command_unescape,
+                                                                   previous_argument_unescape,
+                                                                   current_argument_unescape,
+                                                                   !had_ddash);
+                            }
+                        }
+                        
+                        /* If we have found no command specific completions at all, fall back to using file completions. */
+                        if (completer.empty())
+                            do_file = true;
 
-                    /* If we have found no command specific completions at all, fall back to using file completions. */
-                    if (completer.empty())
-                        do_file = true;
-
-                    /* And if we're autosuggesting, and the token is empty, don't do file suggestions */
-                    if ((flags & COMPLETION_REQUEST_AUTOSUGGESTION) && current_argument_unescape.empty())
-                    {
-                        do_file = false;
+                        /* And if we're autosuggesting, and the token is empty, don't do file suggestions */
+                        if ((flags & COMPLETION_REQUEST_AUTOSUGGESTION) && current_argument.empty())
+                        {
+                            do_file = false;
+                        }
                     }
                 }
 
