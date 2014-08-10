@@ -1619,6 +1619,21 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_orig, const parse_nod
     wcstring cmd_unescape;
     if (unescape_string(cmd_orig, &cmd_unescape, UNESCAPE_DEFAULT))
     {
+    
+        if (this->type() == COMPLETE_DEFAULT)
+        {
+            ASSERT_IS_MAIN_THREAD();
+            complete_load(cmd_unescape, true);
+        }
+        else if (this->type() == COMPLETE_AUTOSUGGEST)
+        {
+            /* Maybe load this command (on the main thread) */
+            if (! completion_autoloader.has_tried_loading(cmd_unescape))
+            {
+                iothread_perform_on_main(complete_load_no_reload, &cmd_unescape);
+            }
+        }
+    
         wcstring_list_t argv;
         argv.push_back(cmd_unescape);
         for (size_t i=0; i < arg_nodes.size(); i++)
