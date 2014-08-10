@@ -1,19 +1,20 @@
+complete --signature '
+Usage: cowsay [options]
+Options: -e <eyestr>    Specify eye string
+         -f <cowfile>   Specify cow file
+         -h             Display help and exit
+         -l             List all cowfiles
+         -n             No word wrapping
+         -T             Specify tongue string
+         -W <colwidth>  Column width
+         -b             Borg cow
+         -d             Dead cow
+         -g             Greedy cow
+         -p             Paranoid cow
+         -s             Stoned cow
+         -t             Tired cow
+         -w             Wired cow
+         -y             Young cow
 
-
-complete -c cowsay -s e -d "Specify eye string" -r
-complete -c cowsay -s f -d "Specify cow file" -x -a '(cowsay -l|tail -n +2|tr \  \n)'
-complete -c cowsay -s h -d "Display help and exit"
-complete -c cowsay -s l -d "List all cowfiles"
-complete -c cowsay -s n -d "No word wrapping"
-complete -c cowsay -s T -d "Specify tounge string"
-complete -c cowsay -s W -d "Column width" -r
-complete -c cowsay -s b -d "Borg cow"
-complete -c cowsay -s d -d "Dead cow"
-complete -c cowsay -s g -d "Greedy cow"
-complete -c cowsay -s p -d "Paranoid cow"
-complete -c cowsay -s s -d "Stoned cow"
-complete -c cowsay -s t -d "Tired cow"
-complete -c cowsay -s w -d "Wired cow"
-complete -c cowsay -s y -d "Young cow"
-
-
+Conditions: <cowfile>  (cowsay -l|tail -n +2|tr \  \n)
+'
