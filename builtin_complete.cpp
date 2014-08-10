@@ -557,7 +557,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
 
             res = true;
         }
-        else if (cmd.empty() && path.empty())
+        else if (cmd.empty() && path.empty() && ! do_signature)
         {
             /* No arguments specified, meaning we print the definitions of
              * all specified completions to stdout.*/
@@ -595,13 +595,11 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
     
     if (do_signature)
     {
+        parse_error_list_t errors;
         if (cmd.empty() && path.empty())
         {
-            append_format(stderr_buffer,
-                          L"%ls: No command specified for function signature\n",
-                          argv[0]);
-            stderr_buffer.push_back(L'\n');
-            res = true;
+            // Here we attempt to infer the command
+            docopt_register_description(wcstring(), L"default", signature, &errors);
         }
         else
         {
@@ -611,23 +609,21 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                 const wcstring_list_t &cmd_or_path = (which ? cmd : path);
                 for (size_t i=0; i < cmd_or_path.size(); i++)
                 {
-                    parse_error_list_t errors;
                     docopt_register_description(cmd_or_path.at(i), L"default", signature, &errors);
-                    
-                    // Report only the first error, if we have one
-                    if (! errors.empty())
-                    {
-                        const parse_error_t &err = errors.front();
-                        // The "is_interactive" param determines if we avoid the caret for really simple cases, like "command not found" for the first line
-                        // We always show the caret for docopt signatures
-                        bool is_interactive = false, skip_caret = false;
-                        wcstring err_desc = err.describe_with_prefix(signature, wcstring(), is_interactive, skip_caret);
-                        append_format(stderr_buffer, L"%ls: %ls\n", argv[0], err_desc.c_str());
-                    }
                 }
             }
         }
         // TODO: ought to be able to return failure here
+        // Report only the first error, if we have one
+        if (! errors.empty())
+        {
+            const parse_error_t &err = errors.front();
+            // The "is_interactive" param determines if we avoid the caret for really simple cases, like "command not found" for the first line
+            // We always show the caret for docopt signatures
+            bool is_interactive = false, skip_caret = false;
+            wcstring err_desc = err.describe_with_prefix(signature, wcstring(), is_interactive, skip_caret);
+            append_format(stderr_buffer, L"%ls: %ls\n", argv[0], err_desc.c_str());
+        }
         res = true;
     }
 

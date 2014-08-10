@@ -18,6 +18,19 @@ typedef docopt_fish::argument_parser_t<wcstring> docopt_parser_t;
 typedef docopt_fish::error_t<wcstring> docopt_error_t;
 typedef std::vector<docopt_error_t> docopt_error_list_t;
 
+static void append_parse_error(parse_error_list_t *out_errors, size_t where, const wcstring &text)
+{
+    if (out_errors != NULL)
+    {
+        out_errors->resize(out_errors->size() + 1);
+        parse_error_t *parse_err = &out_errors->back();
+        parse_err->text = text;
+        parse_err->code = parse_error_docopt;
+        parse_err->source_start = where;
+        parse_err->source_length = 0;
+    }
+}
+
 // Name, value pair
 struct registration_t {
     wcstring name;
@@ -42,7 +55,7 @@ class doc_register_t {
     mutex_lock_t lock;
     
     public:
-    bool register_description(const wcstring &cmd, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors)
+    bool register_description(const wcstring &cmd_or_empty, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors)
     {
         // Try to parse it
         docopt_parser_t parser;
@@ -52,23 +65,40 @@ class doc_register_t {
         // Translate errors from docopt to parse_error over
         if (out_errors != NULL)
         {
-            parse_error_t parse_err;
             for (size_t i=0; i < errors.size(); i++)
             {
                 const docopt_error_t &doc_err = errors.at(i);
-                parse_err.text = doc_err.text;
-                parse_err.code = parse_error_docopt;
-                parse_err.source_start = doc_err.location;
-                parse_err.source_length = 0;
-                out_errors->push_back(parse_err);
+                append_parse_error(out_errors, doc_err.location, doc_err.text);
+            }
+        }
+
+        // If the command is empty, we determine the command by inferring it from the doc, if there is one
+        wcstring effective_cmd = cmd_or_empty;
+        if (effective_cmd.empty())
+        {
+            const wcstring_list_t cmd_names = parser.get_command_names();
+            if (cmd_names.empty())
+            {
+                append_parse_error(out_errors, 0, L"No command name found in docopt description");
+            }
+            else if (cmd_names.size() > 1)
+            {
+                const wchar_t *first = cmd_names.at(0).c_str();
+                const wchar_t *second = cmd_names.at(1).c_str();
+                const wcstring text = format_string(L"Multiple command names found in docopt description, such as '%ls' and '%ls'", first, second);
+                append_parse_error(out_errors, 0, text);
+            }
+            else
+            {
+                assert(cmd_names.size() == 1);
+                effective_cmd = cmd_names.front();
             }
         }
         
-        //
-        if (parsed)
+        if (parsed && ! effective_cmd.empty())
         {
             scoped_lock locker(lock);
-            registration_list_t &regs = cmd_to_registration[cmd];
+            registration_list_t &regs = cmd_to_registration[effective_cmd];
             
             // Remove any with the same name
             registration_list_t::iterator iter = regs.begin();

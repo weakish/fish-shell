@@ -1970,6 +1970,17 @@ static void test_docopt_complete(void)
     do_test(completions.at(0).completion == L"ONE");
     do_test(completions.at(1).completion == L"TWO");
     do_test(completions.at(2).completion == L"THREE");
+    
+    const wchar_t *desc2 =
+    L"Usage:\n"
+    L"       leaf [<pid>]\n"
+    L"       leaf --help\n"
+    ;
+    docopt_register_description(L"", L"fish_test", desc2, NULL);
+    completions.clear();
+    complete(L"leaf --he ", completions, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 1);
+    do_test(completions.at(0).completion == L"--help");
 }
 
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)

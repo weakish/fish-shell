@@ -15,7 +15,7 @@
 struct parse_error_t;
 typedef std::vector<parse_error_t> parse_error_list_t;
 
-/* Given a command and a name, register a description */
+/* Given a command and a name, register a description. If cmd is empty, infers the command from the doc if there is only one, else returns an error. */
 bool docopt_register_description(const wcstring &cmd, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors);
 
 /* Fetch registered descriptions */
