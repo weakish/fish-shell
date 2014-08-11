@@ -1,20 +1,23 @@
-complete -c who -s a -l all --description "Same as -b -d --login -p -r -t -T -u"
-complete -c who -s b -l boot --description "Print time of last boot"
-complete -c who -s d -l dead --description "Print dead processes"
-complete -c who -s H -l heading --description "Print line of headings"
-complete -c who -s i -l idle --description "Print idle time"
-complete -c who -s l -l login --description "Print login process"
-complete -c who -l lookup --description "Canonicalize hostnames via DNS"
-complete -c who -s m --description "Print hostname and user for stdin"
-complete -c who -s p -l process --description "Print active processes spawned by init"
-complete -c who -s q -l count --description "Print all login names and number of users logged on"
-complete -c who -s r -l runlevel --description "Print current runlevel"
-complete -c who -s s -l short --description "Print name, line, and time"
-complete -c who -s t -l time --description "Print last system clock change"
-complete -c who -s T -l mesg --description "Print users message status as +, - or ?"
-complete -c who -s w -l writable --description "Print users message status as +, - or ?"
-complete -c who -l message --description "Print users message status as +, - or ?"
-complete -c who -s u -l users --description "List users logged in"
-complete -c who -l help --description "Display help and exit"
-complete -c who -l version --description "Display version and exit"
-
+complete --signature '
+	Usage: who [options]
+	Options:
+		-a, --all       Same as -b -d --login -p -r -t -T -u
+		-b, --boot      Print time of last boot
+		-d, --dead      Print dead processes
+		-H, --heading   Print line of headings
+		-i, --idle      Print idle time
+		-l, --login     Print login process
+		--lookup        Canonicalize hostnames via DNS
+		-m              Print hostname and user for stdin
+		-p, --process   Print active processes spawned by init
+		-q, --count     Print all login names and number of users logged on
+		-r, --runlevel  Print current runlevel
+		-s, --short     Print name, line, and time
+		-t, --time      Print last system clock change
+		-T, --mesg      Print users message status as +, - or ?
+		-w, --writable  Print users message status as +, - or ?
+		--message       Print users message status as +, - or ?
+		-u, --users     List users logged in
+		--help          Display help and exit
+		--version       Display version and exit
+'
