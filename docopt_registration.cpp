@@ -8,6 +8,7 @@ Functions for handling the set of docopt descriptions
 #include "docopt_registration.h"
 #include "common.h"
 #include "parse_constants.h"
+#include "parser.h"
 #include "docopt/docopt_fish.h"
 #include <map>
 #include <vector>
@@ -54,13 +55,42 @@ class doc_register_t {
     registration_map_t cmd_to_registration;
     mutex_lock_t lock;
     
+    // Looks for errors in the parser conditions
+    bool validate_parser(const docopt_parser_t &parser, parse_error_list_t *out_errors)
+    {
+        bool success = true;
+        const wcstring_list_t vars = parser.get_variables();
+        parser_t error_detector(PARSER_TYPE_ERRORS_ONLY, false);
+        for (size_t i=0; i < vars.size(); i++)
+        {
+            const wcstring &var = vars.at(i);
+            const wcstring condition_string = parser.conditions_for_variable(var);
+            if (! condition_string.empty())
+            {
+                wcstring local_err;
+                if (error_detector.detect_errors_in_argument_list(condition_string, &local_err, L""))
+                {
+                    wcstring err_text = format_string(L"Condition '%ls' contained a syntax error:\n%ls", condition_string.c_str(), local_err.c_str());
+                    // TODO: would be nice to have the actual position of the error
+                    append_parse_error(out_errors, -1, err_text);
+                    success = false;
+                    break;
+                }
+            }
+        }
+        return success;
+    }
+    
     public:
     bool register_description(const wcstring &cmd_or_empty, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors)
     {
         // Try to parse it
         docopt_parser_t parser;
         docopt_error_list_t errors;
-        bool parsed = parser.set_doc(description, &errors);
+        bool success = parser.set_doc(description, &errors);
+        
+        // Verify it
+        success = success && validate_parser(parser, out_errors);
 
         // Translate errors from docopt to parse_error over
         if (out_errors != NULL)
@@ -94,8 +124,9 @@ class doc_register_t {
                 effective_cmd = cmd_names.front();
             }
         }
+        success = success && ! effective_cmd.empty();
         
-        if (parsed && ! effective_cmd.empty())
+        if (success)
         {
             scoped_lock locker(lock);
             registration_list_t &regs = cmd_to_registration[effective_cmd];
@@ -121,7 +152,7 @@ class doc_register_t {
             reg->description = description;
             reg->parser = parser;
         }
-        return parsed;
+        return success;
     }
     
     wcstring_list_t copy_registered_descriptions(const wcstring &cmd)
