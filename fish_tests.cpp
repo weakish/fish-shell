@@ -1935,7 +1935,7 @@ static void test_docopt_complete(void)
     const wcstring cmd = L"flea";
     
     // docopt description
-    const wchar_t *desc =
+    const wchar_t *usage =
     L"Usage:\n"
     L"       flea [options] [<pid>]\n"
     L"\n"
@@ -1949,7 +1949,7 @@ static void test_docopt_complete(void)
     L"       <dynval>  (echo ONE\\nTWO\\nTHREE)\n"
     ;
     
-    docopt_register_description(cmd, L"fish_test", desc, NULL);
+    docopt_register_usage(cmd, L"fish_test", usage, L"", NULL);
     completion_list_t completions;
 
     complete(L"flea --c", completions, COMPLETION_REQUEST_DEFAULT);
@@ -1976,7 +1976,7 @@ static void test_docopt_complete(void)
     L"       leaf [<pid>]\n"
     L"       leaf --help\n"
     ;
-    docopt_register_description(L"", L"fish_test", desc2, NULL);
+    docopt_register_usage(L"", L"fish_test", desc2, L"", NULL);
     completions.clear();
     complete(L"leaf --he ", completions, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);

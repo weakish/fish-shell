@@ -1251,7 +1251,7 @@ void completer_t::complete_from_args(const wcstring &str,
     /* If type is COMPLETE_AUTOSUGGEST, it means we're on a background thread, so don't call proc_push_interactive */
     if (! is_autosuggest)
         proc_push_interactive(0);
-
+    
     parser.expand_argument_list(args, possible_comp);
 
     if (! is_autosuggest)
@@ -1624,10 +1624,11 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_unescape, const parse
         if (string_prefixes_string(L"<", suggestion))
         {
             // Variable. Handle any conditions. If there are no conditions, we may return false, which allows for file completions.
-            const wcstring conditions = docopt_conditions_for_variable(cmd_unescape, suggestion);
+            wcstring description;
+            const wcstring conditions = docopt_conditions_for_variable(cmd_unescape, suggestion, &description);
             if (! conditions.empty())
             {
-                this->complete_from_args(last_arg, conditions, docopt_description_for_option(cmd_unescape, suggestion), 0);
+                this->complete_from_args(last_arg, conditions, description, 0);
                 // Indicate success even if there were no successful arguments, so that we don't try to do file completions when the variable has conditions
                 success = true;
             }

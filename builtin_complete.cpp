@@ -599,7 +599,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
         if (cmd.empty() && path.empty())
         {
             // Here we attempt to infer the command
-            docopt_register_description(wcstring(), L"default", signature, &errors);
+            docopt_register_usage(wcstring(), L"default", signature, desc, &errors);
         }
         else
         {
@@ -609,7 +609,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                 const wcstring_list_t &cmd_or_path = (which ? cmd : path);
                 for (size_t i=0; i < cmd_or_path.size(); i++)
                 {
-                    docopt_register_description(cmd_or_path.at(i), L"default", signature, &errors);
+                    docopt_register_usage(cmd_or_path.at(i), L"default", signature, desc, &errors);
                 }
             }
         }

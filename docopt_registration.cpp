@@ -18,6 +18,7 @@ Functions for handling the set of docopt descriptions
 typedef docopt_fish::argument_parser_t<wcstring> docopt_parser_t;
 typedef docopt_fish::error_t<wcstring> docopt_error_t;
 typedef std::vector<docopt_error_t> docopt_error_list_t;
+typedef std::vector<const docopt_parser_t *> parser_ref_list_t;
 
 static void append_parse_error(parse_error_list_t *out_errors, size_t where, const wcstring &text)
 {
@@ -32,19 +33,14 @@ static void append_parse_error(parse_error_list_t *out_errors, size_t where, con
     }
 }
 
-// Name, value pair
+// Name, value, parser triplet
 struct registration_t {
     wcstring name;
+    wcstring usage;
     wcstring description;
     docopt_parser_t parser;
     
-    registration_t(const wcstring &n, const wcstring &d) : name(n), description(d)
-    {}
     registration_t()
-    {}
-    
-    /* TODO: terribly hackish, eliminate this */
-    registration_t(const registration_t &rhs) : name(rhs.name), description(rhs.description)
     {}
 };
 
@@ -82,12 +78,12 @@ class doc_register_t {
     }
     
     public:
-    bool register_description(const wcstring &cmd_or_empty, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors)
+    bool register_usage(const wcstring &cmd_or_empty, const wcstring &name, const wcstring &usage, const wcstring &description, parse_error_list_t *out_errors)
     {
         // Try to parse it
         docopt_parser_t parser;
         docopt_error_list_t errors;
-        bool success = parser.set_doc(description, &errors);
+        bool success = parser.set_doc(usage, &errors);
         
         // Verify it
         success = success && validate_parser(parser, out_errors);
@@ -131,53 +127,74 @@ class doc_register_t {
             scoped_lock locker(lock);
             registration_list_t &regs = cmd_to_registration[effective_cmd];
             
-            // Remove any with the same name
-            registration_list_t::iterator iter = regs.begin();
-            while (iter != regs.end())
+            // If we have one with the same usage, we modify it. Otherwise we prepend a new one, which gives it precedence in the case of conflicts
+            // TODO: need to figure out an actual lifecycle - how do these get removed?
+            registration_t *registration = NULL;
+            for (registration_list_t::iterator iter = regs.begin(); iter != regs.end(); ++iter)
             {
-                if (iter->name == name)
+                if (iter->usage == usage)
                 {
-                    iter = regs.erase(iter);
-                }
-                else
-                {
-                    ++iter;
+                    registration = &*iter;
+                    break;
                 }
             }
             
-            // Append a new one
-            regs.push_back(registration_t());
-            registration_t *reg = &regs.back();
-            reg->name = name;
-            reg->description = description;
-            reg->parser = parser;
+            if (registration == NULL)
+            {
+                // Prepend a new one
+                regs.push_front(registration_t());
+                registration = &regs.front();
+            }
+        
+            registration->name = name;
+            registration->usage = usage;
+            // Don't overwrite a valid description
+            if (! description.empty())
+            {
+                registration->description = description;
+            }
+            registration->parser = parser;
         }
         return success;
     }
     
-    wcstring_list_t copy_registered_descriptions(const wcstring &cmd)
+    const docopt_parser_t *first_parser(const wcstring &cmd) const
     {
-        wcstring_list_t result;
-        scoped_lock locker(lock);
-        registration_map_t::iterator where = cmd_to_registration.find(cmd);
-        if (where != cmd_to_registration.end()) {
-            const registration_list_t &regs = where->second;
-            for (registration_list_t::const_iterator iter = regs.begin(); iter != regs.end(); ++iter)
+        ASSERT_IS_LOCKED(lock);
+        const docopt_parser_t *result = NULL;
+        registration_map_t::const_iterator where = this->cmd_to_registration.find(cmd);
+        if (where != this->cmd_to_registration.end() && ! where->second.empty())
+        {
+            result = &where->second.front().parser;
+        }
+        return result;
+    }
+    
+    parser_ref_list_t get_parsers(const wcstring &cmd) const
+    {
+        ASSERT_IS_LOCKED(lock);
+        parser_ref_list_t result;
+        registration_map_t::const_iterator where = this->cmd_to_registration.find(cmd);
+        if (where != this->cmd_to_registration.end())
+        {
+            registration_list_t::const_iterator iter;
+            for (iter = where->second.begin(); iter != where->second.end(); ++iter)
             {
-                result.push_back(iter->description);
+                result.push_back(&iter->parser);
             }
         }
         return result;
     }
     
-    const docopt_parser_t *first_parser(const wcstring &cmd) const
+    const registration_list_t *get_registrations(const wcstring &cmd) const
     {
-        const docopt_parser_t *result = NULL;
         ASSERT_IS_LOCKED(lock);
+        const registration_list_t *result = NULL;
         registration_map_t::const_iterator where = this->cmd_to_registration.find(cmd);
-        if (where != this->cmd_to_registration.end() && ! where->second.empty())
+        if (where != this->cmd_to_registration.end())
         {
-            result = &where->second.front().parser;
+            // this looks terrifying - returning a pointer to a local? But iterators remain valid.
+            result = &where->second;
         }
         return result;
     }
@@ -204,22 +221,45 @@ class doc_register_t {
     {
         scoped_lock locker(lock);
         wcstring_list_t result;
-        const docopt_parser_t *p = this->first_parser(cmd);
-        if (p)
+        
+        /* Include results from all registered parsers */
+        parser_ref_list_t parsers = this->get_parsers(cmd);
+        for (size_t i=0; i < parsers.size(); i++)
         {
-            result = p->suggest_next_argument(argv, flags);
+            const wcstring_list_t tmp = parsers.at(i)->suggest_next_argument(argv, flags);
+            result.insert(result.end(), tmp.begin(), tmp.end());
         }
+
+        /* Sort and remove duplicates */
+        std::sort(result.begin(), result.end());
+        result.erase(std::unique(result.begin(), result.end()), result.end());
+        
         return result;
     }
 
-    wcstring conditions_for_variable(const wcstring &cmd, const wcstring &var)
+    wcstring conditions_for_variable(const wcstring &cmd, const wcstring &var, wcstring *out_description)
     {
         scoped_lock locker(lock);
         wcstring result;
-        const docopt_parser_t *p = this->first_parser(cmd);
-        if (p)
+        
+        /* We use the first parser that has a condition */
+        const registration_list_t *regs = this->get_registrations(cmd);
+        if (regs != NULL)
         {
-            result = p->conditions_for_variable(var);
+            for (registration_list_t::const_iterator iter = regs->begin(); iter != regs->end(); ++iter)
+            {
+                const docopt_parser_t *p = &iter->parser;
+                result = p->conditions_for_variable(var);
+                if (! result.empty())
+                {
+                    // Return the description if requested
+                    if (out_description != NULL)
+                    {
+                        out_description->assign(iter->description);
+                    }
+                    break;
+                }
+            }
         }
         return result;
     }
@@ -228,10 +268,15 @@ class doc_register_t {
     {
         scoped_lock locker(lock);
         wcstring result;
-        const docopt_parser_t *p = this->first_parser(cmd);
-        if (p)
+        /* We use the first parser that has a condition */
+        parser_ref_list_t parsers = this->get_parsers(cmd);
+        for (size_t i=0; i < parsers.size(); i++)
         {
-            result = p->description_for_option(option);
+            result = parsers.at(i)->description_for_option(option);
+            if (! result.empty())
+            {
+                break;
+            }
         }
         return result;
     }
@@ -239,16 +284,10 @@ class doc_register_t {
 };
 static doc_register_t default_register;
 
-bool docopt_register_description(const wcstring &cmd, const wcstring &name, const wcstring &description, parse_error_list_t *out_errors)
+bool docopt_register_usage(const wcstring &cmd, const wcstring &name, const wcstring &usage, const wcstring &description, parse_error_list_t *out_errors)
 {
-    return default_register.register_description(cmd, name, description, out_errors);
+    return default_register.register_usage(cmd, name, usage, description, out_errors);
 }
-
-wcstring_list_t docopt_copy_registered_descriptions(const wcstring &cmd)
-{
-    return default_register.copy_registered_descriptions(cmd);
-}
-
 
 std::vector<docopt_argument_status_t> docopt_validate_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_parse_flags_t flags)
 {
@@ -260,9 +299,9 @@ wcstring_list_t docopt_suggest_next_argument(const wcstring &cmd, const wcstring
     return default_register.suggest_next_argument(cmd, argv, flags);
 }
 
-wcstring docopt_conditions_for_variable(const wcstring &cmd, const wcstring &var)
+wcstring docopt_conditions_for_variable(const wcstring &cmd, const wcstring &var, wcstring *out_description)
 {
-    return default_register.conditions_for_variable(cmd, var);
+    return default_register.conditions_for_variable(cmd, var, out_description);
 }
 
 wcstring docopt_description_for_option(const wcstring &cmd, const wcstring &option)
