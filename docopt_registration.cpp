@@ -20,6 +20,46 @@ typedef docopt_fish::error_t<wcstring> docopt_error_t;
 typedef std::vector<docopt_error_t> docopt_error_list_t;
 typedef std::vector<const docopt_parser_t *> parser_ref_list_t;
 
+/* Weird function. Given a parser status and an existing argument status, convert the parser status to the argument status and return the "more valid" of the two. This supports our design for multiple parsers, where if any parser declares an argument valid, that argument is marked valid. */
+enum docopt_argument_status_t more_valid_status(docopt_fish::argument_status_t parser_status, docopt_argument_status_t existing_status)
+{
+    enum docopt_argument_status_t new_status = static_cast<enum docopt_argument_status_t>(parser_status);
+    switch (existing_status)
+    {
+        case status_invalid: return new_status;
+        case status_valid: return status_valid;
+        case status_valid_prefix: return new_status == status_valid ? new_status : existing_status;
+        default: assert(0 && "Unknown argument status"); return status_invalid;
+    }
+}
+
+// Given a variable name like <hostname>, return a description like Hostname
+static wcstring description_from_variable_name(const wcstring &var)
+{
+    // Remove < and >. Replace _ with space.
+    wcstring result = var;
+    for (size_t i = 0; i < result.size(); i++)
+    {
+        wchar_t c = result.at(i);
+        if (c == L'<' || c == L'>')
+        {
+            result.erase(i, 1);
+            i -= 1;
+        }
+        else if (c == L'_')
+        {
+            result.at(i) = L' ';
+        }
+    }
+    
+    // Uppercase the first character
+    if (! result.empty())
+    {
+        result.at(0) = towupper(result.at(0));
+    }
+    return result;
+}
+
 static void append_parse_error(parse_error_list_t *out_errors, size_t where, const wcstring &text)
 {
     if (out_errors != NULL)
@@ -203,15 +243,25 @@ class doc_register_t {
     {
         scoped_lock locker(lock);
         std::vector<docopt_argument_status_t> result;
-        const docopt_parser_t *p = this->first_parser(cmd);
-        if (p)
+        result.reserve(argv.size());
+        
+        // For each parser, have it validate the arguments. Mark an argument as the most valid that any parser declares it to be.
+        const parser_ref_list_t parsers = this->get_parsers(cmd);
+        for (size_t i=0; i < parsers.size(); i++)
         {
-            const std::vector<docopt_fish::argument_status_t> tmp = p->validate_arguments(argv, flags);
-            // Transform to our cover type
-            result.reserve(tmp.size());
-            for (size_t i=0; i < tmp.size(); i++)
+            const docopt_parser_t *p = parsers.at(i);
+            const std::vector<docopt_fish::argument_status_t> parser_statuses = p->validate_arguments(argv, flags);
+            
+            // Fill result with status_invalid until it's the right size
+            if (result.size() <= parser_statuses.size())
             {
-                result.push_back(static_cast<docopt_argument_status_t>(tmp.at(i)));
+                result.insert(result.end(), parser_statuses.size() - result.size(), status_invalid);
+            }
+            assert(result.size() >= parser_statuses.size());
+
+            for (size_t i=0; i < parser_statuses.size(); i++)
+            {
+                result.at(i) = more_valid_status(parser_statuses.at(i), result.at(i));
             }
         }
         return result;
@@ -255,7 +305,16 @@ class doc_register_t {
                     // Return the description if requested
                     if (out_description != NULL)
                     {
-                        out_description->assign(iter->description);
+                        if (! iter->description.empty())
+                        {
+                            // Explicit description
+                            out_description->assign(iter->description);
+                        }
+                        else
+                        {
+                            // We use the variable name as the description
+                            out_description->assign(description_from_variable_name(var));
+                        }
                     }
                     break;
                 }
