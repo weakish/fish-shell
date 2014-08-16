@@ -50,5 +50,12 @@ int iothread_perform_on_main(int (*handler)(T *), T *context)
     return iothread_perform_on_main_base((int (*)(void *))handler, (void *)(context));
 }
 
+template<typename T>
+int iothread_perform_on_main(int (*handler)(T *), const T *context)
+{
+    return iothread_perform_on_main_base((int (*)(void *))handler, (void *)(context));
+}
+
+
 
 #endif
