@@ -201,7 +201,7 @@ public:
 
     /** Adds or removes an option. */
     void add_option(const complete_entry_opt_t &opt);
-    bool remove_option(wchar_t short_opt, const wchar_t *long_opt);
+    bool remove_option(wchar_t short_opt, const wchar_t *long_opt, int old_mode);
 
     /** Getter for short_opt_str. */
     wcstring &get_short_opt_str();
@@ -467,7 +467,7 @@ completion_autoload_t::completion_autoload_t() : autoload_t(L"fish_complete_path
 /** Callback when an autoloaded completion is removed */
 void completion_autoload_t::command_removed(const wcstring &cmd)
 {
-    complete_remove(cmd.c_str(), COMMAND, 0, 0);
+    complete_remove(cmd.c_str(), COMMAND, 0, 0, 0);
 }
 
 
@@ -620,7 +620,7 @@ void complete_add(const wchar_t *cmd,
    specified short / long option strings. Returns true if it is now
    empty and should be deleted, false if it's not empty. Must be called while locked.
 */
-bool completion_entry_t::remove_option(wchar_t short_opt, const wchar_t *long_opt)
+bool completion_entry_t::remove_option(wchar_t short_opt, const wchar_t *long_opt, int old_mode)
 {
     ASSERT_IS_LOCKED(completion_lock);
     ASSERT_IS_LOCKED(completion_entry_lock);
@@ -633,7 +633,8 @@ bool completion_entry_t::remove_option(wchar_t short_opt, const wchar_t *long_op
         for (option_list_t::iterator iter = this->options.begin(); iter != this->options.end();)
         {
             complete_entry_opt_t &o = *iter;
-            if (short_opt==o.short_opt || long_opt == o.long_opt)
+            if ((short_opt && short_opt == o.short_opt) ||
+                (long_opt && long_opt == o.long_opt && old_mode == o.old_mode))
             {
                 /*      fwprintf( stderr,
                       L"remove option -%lc --%ls\n",
@@ -671,7 +672,8 @@ bool completion_entry_t::remove_option(wchar_t short_opt, const wchar_t *long_op
 void complete_remove(const wchar_t *cmd,
                      bool cmd_is_path,
                      wchar_t short_opt,
-                     const wchar_t *long_opt)
+                     const wchar_t *long_opt,
+                     int old_mode)
 {
     CHECK(cmd,);
     scoped_lock lock(completion_lock);
@@ -682,7 +684,7 @@ void complete_remove(const wchar_t *cmd,
     if (iter != completion_set.end())
     {
         completion_entry_t *entry = *iter;
-        bool delete_it = entry->remove_option(short_opt, long_opt);
+        bool delete_it = entry->remove_option(short_opt, long_opt, old_mode);
         if (delete_it)
         {
             /* Delete this entry */
@@ -1940,7 +1942,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
         //const wcstring prev_token(prev_begin, prev_token_len);
 
         parse_node_tree_t tree;
-        parse_tree_from_string(cmd, parse_flag_continue_after_error | parse_flag_accept_incomplete_tokens, &tree, NULL);
+        parse_tree_from_string(cmd, parse_flag_continue_after_error | parse_flag_accept_incomplete_tokens | parse_flag_include_comments, &tree, NULL);
 
         /* Find any plain statement that contains the position. We have to backtrack past spaces (#1261). So this will be at either the last space character, or after the end of the string */
         size_t adjusted_pos = pos;
@@ -1952,9 +1954,31 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
         const parse_node_t *plain_statement = tree.find_node_matching_source_location(symbol_plain_statement, adjusted_pos, NULL);
         if (plain_statement == NULL)
         {
-            /* Not part of a plain statement. This could be e.g. a for loop header, case expression, etc. Do generic file completions (#1309). If we had to backtrack, it means there was whitespace; don't do an autosuggestion in that case. */
-            bool no_file = (flags & COMPLETION_REQUEST_AUTOSUGGESTION) && (adjusted_pos < pos);
-            completer.complete_param_expand(current_token, ! no_file);
+            /* Not part of a plain statement. This could be e.g. a for loop header, case expression, etc. Do generic file completions (#1309). If we had to backtrack, it means there was whitespace; don't do an autosuggestion in that case. Also don't do it if we are just after a pipe, semicolon, or & (#1631), or in a comment.
+            
+            Overall this logic is a total mess. A better approach would be to return the "possible next token" from the parse tree directly (this data is available as the first of the sequence of nodes without source locations at the very end of the parse tree). */
+            bool do_file = true;
+            if (flags & COMPLETION_REQUEST_AUTOSUGGESTION)
+            {
+                if (adjusted_pos < pos)
+                {
+                    do_file = false;
+                }
+                else if (pos > 0)
+                {
+                    // If the previous character is in one of these types, we don't do file suggestions
+                    parse_token_type_t bad_types[] = {parse_token_type_pipe, parse_token_type_end, parse_token_type_background, parse_special_type_comment};
+                    for (size_t i=0; i < sizeof bad_types / sizeof *bad_types; i++)
+                    {
+                        if (tree.find_node_matching_source_location(bad_types[i], pos - 1, NULL))
+                        {
+                            do_file = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            completer.complete_param_expand(current_token, do_file);
         }
         else
         {
@@ -2185,7 +2209,7 @@ void complete_print(wcstring &out)
 
             append_switch(out,
                           e->cmd_is_path ? L"path" : L"command",
-                          e->cmd);
+                          escape_string(e->cmd, ESCAPE_ALL));
 
 
             if (o->short_opt != 0)
