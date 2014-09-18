@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 
 # Whether we're Python 2
-import sys, os
+import sys
+import multiprocessing.pool
+import os
+import operator
 IS_PY2 = sys.version_info[0] == 2
 
 if IS_PY2:
@@ -23,7 +26,7 @@ if term:
     os.environ['TERM'] = term
 
 import subprocess
-import re, socket, cgi, select, time, glob
+import re, socket, cgi, select, time, glob, random, string, binascii
 try:
     import json
 except ImportError:
@@ -282,11 +285,10 @@ class BindingParser:
                     "sleft": "Shift Left", "sright": "Shift Right"
                     }
 
-    def set_buffer(self, buffer, is_key=False):
+    def set_buffer(self, buffer):
         """ Sets code to parse """
 
-        self.buffer = buffer
-        self.is_key = is_key
+        self.buffer = buffer or b''
         self.index = 0
 
     def get_char(self):
@@ -356,12 +358,9 @@ class BindingParser:
     def get_readable_binding(self):
         """ Gets a readable representation of binding """
 
-        if self.is_key:
-            try:
-                result = BindingParser.readable_keys[self.buffer]
-            except KeyError:
-                result = self.buffer.title()
-        else:
+        try:
+            result = BindingParser.readable_keys[self.buffer]
+        except KeyError:
             result = self.parse_binding()
 
         return result
@@ -491,7 +490,7 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             result.append([color_name, color_desc, parse_color('')])
 
         # Sort our result (by their keys)
-        result.sort()
+        result.sort(key=operator.itemgetter('name'))
 
         return result
 
@@ -549,16 +548,20 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
         for line in out.split('\n'):
             comps = line.split(' ', 2)
+
             if len(comps) < 3:
                 continue
+
             if comps[1] == '-k':
                 key_name, command = comps[2].split(' ', 1)
-                binding_parser.set_buffer(key_name, True)
-                fish_binding = FishBinding(command=command, binding=key_name, readable_binding=binding_parser.get_readable_binding())
+                binding_parser.set_buffer(key_name)
             else:
+                key_name = None
+                command = comps[2]
                 binding_parser.set_buffer(comps[1])
-                fish_binding = FishBinding(command=comps[2], binding=comps[1], readable_binding=binding_parser.get_readable_binding())
 
+            readable_binding = binding_parser.get_readable_binding()
+            fish_binding = FishBinding(command, key_name, readable_binding)
             bindings.append(fish_binding)
 
         return [ binding.get_json_obj() for binding in bindings ]
@@ -602,22 +605,29 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         out, err = run_fish_cmd(cmd)
         return len(err) == 0
 
-    def do_get_prompt(self, command_to_run, prompt_function_text):
+    def do_get_prompt(self, command_to_run, prompt_function_text, extras_dict):
         # Return the prompt output by the given command
         prompt_demo_ansi, err = run_fish_cmd(command_to_run)
         prompt_demo_html = ansi_to_html(prompt_demo_ansi)
         prompt_demo_font_size = self.font_size_for_ansi_prompt(prompt_demo_ansi)
-        return {'function': prompt_function_text, 'demo': prompt_demo_html, 'font_size': prompt_demo_font_size }
+        result = {'function': prompt_function_text, 'demo': prompt_demo_html, 'font_size': prompt_demo_font_size }
+        if extras_dict:
+            result.update(extras_dict)
+        return result
 
     def do_get_current_prompt(self):
         # Return the current prompt
+        # We run 'false' to demonstrate how the prompt shows the command status (#1624)
         prompt_func, err = run_fish_cmd('functions fish_prompt')
-        return self.do_get_prompt('cd "' + initial_wd + '" ; fish_prompt', prompt_func.strip())
+        result = self.do_get_prompt('builtin cd "' + initial_wd + '" ; false ; fish_prompt', prompt_func.strip(), {'name': 'Current'})
+        return result
 
-    def do_get_sample_prompt(self, text):
+    def do_get_sample_prompt(self, text, extras_dict):
         # Return the prompt you get from the given text
-        cmd = text + "\n cd \"" + initial_wd + "\" \n fish_prompt\n"
-        return self.do_get_prompt(cmd, text.strip())
+        # extras_dict is a dictionary whose values get merged in
+        # We run 'false' to demonstrate how the prompt shows the command status (#1624)
+        cmd = text + "\n builtin cd \"" + initial_wd + "\" \n false \n fish_prompt\n"
+        return self.do_get_prompt(cmd, text.strip(), extras_dict)
 
     def parse_one_sample_prompt_hash(self, line, result_dict):
         # Allow us to skip whitespace, etc.
@@ -635,40 +645,51 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         return line.startswith('#')
 
 
-    def read_one_sample_prompt(self, fd):
-        # Read one sample prompt from fd
-        function_lines = []
-        result = {}
-        parsing_hashes = True
-        for line in fd:
-            # Parse hashes until parse_one_sample_prompt_hash return False
-            if parsing_hashes:
-                parsing_hashes = self.parse_one_sample_prompt_hash(line, result)
-            # Maybe not we're not parsing hashes, or maybe we already were not
-            if not parsing_hashes:
-                function_lines.append(line)
-        func = ''.join(function_lines).strip()
-        result.update(self.do_get_sample_prompt(func))
-        return result
+    def read_one_sample_prompt(self, path):
+        try:
+            with open(path) as fd:
+                extras_dict = {}
+                # Read one sample prompt from fd
+                function_lines = []
+                parsing_hashes = True
+                for line in fd:
+                    # Parse hashes until parse_one_sample_prompt_hash return False
+                    if parsing_hashes:
+                        parsing_hashes = self.parse_one_sample_prompt_hash(line, extras_dict)
+                    # Maybe not we're not parsing hashes, or maybe we already were not
+                    if not parsing_hashes:
+                        function_lines.append(line)
+                func = ''.join(function_lines).strip()
+                result = self.do_get_sample_prompt(func, extras_dict)
+                return result
+        except IOError:
+            # Ignore unreadable files, etc.
+            return None
 
     def do_get_sample_prompts_list(self):
-        result = []
-        # Start with the "Current" meta-sample
-        result.append({'name': 'Current'})
-        result[0].update(self.do_get_current_prompt())
+        pool = multiprocessing.pool.ThreadPool(processes=8)
+
+        # Kick off the "Current" meta-sample
+        current_metasample_async = pool.apply_async(self.do_get_current_prompt)
 
         # Read all of the prompts in sample_prompts
         paths = glob.iglob('sample_prompts/*.fish')
-        for path in paths:
-            try:
-                fd = open(path)
-                result.append(self.read_one_sample_prompt(fd))
-                fd.close()
-            except IOError:
-                # Ignore unreadable files, etc
-                pass
+        sample_results = pool.map(self.read_one_sample_prompt, paths, 1)
+
+        # Finish up
+        result = []
+        result.append(current_metasample_async.get())
+        result.extend([r for r in sample_results if r])
         return result
 
+    def secure_startswith(self, haystack, needle):
+        if len(haystack) < len(needle):
+            return False
+        bits = 0
+        for x,y in zip(haystack, needle):
+            bits |= ord(x) ^ ord(y)
+        return bits == 0
+        
     def font_size_for_ansi_prompt(self, prompt_demo_ansi):
         width = ansi_prompt_line_width(prompt_demo_ansi)
         # Pick a font size
@@ -682,9 +703,16 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         else: font_size = '18pt'
         return font_size
 
-
     def do_GET(self):
         p = self.path
+
+        authpath = '/' + authkey
+        if self.secure_startswith(p, authpath):
+            p = p[len(authpath):]
+        else:
+            return self.send_error(403)
+        self.path = p
+
         if p == '/colors/':
             output = self.do_get_colors()
         elif p == '/functions/':
@@ -696,8 +724,6 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             output = self.do_get_history()
             # end = time.time()
             # print "History: ", end - start
-        elif p == '/current_prompt/':
-            output = self.do_get_current_prompt()
         elif p == '/sample_prompts/':
             output = self.do_get_sample_prompts_list()
         elif re.match(r"/color/(\w+)/", p):
@@ -718,6 +744,14 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         p = self.path
+
+        authpath = '/' + authkey
+        if self.secure_startswith(p, authpath):
+            p = p[len(authpath):]
+        else:
+            return self.send_error(403)
+        self.path = p
+
         if IS_PY2:
             ctype, pdict = cgi.parse_header(self.headers.getheader('content-type'))
         else: # Python 3
@@ -752,9 +786,6 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         elif p == '/get_function/':
             what = postvars.get('what')
             output = [self.do_get_function(what[0])]
-        elif p == '/get_sample_prompt/':
-            what = postvars.get('what')
-            output = [self.do_get_sample_prompt(what[0])]
         elif p == '/delete_history_item/':
             what = postvars.get('what')
             if self.do_delete_history_item(what[0]):
@@ -781,6 +812,18 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def log_request(self, code='-', size='-'):
         """ Disable request logging """
         pass
+
+redirect_template_html = """
+<!DOCTYPE html>
+<html>
+ <head>
+  <meta http-equiv="refresh" content="0;URL='%s'" />
+ </head>
+ <body>
+  <p><a href="%s">Start the Fish Web config</a></p>
+ </body>
+</html>
+"""
 
 # find fish
 fish_bin_dir = os.environ.get('__fish_bin_dir')
@@ -817,6 +860,9 @@ initial_wd = os.getcwd()
 where = os.path.dirname(sys.argv[0])
 os.chdir(where)
 
+# Generate a 16-byte random key as a hexadecimal string
+authkey = binascii.b2a_hex(os.urandom(16)).decode('ascii')
+
 # Try to find a suitable port
 PORT = 8000
 while PORT <= 9000:
@@ -846,9 +892,36 @@ if len(sys.argv) > 1:
             initial_tab = '#' + tab
             break
 
-url = 'http://localhost:%d/%s' % (PORT, initial_tab)
-print("Web config started at '%s'. Hit enter to stop." % url)
-webbrowser.open(url)
+url = 'http://localhost:%d/%s/%s' % (PORT, authkey, initial_tab)
+
+# Create temporary file to hold redirect to real server
+# This prevents exposing the URL containing the authentication key on the command line
+# (see CVE-2014-2914 or https://github.com/fish-shell/fish-shell/issues/1438)
+if 'XDG_CACHE_HOME' in os.environ:
+    dirname = os.path.expanduser(os.path.expandvars('$XDG_CACHE_HOME/fish/'))
+else:
+    dirname = os.path.expanduser('~/.cache/fish/')
+
+os.umask(0o0077)
+try:
+    os.makedirs(dirname, 0o0700)
+except OSError as e:
+    if e.errno == 17:
+       pass
+    else:
+       raise e
+
+randtoken = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+filename = dirname + 'web_config-%s.html' % randtoken
+
+f = open(filename, 'w')
+f.write(redirect_template_html % (url, url))
+f.close()
+
+# Open temporary file as URL
+fileurl = 'file://' + filename
+print("Web config started at '%s'. Hit enter to stop." % fileurl)
+webbrowser.open(fileurl)
 
 # Select on stdin and httpd
 stdin_no = sys.stdin.fileno()
@@ -865,3 +938,5 @@ try:
 except KeyboardInterrupt:
     print("\nShutting down.")
 
+# Clean up temporary file
+os.remove(filename)

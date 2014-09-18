@@ -183,10 +183,14 @@ static pthread_key_t generation_count_key;
 
 static void set_command_line_and_position(editable_line_t *el, const wcstring &new_str, size_t pos);
 
-void editable_line_t::insert_string(const wcstring &str)
+void editable_line_t::insert_string(const wcstring &str, size_t start, size_t len)
 {
-    this->text.insert(this->position, str);
-    this->position += str.size();
+    // Clamp the range to something valid
+    size_t string_length = str.size();
+    start = mini(start, string_length);
+    len = mini(len, string_length - start);
+    this->text.insert(this->position, str, start, len);
+    this->position += len;
 }
 
 /**
@@ -398,6 +402,9 @@ public:
 
 /* Sets the command line contents, without clearing the pager */
 static void reader_set_buffer_maintaining_pager(const wcstring &b, size_t pos);
+
+/* Clears the pager */
+static void clear_pager();
 
 /**
    The current interactive reading context
@@ -898,9 +905,8 @@ bool reader_thread_job_is_stale()
     return (void*)(uintptr_t) s_generation_count != pthread_getspecific(generation_count_key);
 }
 
-void reader_write_title(parser_t &parser)
+void reader_write_title(parser_t &parser, const wcstring &cmd)
 {
-    const wchar_t *title;
     const env_var_t term_str = parser.vars().get(L"TERM");
 
     /*
@@ -930,7 +936,6 @@ void reader_write_title(parser_t &parser)
     {
         char *n = ttyname(STDIN_FILENO);
 
-
         if (contains(term, L"linux"))
         {
             return;
@@ -938,19 +943,23 @@ void reader_write_title(parser_t &parser)
 
         if (strstr(n, "tty") || strstr(n, "/vc/"))
             return;
-
-
     }
 
-    title = function_exists(L"fish_title")?L"fish_title":DEFAULT_TITLE;
-
-    if (wcslen(title) ==0)
-        return;
+    wcstring fish_title_command = DEFAULT_TITLE;
+    if (function_exists(L"fish_title"))
+    {
+        fish_title_command = L"fish_title";
+        if (! cmd.empty())
+        {
+            fish_title_command.append(L" ");
+            fish_title_command.append(parse_util_escape_string_with_quote(cmd, L'\0'));
+        }
+    }
 
     wcstring_list_t lst;
 
     proc_push_interactive(0);
-    if (exec_subshell(parser, title, lst, false /* do not apply exit status */) != -1)
+    if (exec_subshell(parser, fish_title_command, lst, false /* do not apply exit status */) != -1)
     {
         if (! lst.empty())
         {
@@ -1011,7 +1020,7 @@ static void exec_prompt(parser_t &parser)
     }
 
     /* Write the screen title */
-    reader_write_title(parser);
+    reader_write_title(parser, L"");
 }
 
 void reader_init()
@@ -1215,30 +1224,50 @@ static void remove_backward()
 /**
    Insert the characters of the string into the command line buffer
    and print them to the screen using syntax highlighting, etc.
-   Optionally also expand abbreviations.
+   Optionally also expand abbreviations, after space characters.
    Returns true if the string changed.
 */
-static bool insert_string(editable_line_t *el, const wcstring &str, bool should_expand_abbreviations = false)
+static bool insert_string(editable_line_t *el, const wcstring &str, bool allow_expand_abbreviations = false)
 {
     size_t len = str.size();
     if (len == 0)
         return false;
-
-    el->insert_string(str);
-    update_buff_pos(el, el->position);
-    data->command_line_changed(el);
-
+    
+    /* Start inserting. If we are expanding abbreviations, we have to do this after every space (see #1434), so look for spaces. We try to do this efficiently (rather than the simpler character at a time) to avoid expensive work in command_line_changed() */
+    size_t cursor = 0;
+    while (cursor < len)
+    {
+        /* Determine the position of the next space (possibly none), and the end of the range we wish to insert */
+        size_t space_triggering_expansion_pos = allow_expand_abbreviations ? str.find(L' ', cursor) : wcstring::npos;
+        bool has_space_triggering_expansion = (space_triggering_expansion_pos != wcstring::npos);
+        size_t range_end = (has_space_triggering_expansion ? space_triggering_expansion_pos + 1 : len);
+        
+        /* Insert from the cursor up to but not including the range end */
+        assert(range_end > cursor);
+        el->insert_string(str, cursor, range_end - cursor);
+        
+        update_buff_pos(el, el->position);
+        data->command_line_changed(el);
+        
+        /* If we got a space, then the last character we inserted was that space. Expand abbreviations. */
+        if (has_space_triggering_expansion && allow_expand_abbreviations)
+        {
+            assert(range_end > 0);
+            assert(str.at(range_end - 1) == L' ');
+            data->expand_abbreviation_as_necessary(1);
+        }
+        cursor = range_end;
+    }
+    
     if (el == &data->command_line)
     {
         data->suppress_autosuggestion = false;
-
-        if (should_expand_abbreviations)
-            data->expand_abbreviation_as_necessary(1);
-
+        
         /* Syntax highlight. Note we must have that buff_pos > 0 because we just added something nonzero to its length  */
         assert(el->position > 0);
         reader_super_highlight_me_plenty(-1);
     }
+    
     reader_repaint();
 
     return true;
@@ -1248,9 +1277,9 @@ static bool insert_string(editable_line_t *el, const wcstring &str, bool should_
    Insert the character into the command line buffer and print it to
    the screen using syntax highlighting, etc.
 */
-static bool insert_char(editable_line_t *el, wchar_t c, bool should_expand_abbreviations = false)
+static bool insert_char(editable_line_t *el, wchar_t c, bool allow_expand_abbreviations = false)
 {
-    return insert_string(el, wcstring(1, c), should_expand_abbreviations);
+    return insert_string(el, wcstring(1, c), allow_expand_abbreviations);
 }
 
 
@@ -1540,6 +1569,9 @@ static void accept_autosuggestion(bool full)
 {
     if (! data->autosuggestion.empty())
     {
+        /* Accepting an autosuggestion clears the pager */
+        clear_pager();
+        
         /* Accept the autosuggestion */
         if (full)
         {
@@ -2473,34 +2505,8 @@ static void set_env_cmd_duration(struct timeval *after, struct timeval *before, 
         secs -= 1;
     }
 
-    if (secs < 1)
-    {
-        parser.vars().remove(ENV_CMD_DURATION, 0);
-    }
-    else
-    {
-        if (secs < 10)   // 10 secs
-        {
-            swprintf(buf, 16, L"%lu.%02us", secs, usecs / 10000);
-        }
-        else if (secs < 60)     // 1 min
-        {
-            swprintf(buf, 16, L"%lu.%01us", secs, usecs / 100000);
-        }
-        else if (secs < 600)     // 10 mins
-        {
-            swprintf(buf, 16, L"%lum %lu.%01us", secs / 60, secs % 60, usecs / 100000);
-        }
-        else if (secs < 5400)     // 1.5 hours
-        {
-            swprintf(buf, 16, L"%lum %lus", secs / 60, secs % 60);
-        }
-        else
-        {
-            swprintf(buf, 16, L"%.1fh", secs / 3600.0);
-        }
-        parser.vars().set(ENV_CMD_DURATION, buf, ENV_EXPORT);
-    }
+    swprintf(buf, 16, L"%d", (secs * 1000) + (usecs / 1000));
+    env_set(ENV_CMD_DURATION, buf, ENV_EXPORT);
 }
 
 void reader_run_command(parser_t &parser, const wcstring &cmd)
@@ -2513,7 +2519,7 @@ void reader_run_command(parser_t &parser, const wcstring &cmd)
     if (! ft.empty())
         env_set(L"_", ft.c_str(), ENV_GLOBAL);
 
-    reader_write_title(parser);
+    reader_write_title(parser, cmd);
 
     term_donate();
 
@@ -2546,7 +2552,7 @@ int reader_shell_test(const wchar_t *b)
     bstr.push_back(L'\n');
 
     parse_error_list_t errors;
-    int res = parse_util_detect_errors(bstr, &errors);
+    int res = parse_util_detect_errors(bstr, &errors, true /* do accept incomplete */);
 
     if (res & PARSER_TEST_ERROR)
     {
@@ -2951,7 +2957,7 @@ static int read_i(void)
           during evaluation.
         */
 
-        const wchar_t *tmp = reader_readline();
+        const wchar_t *tmp = reader_readline(0);
 
         if (data->end_loop)
         {
@@ -3040,7 +3046,7 @@ static wchar_t unescaped_quote(const wcstring &str, size_t pos)
 }
 
 
-const wchar_t *reader_readline(void)
+const wchar_t *reader_readline(int nchars)
 {
     parser_t &parser = parser_t::principal_parser();
     wint_t c;
@@ -3080,6 +3086,13 @@ const wchar_t *reader_readline(void)
 
     while (!finished && !data->end_loop)
     {
+        if (0 < nchars && (size_t)nchars <= data->command_line.size())
+        {
+            // we've already hit the specified character limit
+            finished = 1;
+            break;
+        }
+
         /*
          Sometimes strange input sequences seem to generate a zero
          byte. I believe these simply mean a character was pressed
@@ -3100,12 +3113,14 @@ const wchar_t *reader_readline(void)
                 {
 
                     wchar_t arr[READAHEAD_MAX+1];
-                    int i;
+                    size_t i;
+                    size_t limit = 0 < nchars ? std::min((size_t)nchars - data->command_line.size(), (size_t)READAHEAD_MAX)
+                                              : READAHEAD_MAX;
 
                     memset(arr, 0, sizeof(arr));
                     arr[0] = c;
 
-                    for (i=1; i<READAHEAD_MAX; i++)
+                    for (i = 1; i < limit; ++i)
                     {
 
                         if (!can_read(0))
@@ -3113,7 +3128,10 @@ const wchar_t *reader_readline(void)
                             c = 0;
                             break;
                         }
-                        c = input_readch();
+                        // only allow commands on the first key; otherwise, we might
+                        // have data we need to insert on the commandline that the
+                        // commmand might need to be able to see.
+                        c = input_readch(false);
                         if ((!wchar_private(c)) && (c>31) && (c != 127))
                         {
                             arr[i]=c;
@@ -3123,13 +3141,19 @@ const wchar_t *reader_readline(void)
                             break;
                     }
 
-                    insert_string(&data->command_line, arr);
+                    insert_string(&data->command_line, arr, true);
 
                 }
             }
 
             if (c != 0)
                 break;
+
+            if (0 < nchars && (size_t)nchars <= data->command_line.size())
+            {
+                c = R_NULL;
+                break;
+            }
         }
 
         /* If we get something other than a repaint, then stop coalescing them */
@@ -3386,34 +3410,33 @@ const wchar_t *reader_readline(void)
 
             case R_KILL_WHOLE_LINE:
             {
+                /* We match the emacs behavior here: "kills the entire line including the following newline" */
                 editable_line_t *el = data->active_edit_line();
                 const wchar_t *buff = el->text.c_str();
-                const wchar_t *end = &buff[el->position];
-                const wchar_t *begin = end;
-                size_t len;
 
-                while (begin > buff  && *begin != L'\n')
-                    begin--;
-
-                if (*begin == L'\n')
-                    begin++;
-
-                len = maxi<size_t>(end-begin, 0);
-                begin = end - len;
-
-                while (*end && *end != L'\n')
-                    end++;
-
-                if (begin == end && *end)
-                    end++;
-
-                len = end-begin;
-
-                if (len)
+                /* Back up to the character just past the previous newline, or go to the beginning of the command line. Note that if the position is on a newline, visually this looks like the cursor is at the end of a line. Therefore that newline is NOT the beginning of a line; this justifies the -1 check. */
+                size_t begin = el->position;
+                while (begin > 0  && buff[begin-1] != L'\n')
                 {
-                    reader_kill(el, begin - buff, len, KILL_APPEND, last_char!=R_KILL_WHOLE_LINE);
+                    begin--;
                 }
+                
+                /* Push end forwards to just past the next newline, or just past the last char. */
+                size_t end = el->position;
+                while (buff[end] != L'\0')
+                {
+                    end++;
+                    if (buff[end-1] == L'\n')
+                    {
+                        break;
+                    }
+                }
+                assert(end >= begin);
 
+                if (end > begin)
+                {
+                    reader_kill(el, begin, end - begin, KILL_APPEND, last_char!=R_KILL_WHOLE_LINE);
+                }
                 break;
             }
 
@@ -4030,20 +4053,19 @@ const wchar_t *reader_readline(void)
             {
                 if ((!wchar_private(c)) && (((c>31) || (c==L'\n'))&& (c != 127)))
                 {
-                    bool should_expand_abbreviations = false;
+                    bool allow_expand_abbreviations = false;
                     if (data->is_navigating_pager_contents())
                     {
                         data->pager.set_search_field_shown(true);
                     }
                     else
                     {
-                        /* Expand abbreviations after space */
-                        should_expand_abbreviations = (c == L' ');
+                        allow_expand_abbreviations = true;
                     }
 
                     /* Regular character */
                     editable_line_t *el = data->active_edit_line();
-                    insert_char(data->active_edit_line(), c, should_expand_abbreviations);
+                    insert_char(data->active_edit_line(), c, allow_expand_abbreviations);
 
                     /* End paging upon inserting into the normal command line */
                     if (el == &data->command_line)
@@ -4224,7 +4246,7 @@ static int read_ni(int fd, const io_chain_t &io)
         }
 
         parse_error_list_t errors;
-        if (! parse_util_detect_errors(str, &errors))
+        if (! parse_util_detect_errors(str, &errors, false /* do not accept incomplete */))
         {
             parser.eval(str, io, TOP);
         }

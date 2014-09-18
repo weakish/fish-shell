@@ -208,7 +208,8 @@ void complete_set_authoritative(const wchar_t *cmd, bool cmd_type, bool authorit
 void complete_remove(const wchar_t *cmd,
                      bool cmd_is_path,
                      wchar_t short_opt,
-                     const wchar_t *long_opt);
+                     const wchar_t *long_opt,
+                     int long_mode);
 
 
 /** Find all completions of the command cmd, insert them into out.
@@ -269,5 +270,13 @@ void append_completion(std::vector<completion_t> &completions, const wcstring &c
 
 /* Function used for testing */
 void complete_set_variable_names(const wcstring_list_t *names);
+
+/* Support for "wrap targets." A wrap target is a command that completes liek another command. The target chain is the sequence of wraps (A wraps B wraps C...). Any loops in the chain are silently ignored. */
+bool complete_add_wrapper(const wcstring &command, const wcstring &wrap_target);
+bool complete_remove_wrapper(const wcstring &command, const wcstring &wrap_target);
+wcstring_list_t complete_get_wrap_chain(const wcstring &command);
+
+/* Wonky interface: returns all wraps. Even-values are the commands, odd values are the targets. */
+wcstring_list_t complete_get_wrap_pairs();
 
 #endif

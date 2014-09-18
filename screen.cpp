@@ -48,7 +48,7 @@ efficient way for transforming that to the desired screen content.
 #include "pager.h"
 
 /** The number of characters to indent new blocks */
-#define INDENT_STEP 4
+#define INDENT_STEP 4u
 
 /** The initial screen width */
 #define SCREEN_WIDTH_UNINITIALIZED -1
@@ -252,6 +252,29 @@ size_t escape_code_length(const wchar_t *code)
             }
         }
     }
+    
+    if (! found)
+    {
+        /* iTerm2 escape codes: CSI followed by ], terminated by either BEL or escape + backslash. See https://code.google.com/p/iterm2/wiki/ProprietaryEscapeCodes */
+        if (code[1] == ']')
+        {
+            // Start at 2 to skip over <esc>]
+            size_t cursor = 2;
+            for (; code[cursor] != L'\0'; cursor++)
+            {
+                /* Consume a sequence of characters up to <esc>\ or <bel> */
+                if (code[cursor] == '\x07' || (code[cursor] == '\\' && code[cursor - 1] == '\x1b'))
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (found)
+            {
+                resulting_length = cursor + 1;
+            }
+        }
+    }
 
     if (! found)
     {
@@ -291,7 +314,6 @@ size_t escape_code_length(const wchar_t *code)
             resulting_length = cursor;
         }
     }
-
     if (! found)
     {
         /* Generic VT100 two byte sequence: <esc> followed by something in the range @ through _ */
@@ -379,17 +401,6 @@ static size_t calc_prompt_lines(const wcstring &prompt)
     }
     return result;
 }
-/**
-   Test if there is space between the time fields of struct stat to
-   use for sub second information. If so, we assume this space
-   contains the desired information.
-*/
-static int room_for_usec(struct stat *st)
-{
-    int res = ((&(st->st_atime) + 2) == &(st->st_mtime) &&
-               (&(st->st_atime) + 4) == &(st->st_ctime));
-    return res;
-}
 
 /**
    Stat stdout and stderr and save result.
@@ -456,11 +467,13 @@ static void s_check_status(screen_t *s)
     int changed = (s->prev_buff_1.st_mtime != s->post_buff_1.st_mtime) ||
                   (s->prev_buff_2.st_mtime != s->post_buff_2.st_mtime);
 
-    if (room_for_usec(&s->post_buff_1))
-    {
-        changed = changed || ((&s->prev_buff_1.st_mtime)[1] != (&s->post_buff_1.st_mtime)[1]) ||
-                  ((&s->prev_buff_2.st_mtime)[1] != (&s->post_buff_2.st_mtime)[1]);
-    }
+    #if defined HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+        changed = changed || s->prev_buff_1.st_mtimespec.tv_nsec != s->post_buff_1.st_mtimespec.tv_nsec ||
+                    s->prev_buff_2.st_mtimespec.tv_nsec != s->post_buff_2.st_mtimespec.tv_nsec;
+    #elif defined HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+        changed = changed || s->prev_buff_1.st_mtim.tv_nsec != s->post_buff_1.st_mtim.tv_nsec ||
+                    s->prev_buff_2.st_mtim.tv_nsec != s->post_buff_2.st_mtim.tv_nsec;
+    #endif
 
     if (changed)
     {
@@ -647,18 +660,32 @@ static void s_move(screen_t *s, data_buffer_t *b, int new_x, int new_y)
         x_steps = 0;
     }
 
+    char *multi_str = NULL;
     if (x_steps < 0)
     {
         str = cursor_left;
+        multi_str = parm_left_cursor;
     }
     else
     {
         str = cursor_right;
+        multi_str = parm_right_cursor;
     }
-
-    for (i=0; i<abs(x_steps); i++)
+    
+    // Use the bulk ('multi') output for cursor movement if it is supported and it would be shorter
+    // Note that this is required to avoid some visual glitches in iTerm (#1448)
+    bool use_multi = (multi_str != NULL && multi_str[0] != '\0' && abs(x_steps) * strlen(str) > strlen(multi_str));
+    if (use_multi)
     {
-        writembs(str);
+        char *multi_param = tparm(multi_str, abs(x_steps));
+        writembs(multi_param);
+    }
+    else
+    {
+        for (i=0; i<abs(x_steps); i++)
+        {
+            writembs(str);
+        }
     }
 
 

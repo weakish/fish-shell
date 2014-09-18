@@ -37,7 +37,6 @@ The fish parser. Contains functions for parsing and evaluating code.
 #include "expand.h"
 #include "reader.h"
 #include "sanity.h"
-#include "env_universal.h"
 #include "event.h"
 #include "intern.h"
 #include "parse_util.h"
@@ -885,10 +884,9 @@ int parser_t::eval(const wcstring &cmd, const io_chain_t &io, enum block_type_t 
     execution_contexts.push_back(ctx);
 
     /* Execute the first node */
-    int result = 1;
     if (! tree.empty())
     {
-        result = this->eval_block_node(0, io, block_type);
+        this->eval_block_node(0, io, block_type);
     }
 
     /* Clean up the execution context stack */

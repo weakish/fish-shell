@@ -103,8 +103,12 @@ void input_destroy();
    readch attempts to parse it. If no more input follows after the
    escape key, it is assumed to be an actual escape key press, and is
    returned as such.
+
+   The argument determines whether fish commands are allowed to be run
+   as bindings. If false, when a character is encountered that would
+   invoke a fish command, it is unread and R_NULL is returned.
 */
-wint_t input_readch();
+wint_t input_readch(bool allow_commands = true);
 
 /**
    Push a character or a readline function onto the stack of unread
@@ -169,8 +173,8 @@ void input_function_set_status(bool status);
  */
 bool input_terminfo_get_sequence(const wchar_t *name, wcstring *out_seq);
 
-/** Return the name of the terminfo variable with the specified sequence */
-bool input_terminfo_get_name(const wcstring &seq, wcstring &name);
+/** Return the name of the terminfo variable with the specified sequence, in out_name. Returns true if found, false if not found. */
+bool input_terminfo_get_name(const wcstring &seq, wcstring *out_name);
 
 /** Return a list of all known terminfo names */
 wcstring_list_t input_terminfo_get_names(bool skip_null);

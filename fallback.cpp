@@ -16,7 +16,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <wchar.h>
@@ -802,6 +801,7 @@ wchar_t *wcstok(wchar_t *wcs, const wchar_t *delim, wchar_t **save_ptr)
 
 /* Fallback implementations of wcsdup and wcscasecmp. On systems where these are not needed (e.g. building on Linux) these should end up just being stripped, as they are static functions that are not referenced in this file.
 */
+__attribute__((unused))
 static wchar_t *wcsdup_fallback(const wchar_t *in)
 {
     size_t len=wcslen(in);
@@ -815,6 +815,7 @@ static wchar_t *wcsdup_fallback(const wchar_t *in)
     return out;
 }
 
+__attribute__((unused))
 static int wcscasecmp_fallback(const wchar_t *a, const wchar_t *b)
 {
     if (*a == 0)
@@ -832,6 +833,7 @@ static int wcscasecmp_fallback(const wchar_t *a, const wchar_t *b)
         return wcscasecmp_fallback(a+1,b+1);
 }
 
+__attribute__((unused))
 static int wcsncasecmp_fallback(const wchar_t *a, const wchar_t *b, size_t count)
 {
     if (count == 0)

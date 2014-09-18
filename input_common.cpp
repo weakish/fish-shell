@@ -16,6 +16,7 @@ Implementation file for the low level input library
 #include <wchar.h>
 #include <stack>
 #include <list>
+#include <queue>
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
@@ -26,7 +27,7 @@ Implementation file for the low level input library
 #include "common.h"
 #include "wutil.h"
 #include "input_common.h"
-#include "env_universal.h"
+#include "env_universal_common.h"
 #include "iothread.h"
 
 /**
@@ -37,9 +38,9 @@ Implementation file for the low level input library
 #define WAIT_ON_ESCAPE 10
 
 /** Characters that have been read and returned by the sequence matching code */
-static std::stack<wint_t, std::list<wint_t> > lookahead_list;
+static std::stack<wint_t, std::vector<wint_t> > lookahead_list;
 
-/* Queue of pairs of (function pointer, argument) to be invoked */
+/* Queue of pairs of (function pointer, argument) to be invoked. Expected to be mostly empty. */
 typedef std::pair<void (*)(void *), void *> callback_info_t;
 typedef std::queue<callback_info_t, std::list<callback_info_t> > callback_queue_t;
 static callback_queue_t callback_queue;
@@ -96,24 +97,40 @@ static wint_t readb()
         input_flush_callbacks();
 
         fd_set fdset;
-        int fd_max=0;
+        int fd_max = 0;
         int ioport = iothread_port();
         int res;
 
         FD_ZERO(&fdset);
         FD_SET(0, &fdset);
-        if (env_universal_server.fd > 0)
-        {
-            FD_SET(env_universal_server.fd, &fdset);
-            if (fd_max < env_universal_server.fd) fd_max = env_universal_server.fd;
-        }
         if (ioport > 0)
         {
             FD_SET(ioport, &fdset);
-            if (fd_max < ioport) fd_max = ioport;
+            fd_max = maxi(fd_max, ioport);
         }
-
-        res = select(fd_max + 1, &fdset, 0, 0, 0);
+        
+        /* Get our uvar notifier */
+        universal_notifier_t &notifier = universal_notifier_t::default_notifier();
+        
+        /* Get the notification fd (possibly none) */
+        int notifier_fd = notifier.notification_fd();
+        if (notifier_fd > 0)
+        {
+            FD_SET(notifier_fd, &fdset);
+            fd_max = maxi(fd_max, notifier_fd);
+        }
+        
+        /* Get its suggested delay (possibly none) */
+        struct timeval tv = {};
+        const unsigned long usecs_delay = notifier.usec_delay_between_polls();
+        if (usecs_delay > 0)
+        {
+            unsigned long usecs_per_sec = 1000000;
+            tv.tv_sec = (int)(usecs_delay / usecs_per_sec);
+            tv.tv_usec = (int)(usecs_delay % usecs_per_sec);
+        }
+        
+        res = select(fd_max + 1, &fdset, 0, 0, usecs_delay > 0 ? &tv : NULL);
         if (res==-1)
         {
             switch (errno)
@@ -153,14 +170,16 @@ static wint_t readb()
             /* Assume we loop unless we see a character in stdin */
             do_loop = true;
 
-            if (env_universal_server.fd > 0 && FD_ISSET(env_universal_server.fd, &fdset))
+            /* Check to see if we want a universal variable barrier */
+            bool barrier_from_poll = notifier.poll();
+            bool barrier_from_readability = false;
+            if (notifier_fd > 0 && FD_ISSET(notifier_fd, &fdset))
             {
-                debug(3, L"Wake up on universal variable event");
-                env_universal_read_all();
-                if (has_lookahead())
-                {
-                    return lookahead_pop();
-                }
+                barrier_from_readability = notifier.notification_fd_became_readable(notifier_fd);
+            }
+            if (barrier_from_poll || barrier_from_readability)
+            {
+                env_universal_barrier();
             }
 
             if (ioport > 0 && FD_ISSET(ioport, &fdset))

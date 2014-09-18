@@ -12,37 +12,33 @@
 #include "io.h"
 #include "common.h"
 
-/**
-   Flag for local (to the current block) variable
-*/
-#define ENV_LOCAL 1
-
-/**
-   Flag for exported (to commands) variable
-*/
-#define ENV_EXPORT 2
-
-/**
-   Flag for unexported variable
-*/
-#define ENV_UNEXPORT 16
-
-/**
-   Flag for global variable
-*/
-#define ENV_GLOBAL 4
-
-/**
-   Flag for variable update request from the user. All variable
-   changes that are made directly by the user, such as those from the
-   'set' builtin must have this flag set.
-*/
-#define ENV_USER 8
-
-/**
-   Flag for universal variable
-*/
-#define ENV_UNIVERSAL 32
+/* Flags that may be passed as the 'mode' in env_set / env_get_string */
+enum
+{
+    /* Default mode */
+    ENV_DEFAULT = 0,
+    
+    /** Flag for local (to the current block) variable */
+    ENV_LOCAL = 1,
+    
+    /** Flag for exported (to commands) variable */
+    ENV_EXPORT = 2,
+    
+    /** Flag for unexported variable */
+    ENV_UNEXPORT = 16,
+    
+    /** Flag for global variable */
+    ENV_GLOBAL = 4,
+    
+    /** Flag for variable update request from the user. All variable
+       changes that are made directly by the user, such as those from the
+       'set' builtin must have this flag set. */
+    ENV_USER = 8,
+    
+    /** Flag for universal variable */
+    ENV_UNIVERSAL = 32
+};
+typedef uint32_t env_mode_flags_t;
 
 /**
    Error code for trying to alter read-only variable
@@ -50,6 +46,7 @@
 enum
 {
     ENV_PERM = 1,
+    ENV_SCOPE,
     ENV_INVALID
 }
 ;
@@ -70,23 +67,9 @@ struct config_paths_t
 void env_init(const struct config_paths_t *paths = NULL);
 
 /**
-   Set the value of the environment variable whose name matches key to val.
-
-   Memory policy: All keys and values are copied, the parameters can and should be freed by the caller afterwards
-
-   \param key The key
-   \param val The value
-   \param mode The type of the variable. Can be any combination of ENV_GLOBAL, ENV_LOCAL, ENV_EXPORT and ENV_USER. If mode is zero, the current variable space is searched and the current mode is used. If no current variable with the same name is found, ENV_LOCAL is assumed.
-
-   \returns 0 on suicess or an error code on failiure.
-
-   The current error codes are:
-
-   * ENV_PERM, can only be returned when setting as a user, e.g. ENV_USER is set. This means that the user tried to change a read-only variable.
-   * ENV_INVALID, the variable name or mode was invalid
+   Sets a value in the main parser. Working towards removing reliance on this.
 */
-
-int env_set(const wcstring &key, const wchar_t *val, int mode);
+int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t mode);
 
 
 /**
@@ -175,7 +158,7 @@ class environment_t
     environment_t &operator=(const environment_t &);
     
     public:
-    virtual env_var_t get(const wcstring &key) const = 0;
+    virtual env_var_t get(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT) const = 0;
     environment_t();
     virtual ~environment_t();
 };
@@ -210,10 +193,25 @@ class env_stack_t : public environment_t
     env_stack_t();
     virtual ~env_stack_t();
     
-    int set(const wcstring &key, const wchar_t *val, int var_mode);
+    /**
+       Set the value of the environment variable whose name matches key to val.
+
+       \param key The key
+       \param val The value
+       \param mode The type of the variable. Can be any combination of ENV_GLOBAL, ENV_LOCAL, ENV_EXPORT and ENV_USER. If mode is zero, the current variable space is searched and the current mode is used. If no current variable with the same name is found, ENV_LOCAL is assumed.
+
+       \returns 0 on sucess or an error code on failiure.
+
+       The current error codes are:
+
+       * ENV_PERM, can only be returned when setting as a user, e.g. ENV_USER is set. This means that the user tried to change a read-only variable.
+       * ENV_SCOPE, the variable cannot be set in the given scope. This applies to readonly/electric variables set from the local or universal scopes, or set as exported.
+       * ENV_INVALID, the variable value was invalid. This applies only to special variables.
+    */
+    int set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode);
     
     /**
-       Remove environemnt variable
+       Remove environment variable
 
        \param key The name of the variable to remove
        \param mode should be ENV_USER if this is a remove request from the user, 0 otherwise. If this is a user request, read-only variables can not be removed. The mode may also specify the scope of the variable that should be erased.
@@ -222,7 +220,7 @@ class env_stack_t : public environment_t
     */
     int remove(const wcstring &key, int var_mode);
     
-    env_var_t get(const wcstring &key) const;
+    env_var_t get(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT) const;
     
     /**
        Returns true if the specified key exists. This can't be reliably done
@@ -231,7 +229,7 @@ class env_stack_t : public environment_t
        \param key The name of the variable to remove
        \param mode the scope to search in. All scopes are searched if unset
     */
-    bool exist(const wchar_t *key, int mode) const;
+    bool exist(const wchar_t *key, env_mode_flags_t mode) const;
     
     /** Push the variable stack. Used for implementing local variables for functions and for-loops. */
     void push(bool new_scope);
@@ -254,6 +252,9 @@ env_var_t env_get_from_main(const wcstring &key);
 
 env_var_t env_get_from_principal(const wcstring &key);
 
+/** Synchronizes all universal variable changes: writes everything out, reads stuff in */
+void env_universal_barrier();
+
 /** Returns an array containing all exported variables in a format suitable for execv. */
 const char * const * env_export_arr(bool recalc);
 
@@ -275,7 +276,7 @@ class env_vars_snapshot_t : public environment_t
 public:
     env_vars_snapshot_t(const environment_t &env, const wchar_t * const * keys);
 
-    env_var_t get(const wcstring &key) const;
+    env_var_t get(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT) const;
 
     // Returns the fake snapshot representing the live variables array
     static const env_vars_snapshot_t &current();
@@ -289,5 +290,18 @@ extern int g_fork_count;
 
 extern bool g_use_posix_spawn;
 
+/**
+ A variable entry. Stores the value of a variable and whether it
+ should be exported.
+ */
+struct var_entry_t
+{
+    wcstring val; /**< The value of the variable */
+    bool exportv; /**< Whether the variable should be exported */
+    
+    var_entry_t() : exportv(false) { }
+};
+
+typedef std::map<wcstring, var_entry_t> var_table_t;
 
 #endif

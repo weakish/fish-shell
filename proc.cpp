@@ -383,8 +383,6 @@ static void mark_process_status(const job_t *j, process_t *p, int status)
     }
     else
     {
-        ssize_t ignore;
-
         /* This should never be reached */
         p->completed = 1;
 
@@ -398,7 +396,7 @@ static void mark_process_status(const job_t *j, process_t *p, int status)
           handler. If things aren't working properly, it's safer to
           give up.
          */
-        ignore = write(2, mess, strlen(mess));
+        write_ignore(2, mess, strlen(mess));
     }
 }
 
@@ -845,15 +843,16 @@ unsigned long proc_get_jiffies(process_t *p)
                        &cnswap, &exit_signal, &processor
                       );
 
+    /*
+      Don't need to check exit status of fclose on read-only streams
+    */
+    fclose(f);
+    
     if (count < 17)
     {
         return 0;
     }
 
-    /*
-      Don't need to check exit status of fclose on read-only streams
-    */
-    fclose(f);
     return utime+stime+cutime+cstime;
 
 }
@@ -1299,9 +1298,11 @@ void proc_sanity_check()
         p = j->first_process;
         while (p)
         {
-            validate_pointer(p->get_argv(), _(L"Process argument list"), 0);
-            validate_pointer(p->argv0(), _(L"Process name"), 0);
-            validate_pointer(p->next, _(L"Process list pointer"), 1);
+            /* Internal block nodes do not have argv - see #1545 */
+            bool null_ok = (p->type == INTERNAL_BLOCK_NODE);
+            validate_pointer(p->get_argv(), _(L"Process argument list"), null_ok);
+            validate_pointer(p->argv0(), _(L"Process name"), null_ok);
+            validate_pointer(p->next, _(L"Process list pointer"), true);
 
             if ((p->stopped & (~0x00000001)) != 0)
             {

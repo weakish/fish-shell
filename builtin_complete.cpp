@@ -24,12 +24,6 @@ Functions used for implementing the complete builtin.
 #include "parser.h"
 #include "reader.h"
 
-
-/**
-   Internal storage for the builtin_complete_get_temporary_buffer() function.
-*/
-static const wchar_t *temporary_buffer;
-
 /*
   builtin_complete_* are a set of rather silly looping functions that
   make sure that all the proper combinations of complete_add or
@@ -179,14 +173,16 @@ static void  builtin_complete_add(const wcstring_list_t &cmd,
 static void builtin_complete_remove3(const wchar_t *cmd,
                                      int cmd_type,
                                      wchar_t short_opt,
-                                     const wcstring_list_t &long_opt)
+                                     const wcstring_list_t &long_opt,
+                                     int long_mode)
 {
     for (size_t i=0; i<long_opt.size(); i++)
     {
         complete_remove(cmd,
                         cmd_type,
                         short_opt,
-                        long_opt.at(i).c_str());
+                        long_opt.at(i).c_str(),
+                        long_mode);
     }
 }
 
@@ -209,6 +205,7 @@ static void  builtin_complete_remove2(const wchar_t *cmd,
                 complete_remove(cmd,
                                 cmd_type,
                                 *s,
+                                0,
                                 0);
 
             }
@@ -217,24 +214,36 @@ static void  builtin_complete_remove2(const wchar_t *cmd,
                 builtin_complete_remove3(cmd,
                                          cmd_type,
                                          *s,
-                                         gnu_opt);
+                                         gnu_opt,
+                                         0);
                 builtin_complete_remove3(cmd,
                                          cmd_type,
                                          *s,
-                                         old_opt);
+                                         old_opt,
+                                         1);
             }
         }
+    }
+    else if (gnu_opt.empty() && old_opt.empty())
+    {
+        complete_remove(cmd,
+                        cmd_type,
+                        0,
+                        0,
+                        0);
     }
     else
     {
         builtin_complete_remove3(cmd,
                                  cmd_type,
                                  0,
-                                 gnu_opt);
+                                 gnu_opt,
+                                 0);
         builtin_complete_remove3(cmd,
                                  cmd_type,
                                  0,
-                                 old_opt);
+                                 old_opt,
+                                 1);
 
     }
 
@@ -270,13 +279,6 @@ static void  builtin_complete_remove(const wcstring_list_t &cmd,
 
 }
 
-
-const wchar_t *builtin_complete_get_temporary_buffer()
-{
-    ASSERT_IS_MAIN_THREAD();
-    return temporary_buffer;
-}
-
 /**
    The complete builtin. Used for specifying programmable
    tab-completions. Calls the functions in complete.c for any heavy
@@ -300,6 +302,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
 
     wcstring_list_t cmd;
     wcstring_list_t path;
+    wcstring_list_t wrap_targets;
 
     static int recursion_level=0;
 
@@ -326,6 +329,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             { L"unauthoritative", no_argument, 0, 'u' },
             { L"authoritative", no_argument, 0, 'A' },
             { L"condition", required_argument, 0, 'n' },
+            { L"wraps", required_argument, 0, 'w' },
             { L"do-complete", optional_argument, 0, 'C' },
             { L"help", no_argument, 0, 'h' },
             { 0, 0, 0, 0 }
@@ -422,6 +426,10 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             case 'n':
                 condition = woptarg;
                 break;
+                
+            case 'w':
+                wrap_targets.push_back(woptarg);
+                break;
 
             case 'C':
                 do_complete = true;
@@ -447,7 +455,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
         {
             const wcstring condition_string = condition;
             parse_error_list_t errors;
-            if (parse_util_detect_errors(condition_string, &errors))
+            if (parse_util_detect_errors(condition_string, &errors, false /* do not accept incomplete */))
             {
                 append_format(stderr_buffer,
                               L"%ls: Condition '%ls' contained a syntax error",
@@ -495,9 +503,9 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             const wchar_t *token;
 
             parse_util_token_extent(do_complete_param.c_str(), do_complete_param.size(), &token, 0, 0, 0);
-
-            const wchar_t *prev_temporary_buffer = temporary_buffer;
-            temporary_buffer = do_complete_param.c_str();
+            
+            /* Create a scoped transient command line, so that bulitin_commandline will see our argument, not the reader buffer */
+            builtin_commandline_scoped_transient_t temp_buffer(do_complete_param);
 
             if (recursion_level < 1)
             {
@@ -536,9 +544,6 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
 
                 recursion_level--;
             }
-
-            temporary_buffer = prev_temporary_buffer;
-
         }
         else if (woptind != argc)
         {
@@ -558,7 +563,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
         else
         {
             int flags = COMPLETE_AUTO_SPACE;
-
+        
             if (remove)
             {
                 builtin_complete_remove(cmd,
@@ -566,6 +571,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                                         short_opt.c_str(),
                                         gnu_opt,
                                         old_opt);
+                
             }
             else
             {
@@ -581,7 +587,18 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                                      desc,
                                      flags);
             }
-
+            
+            // Handle wrap targets (probably empty)
+            // We only wrap commands, not paths
+            for (size_t w=0; w < wrap_targets.size(); w++)
+            {
+                const wcstring &wrap_target = wrap_targets.at(w);
+                for (size_t i=0; i < cmd.size(); i++)
+                {
+                    
+                    (remove ? complete_remove_wrapper : complete_add_wrapper)(cmd.at(i), wrap_target);
+                }
+            }
         }
     }
 

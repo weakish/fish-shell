@@ -12,7 +12,13 @@ function __fish_print_packages
 	#Get the word 'Package' in the current language
 	set -l package (_ Package)
 
-	if type -f apt-cache >/dev/null
+	# Set up cache directory
+	if test -z "$XDG_CACHE_HOME"
+		set XDG_CACHE_HOME $HOME/.cache
+	end
+	mkdir -m 700 -p $XDG_CACHE_HOME
+
+	if type -q -f apt-cache
 		# Do not generate the cache as apparently sometimes this is slow.
 		# http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=547550
 		apt-cache --no-generate pkgnames (commandline -tc) ^/dev/null | sed -e 's/$/'\t$package'/'
@@ -22,7 +28,7 @@ function __fish_print_packages
 	# Pkg is fast on FreeBSD and provides versioning info which we want for
 	# installed packages
 	if 	begin
-			type -f pkg > /dev/null
+			type -q -f pkg
 			and test (uname) = "FreeBSD"
 		end
 		pkg query "%n-%v"
@@ -30,8 +36,8 @@ function __fish_print_packages
 	end
 
     # Caches for 5 minutes
-	if type -f pacman >/dev/null
-		set cache_file /tmp/.pac-cache.$USER
+	if type -q -f pacman
+		set cache_file $XDG_CACHE_HOME/.pac-cache.$USER
 		if test -f $cache_file
 			cat $cache_file
 			set age (math (date +%s) - (stat -c '%Y' $cache_file))
@@ -47,11 +53,11 @@ function __fish_print_packages
 	end
 
 	# yum is slow, just like rpm, so go to the background
-	if type -f /usr/share/yum-cli/completion-helper.py >/dev/null
+	if type -q -f /usr/share/yum-cli/completion-helper.py
 
 		# If the cache is less than six hours old, we do not recalculate it
 
-		set cache_file /tmp/.yum-cache.$USER
+		set cache_file $XDG_CACHE_HOME/.yum-cache.$USER
 			if test -f $cache_file
 			cat $cache_file
 			set age (math (date +%s) - (stat -c '%Y' $cache_file))
@@ -69,11 +75,11 @@ function __fish_print_packages
 	# Rpm is too slow for this job, so we set it up to do completions
 	# as a background job and cache the results.
 
-	if type -f rpm >/dev/null
+	if type -q -f rpm
 
 		# If the cache is less than five minutes old, we do not recalculate it
 
-		set cache_file /tmp/.rpm-cache.$USER
+		set cache_file $XDG_CACHE_HOME/.rpm-cache.$USER
 			if test -f $cache_file
 			cat $cache_file
 			set age (math (date +%s) - (stat -c '%Y' $cache_file))
@@ -93,12 +99,12 @@ function __fish_print_packages
 	# installed on the system packages is in completions/emerge.fish
 
 	# eix is MUCH faster than emerge so use it if it is available
-	if type -f eix > /dev/null
+	if type -q -f eix
 		eix --only-names "^"(commandline -tc) | cut -d/ -f2
 		return
 	else
 		# FIXME?  Seems to be broken
-		if type -f emerge >/dev/null
+		if type -q -f emerge
 			emerge -s \^(commandline -tc) |sgrep "^*" |cut -d\  -f3 |cut -d/ -f2
 			return
 		end

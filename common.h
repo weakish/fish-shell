@@ -121,7 +121,9 @@ inline bool selection_direction_is_cardinal(selection_direction_t dir)
 /**
  Helper macro for errors
  */
-#define VOMIT_ON_FAILURE(a) do { if (0 != (a)) { int err = errno; fprintf(stderr, "%s failed on line %d in file %s: %d (%s)\n", #a, __LINE__, __FILE__, err, strerror(err)); abort(); }} while (0)
+#define VOMIT_ON_FAILURE(a) do { if (0 != (a)) { VOMIT_ABORT(errno, #a); } } while (0)
+#define VOMIT_ON_FAILURE_NO_ERRNO(a) do { int err = (a); if (0 != err) { VOMIT_ABORT(err, #a); } } while (0)
+#define VOMIT_ABORT(err, str) do { int code = (err); fprintf(stderr, "%s failed on line %d in file %s: %d (%s)\n", str, __LINE__, __FILE__, code, strerror(code)); abort(); } while(0)
 
 /** Exits without invoking destructors (via _exit), useful for code after fork. */
 void exit_without_destructors(int code) __attribute__((noreturn));
@@ -157,6 +159,10 @@ extern bool g_profiling_active;
 */
 extern const wchar_t *program_name;
 
+/* Variants of read() and write() that ignores return values, defeating a warning */
+void read_ignore(int fd, void *buff, size_t count);
+void write_ignore(int fd, const void *buff, size_t count);
+
 /**
    This macro is used to check that an input argument is not null. It
    is a bit lika a non-fatal form of assert. Instead of exit-ing on
@@ -180,10 +186,10 @@ extern const wchar_t *program_name;
 */
 #define FATAL_EXIT()											\
 	{															\
-		char exit_read_buff;			\
-		show_stackframe();										\
-		read( 0, &exit_read_buff, 1 );			\
-		exit_without_destructors( 1 );												\
+        char exit_read_buff;                                    \
+        show_stackframe();										\
+        read_ignore( 0, &exit_read_buff, 1 );                   \
+        exit_without_destructors( 1 );                          \
 	}															\
  
 
@@ -533,6 +539,22 @@ public:
 
 bool is_forked_child();
 
+
+class mutex_lock_t
+{
+    public:
+    pthread_mutex_t mutex;
+    mutex_lock_t()
+    {
+        VOMIT_ON_FAILURE_NO_ERRNO(pthread_mutex_init(&mutex, NULL));
+    }
+    
+    ~mutex_lock_t()
+    {
+        VOMIT_ON_FAILURE_NO_ERRNO(pthread_mutex_destroy(&mutex));
+    }
+};
+
 /* Basic scoped lock class */
 class scoped_lock
 {
@@ -547,10 +569,52 @@ public:
     void lock(void);
     void unlock(void);
     scoped_lock(pthread_mutex_t &mutex);
-    scoped_lock(const pthread_mutex_t &mutex);
+    scoped_lock(mutex_lock_t &lock);
     ~scoped_lock();
 };
 
+class rwlock_t
+{
+public:
+    pthread_rwlock_t rwlock;
+    rwlock_t()
+    {
+        VOMIT_ON_FAILURE_NO_ERRNO(pthread_rwlock_init(&rwlock, NULL));
+    }
+
+    ~rwlock_t()
+    {
+        VOMIT_ON_FAILURE_NO_ERRNO(pthread_rwlock_destroy(&rwlock));
+    }
+};
+
+/*
+   Scoped lock class for rwlocks
+ */
+class scoped_rwlock
+{
+    pthread_rwlock_t *rwlock_obj;
+    bool locked;
+    bool locked_shared;
+
+    /* No copying */
+    scoped_rwlock &operator=(const scoped_lock &);
+    scoped_rwlock(const scoped_lock &);
+
+public:
+    void lock(void);
+    void unlock(void);
+    void lock_shared(void);
+    void unlock_shared(void);
+    /*
+       upgrade shared lock to exclusive.
+       equivalent to `lock.unlock_shared(); lock.lock();`
+     */
+    void upgrade(void);
+    scoped_rwlock(pthread_rwlock_t &rwlock, bool shared = false);
+    scoped_rwlock(rwlock_t &rwlock, bool shared = false);
+    ~scoped_rwlock();
+};
 
 /**
    A scoped manager to save the current value of some variable, and optionally
@@ -630,7 +694,7 @@ char **wcsv2strv(const wchar_t * const *in);
    \return null if this is a valid name, and a pointer to the first invalid character otherwise
 */
 
-wchar_t *wcsvarname(const wchar_t *str);
+const wchar_t *wcsvarname(const wchar_t *str);
 
 
 /**
@@ -845,6 +909,9 @@ bool is_forked_child(void);
 void assert_is_not_forked_child(const char *who);
 #define ASSERT_IS_NOT_FORKED_CHILD_TRAMPOLINE(x) assert_is_not_forked_child(x)
 #define ASSERT_IS_NOT_FORKED_CHILD() ASSERT_IS_NOT_FORKED_CHILD_TRAMPOLINE(__FUNCTION__)
+
+/** Macro to help suppress potentially unused variable warnings */
+#define USE(var) (void)(var)
 
 extern "C" {
     __attribute__((noinline)) void debug_thread_error(void);

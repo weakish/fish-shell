@@ -106,18 +106,14 @@ wildcards using **.
 /** Hashtable containing all descriptions that describe an executable */
 static std::map<wcstring, wcstring> suffix_map;
 
-
-bool wildcard_has(const wchar_t *str, bool internal)
+// Implementation of wildcard_has. Needs to take the length to handle embedded nulls (#1631)
+static bool wildcard_has_impl(const wchar_t *str, size_t len, bool internal)
 {
-    if (!str)
-    {
-        debug(2, L"Got null string on line %d of file %s", __LINE__, __FILE__);
-        return false;
-    }
-
+    assert(str != NULL);
+    const wchar_t *end = str + len;
     if (internal)
     {
-        for (; *str; str++)
+        for (; str < end; str++)
         {
             if ((*str == ANY_CHAR) || (*str == ANY_STRING) || (*str == ANY_STRING_RECURSIVE))
                 return true;
@@ -126,7 +122,7 @@ bool wildcard_has(const wchar_t *str, bool internal)
     else
     {
         wchar_t prev=0;
-        for (; *str; str++)
+        for (; str < end; str++)
         {
             if (((*str == L'*') || (*str == L'?')) && (prev != L'\\'))
                 return true;
@@ -136,6 +132,18 @@ bool wildcard_has(const wchar_t *str, bool internal)
 
     return false;
 }
+
+bool wildcard_has(const wchar_t *str, bool internal)
+{
+    assert(str != NULL);
+    return wildcard_has_impl(str, wcslen(str), internal);
+}
+
+bool wildcard_has(const wcstring &str, bool internal)
+{
+    return wildcard_has_impl(str.data(), str.size(), internal);
+}
+
 
 /**
    Check whether the string str matches the wildcard string wc.
@@ -973,7 +981,7 @@ static int wildcard_expand_internal(const wchar_t *wc,
                     // Insert a "file ID" into visited_files
                     // If the insertion fails, we've already visited this file (i.e. a symlink loop)
                     // If we're not recursive, insert anyways (in case we loop back around in a future recursive segment), but continue on; the idea being that literal path components should still work
-                    const file_id_t file_id(buf.st_dev, buf.st_ino);
+                    const file_id_t file_id = file_id_t::file_id_from_stat(&buf);
                     if (S_ISDIR(buf.st_mode) && (visited_files.insert(file_id).second || ! is_recursive))
                     {
                         new_dir.push_back(L'/');
@@ -1086,6 +1094,11 @@ int wildcard_expand(const wchar_t *wc,
 
 int wildcard_expand_string(const wcstring &wc, const wcstring &base_dir, expand_flags_t flags, std::vector<completion_t> &outputs)
 {
+    /* Hackish fix for 1631. We are about to call c_str(), which will produce a string truncated at any embedded nulls. We could fix this by passing around the size, etc. However embedded nulls are never allowed in a filename, so we just check for them and return 0 (no matches) if there is an embedded null. This isn't quite right, e.g. it will fail for \0?, but that is an edge case. */
+    if (wc.find(L'\0') != wcstring::npos)
+    {
+        return 0;
+    }
     // PCA: not convinced this temporary variable is really necessary
     std::vector<completion_t> lst;
     int res = wildcard_expand(wc.c_str(), base_dir.c_str(), flags, lst);

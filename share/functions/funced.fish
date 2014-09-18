@@ -51,7 +51,7 @@ function funced --description 'Edit function definition'
     if test -n "$editor"
         set -l editor_cmd
         eval set editor_cmd $editor
-        if not type -f "$editor_cmd[1]" >/dev/null
+        if not type -q -f "$editor_cmd[1]"
             _ "funced: The value for \$EDITOR '$editor' could not be used because the command '$editor_cmd[1]' could not be found
     "
             set editor fish
@@ -81,11 +81,7 @@ function funced --description 'Edit function definition'
         return 0
     end
 
-    set -q TMPDIR; or set -l TMPDIR /tmp
-    set -l tmpname (printf "$TMPDIR/fish_funced_%d_%d.fish" %self (random))
-    while test -f $tmpname
-        set tmpname (printf "$TMPDIR/fish_funced_%d_%d.fish" %self (random))
-    end
+    set tmpname (mktemp -t fish_funced.XXXXXXXXXX)
 
     if functions -q -- $funcname
         functions -- $funcname > $tmpname

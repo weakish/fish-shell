@@ -64,8 +64,8 @@ public:
     {
     }
 
-    /* Inserts the string at the cursor position */
-    void insert_string(const wcstring &str);
+    /* Inserts a substring of str given by start, len at the cursor position */
+    void insert_string(const wcstring &str, size_t start = 0, size_t len = wcstring::npos);
 };
 
 /**
@@ -115,9 +115,13 @@ void reader_pop_current_filename();
 /**
    Write the title to the titlebar. This function is called just
    before a new application starts executing and just after it
-   finishes. The parser is used for executing fish_title, if present.
+   finishes.
+
+   \param parser The parser used for executing fish_title, if it is defined
+   \param cmd Command line string passed to \c fish_title, if it is defined.
+
 */
-void reader_write_title(parser_t &parser);
+void reader_write_title(parser_t &parser, const wcstring &cmd);
 
 /**
    Call this function to tell the reader that a repaint is needed, and
@@ -198,11 +202,13 @@ int reader_reading_interrupted();
 bool reader_thread_job_is_stale();
 
 /**
-   Read one line of input. Before calling this function, reader_push()
-   must have been called in order to set up a valid reader
-   environment.
+   Read one line of input. Before calling this function, reader_push() must have
+   been called in order to set up a valid reader environment. If nchars > 0,
+   return after reading that many characters even if a full line has not yet
+   been read. Note: the returned value may be longer than nchars if a single
+   keypress resulted in multiple characters being inserted into the commandline.
 */
-const wchar_t *reader_readline();
+const wchar_t *reader_readline(int nchars);
 
 /**
    Push a new reader environment.

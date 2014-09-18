@@ -51,6 +51,7 @@ license. Read the source code of the library for more information.
 #include "fallback.h"
 #include "util.h"
 #include "print_help.h"
+#include "fish_version.h"
 
 typedef std::vector<std::string> string_list_t;
 
@@ -619,6 +620,7 @@ static char *get_description(const char *mimetype)
         perror("read");
         error=1;
         free((void *)contents);
+        close(fd);
         return 0;
     }
 
@@ -1188,6 +1190,12 @@ static void launch(char *filter, const string_list_t &files, size_t fileno)
             writer('&');
             writer('\0');
 
+            /*
+              Calling writer might fail in which case launch_buff gets freed.
+            */
+            if (error)
+                return;
+
             if (system(launch_buff) == -1)
             {
                 fprintf(stderr, _(ERROR_SYSTEM), MIMEDB, launch_buff);
@@ -1332,7 +1340,7 @@ int main(int argc, char *argv[])
                 exit(0);
 
             case 'v':
-                printf(_("%s, version %s\n"), MIMEDB, FISH_BUILD_VERSION);
+                printf(_("%s, version %s\n"), MIMEDB, get_fish_version());
                 exit(0);
 
             case '?':

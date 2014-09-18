@@ -18,6 +18,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <stdarg.h>
+#include <libgen.h>
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -63,6 +64,7 @@
 #include "pager.h"
 #include "input.h"
 #include "utf8.h"
+#include "env_universal_common.h"
 
 static const char * const * s_arguments;
 static int s_test_run_count = 0;
@@ -141,18 +143,42 @@ static void err(const wchar_t *blah, ...)
     va_list va;
     va_start(va, blah);
     err_count++;
+    
+    // Xcode's term doesn't support color (even though TERM claims it does)
+    bool colorize = ! getenv("RUNNING_IN_XCODE");
 
     // show errors in red
-    fputs("\x1b[31m", stdout);
+    if (colorize)
+    {
+        fputs("\x1b[31m", stdout);
+    }
 
     wprintf(L"Error: ");
     vwprintf(blah, va);
     va_end(va);
 
     // return to normal color
-    fputs("\x1b[0m", stdout);
+    if (colorize)
+    {
+        fputs("\x1b[0m", stdout);
+    }
 
     wprintf(L"\n");
+}
+
+// Joins a wcstring_list_t via commas
+static wcstring comma_join(const wcstring_list_t &lst)
+{
+    wcstring result;
+    for (size_t i=0; i < lst.size(); i++)
+    {
+        if (i > 0)
+        {
+            result.push_back(L',');
+        }
+        result.append(lst.at(i));
+    }
+    return result;
 }
 
 #define do_test(e) do { if (! (e)) err(L"Test failed on line %lu: %s", __LINE__, #e); } while (0)
@@ -687,6 +713,9 @@ static void test_parser()
     parser_t::principal_parser().eval(L"function recursive1 ; recursive2 ; end ; function recursive2 ; recursive1 ; end ; recursive1; ", io_chain_t(), TOP);
 #endif
 
+    say(L"Testing empty function name");
+    parser_t::principal_parser().eval(L"function '' ; echo fail; exit 42 ; end ; ''", io_chain_t(), TOP);
+
     say(L"Testing eval_args");
     completion_list_t comps;
     parser_t &principal = parser_t::principal_parser();
@@ -729,6 +758,10 @@ static void test_1_cancellation(const wchar_t *src)
 
 static void test_cancellation()
 {
+    if (getenv("RUNNING_IN_XCODE")) {
+        say(L"Skipping Ctrl-C cancellation test because we are running in Xcode debugger");
+        return;
+    }
     say(L"Testing Ctrl-C cancellation. If this hangs, that's a bug!");
 
     /* Enable fish's signal handling here. We need to make this interactive for fish to install its signal handlers */
@@ -991,6 +1024,13 @@ static void test_utf82wchar(const char *src, size_t slen, const wchar_t *dst, si
     free(mem);
 }
 
+// Annoying variant to handle uchar to avoid narrowing conversion warnings
+static void test_utf82wchar(const unsigned char *usrc, size_t slen, const wchar_t *dst, size_t dlen,
+                            int flags, size_t res, const char *descr) {
+    const char *src = reinterpret_cast<const char *>(usrc);
+    return test_utf82wchar(src, slen, dst, dlen, flags, res, descr);
+}
+
 static void test_wchar2utf8(const wchar_t *src, size_t slen, const char *dst, size_t dlen,
                             int flags, size_t res, const char *descr)
 {
@@ -1022,29 +1062,32 @@ static void test_wchar2utf8(const wchar_t *src, size_t slen, const char *dst, si
         }
     }
 
-    do
+    size = wchar_to_utf8(src, slen, mem, dlen, flags);
+    if (res != size)
     {
-        size = wchar_to_utf8(src, slen, mem, dlen, flags);
-        if (res != size)
-        {
-            err(L"w2u: %s: FAILED (rv: %lu, must be %lu)", descr, size, res);
-            break;
-        }
-
-        if (mem == NULL)
-            break;		/* OK */
-
-        if (memcmp(mem, dst, size) != 0)
-        {
-            err(L"w2u: %s: BROKEN", descr);
-            break;
-        }
-
+        err(L"w2u: %s: FAILED (rv: %lu, must be %lu)", descr, size, res);
+        goto finish;
     }
-    while (0);
 
-    if (mem != NULL);
+    if (mem == NULL)
+        goto finish;		/* OK */
+
+    if (memcmp(mem, dst, size) != 0)
+    {
+        err(L"w2u: %s: BROKEN", descr);
+        goto finish;
+    }
+
+    finish:
     free(mem);
+}
+
+// Annoying variant to handle uchar to avoid narrowing conversion warnings
+static void test_wchar2utf8(const wchar_t *src, size_t slen, const unsigned char *udst, size_t dlen,
+                            int flags, size_t res, const char *descr)
+{
+    const char *dst = reinterpret_cast<const char *>(udst);
+    return test_wchar2utf8(src, slen, dst, dlen, flags, res, descr);
 }
 
 static void test_utf8()
@@ -1055,34 +1098,34 @@ static void test_utf8()
     wchar_t w4[] = {0x15555, 0xf7777, 0xa};
     wchar_t w5[] = {0x255555, 0x1fa04ff, 0xddfd04, 0xa};
     wchar_t w6[] = {0xf255555, 0x1dfa04ff, 0x7fddfd04, 0xa};
-    wchar_t wb[] = {-2, 0xa, 0xffffffff, 0x0441};
+    wchar_t wb[] = {-2, 0xa, (wchar_t)0xffffffff, 0x0441};
     wchar_t wm[] = {0x41, 0x0441, 0x3042, 0xff67, 0x9b0d, 0x2e05da67};
     wchar_t wb1[] = {0xa, 0x0422};
     wchar_t wb2[] = {0xd800, 0xda00, 0x41, 0xdfff, 0xa};
     wchar_t wbom[] = {0xfeff, 0x41, 0xa};
     wchar_t wbom2[] = {0x41, 0xa};
     wchar_t wbom22[] = {0xfeff, 0x41, 0xa};
-    char u1[] = {0x54, 0x65, 0x73, 0x74};
-    char u2[] = {0xd0, 0xa2, 0xd0, 0xb5, 0xd1, 0x81, 0xd1, 0x82};
-    char u3[] = {0xe0, 0xa0, 0x80, 0xe1, 0xba, 0x80, 0xe9, 0xa3, 0x84,
+    unsigned char u1[] = {0x54, 0x65, 0x73, 0x74};
+    unsigned char u2[] = {0xd0, 0xa2, 0xd0, 0xb5, 0xd1, 0x81, 0xd1, 0x82};
+    unsigned char u3[] = {0xe0, 0xa0, 0x80, 0xe1, 0xba, 0x80, 0xe9, 0xa3, 0x84,
                  0xe9, 0xa4, 0x90, 0xef, 0xbc, 0x80
                 };
-    char u4[] = {0xf0, 0x95, 0x95, 0x95, 0xf3, 0xb7, 0x9d, 0xb7, 0xa};
-    char u5[] = {0xf8, 0x89, 0x95, 0x95, 0x95, 0xf9, 0xbe, 0xa0, 0x93,
+    unsigned char u4[] = {0xf0, 0x95, 0x95, 0x95, 0xf3, 0xb7, 0x9d, 0xb7, 0xa};
+    unsigned char u5[] = {0xf8, 0x89, 0x95, 0x95, 0x95, 0xf9, 0xbe, 0xa0, 0x93,
                  0xbf, 0xf8, 0xb7, 0x9f, 0xb4, 0x84, 0x0a
                 };
-    char u6[] = {0xfc, 0x8f, 0x89, 0x95, 0x95, 0x95, 0xfc, 0x9d, 0xbe,
+    unsigned char u6[] = {0xfc, 0x8f, 0x89, 0x95, 0x95, 0x95, 0xfc, 0x9d, 0xbe,
                  0xa0, 0x93, 0xbf, 0xfd, 0xbf, 0xb7, 0x9f, 0xb4, 0x84, 0x0a
                 };
-    char ub[] = {0xa, 0xd1, 0x81};
-    char um[] = {0x41, 0xd1, 0x81, 0xe3, 0x81, 0x82, 0xef, 0xbd, 0xa7,
+    unsigned char ub[] = {0xa, 0xd1, 0x81};
+    unsigned char um[] = {0x41, 0xd1, 0x81, 0xe3, 0x81, 0x82, 0xef, 0xbd, 0xa7,
                  0xe9, 0xac, 0x8d, 0xfc, 0xae, 0x81, 0x9d, 0xa9, 0xa7
                 };
-    char ub1[] = {0xa, 0xff, 0xd0, 0xa2, 0xfe, 0x8f, 0xe0, 0x80};
-    char uc080[] = {0xc0, 0x80};
-    char ub2[] = {0xed, 0xa1, 0x8c, 0xed, 0xbe, 0xb4, 0xa};
-    char ubom[] = {0x41, 0xa};
-    char ubom2[] = {0xef, 0xbb, 0xbf, 0x41, 0xa};
+    unsigned char ub1[] = {0xa, 0xff, 0xd0, 0xa2, 0xfe, 0x8f, 0xe0, 0x80};
+    unsigned char uc080[] = {0xc0, 0x80};
+    unsigned char ub2[] = {0xed, 0xa1, 0x8c, 0xed, 0xbe, 0xb4, 0xa};
+    unsigned char ubom[] = {0x41, 0xa};
+    unsigned char ubom2[] = {0xef, 0xbb, 0xbf, 0x41, 0xa};
 
     /*
      * UTF-8 -> UCS-4 string.
@@ -1132,10 +1175,10 @@ static void test_utf8()
     test_utf82wchar(ub1, sizeof(ub1), NULL, 0,
                     UTF8_IGNORE_ERROR, sizeof(wb1) / sizeof(*wb1),
                     "calculate length, ignore bad chars");
-    test_utf82wchar(NULL, 0, NULL, 0, 0, 0, "invalid params, all 0");
+    test_utf82wchar((const char *)NULL, 0, NULL, 0, 0, 0, "invalid params, all 0");
     test_utf82wchar(u1, 0, NULL, 0, 0, 0,
                     "invalid params, src buf not NULL");
-    test_utf82wchar(NULL, 10, NULL, 0, 0, 0,
+    test_utf82wchar((const char *)NULL, 10, NULL, 0, 0, 0,
                     "invalid params, src length is not 0");
     test_utf82wchar(u1, sizeof(u1), w1, 0, 0, 0,
                     "invalid params, dst is not NULL");
@@ -1143,11 +1186,12 @@ static void test_utf8()
     /*
      * UCS-4 -> UTF-8 string.
      */
+    const char * const nullc = NULL;
     test_wchar2utf8(wbom, sizeof(wbom) / sizeof(*wbom), ubom, sizeof(ubom),
                     UTF8_SKIP_BOM, sizeof(ubom), "BOM");
-    test_wchar2utf8(wb2, sizeof(wb2) / sizeof(*wb2), NULL, 0, 0,
+    test_wchar2utf8(wb2, sizeof(wb2) / sizeof(*wb2), nullc, 0, 0,
                     0, "prohibited wchars");
-    test_wchar2utf8(wb2, sizeof(wb2) / sizeof(*wb2), NULL, 0,
+    test_wchar2utf8(wb2, sizeof(wb2) / sizeof(*wb2), nullc, 0,
                     UTF8_IGNORE_ERROR, 2, "ignore prohibited wchars");
     test_wchar2utf8(w1, sizeof(w1) / sizeof(*w1), u1, sizeof(u1), 0,
                     sizeof(u1), "1 octet chars");
@@ -1171,17 +1215,17 @@ static void test_utf8()
                     0, "boundaries -1");
     test_wchar2utf8(wm, sizeof(wm) / sizeof(*wm), um, sizeof(um) + 1, 0,
                     sizeof(um), "boundaries +1");
-    test_wchar2utf8(wm, sizeof(wm) / sizeof(*wm), NULL, 0, 0,
+    test_wchar2utf8(wm, sizeof(wm) / sizeof(*wm), nullc, 0, 0,
                     sizeof(um), "calculate length");
-    test_wchar2utf8(wb, sizeof(wb) / sizeof(*wb), NULL, 0, 0,
+    test_wchar2utf8(wb, sizeof(wb) / sizeof(*wb), nullc, 0, 0,
                     0, "calculate length of bad chars");
-    test_wchar2utf8(wb, sizeof(wb) / sizeof(*wb), NULL, 0,
+    test_wchar2utf8(wb, sizeof(wb) / sizeof(*wb), nullc, 0,
                     UTF8_IGNORE_ERROR, sizeof(ub),
                     "calculate length, ignore bad chars");
-    test_wchar2utf8(NULL, 0, NULL, 0, 0, 0, "invalid params, all 0");
-    test_wchar2utf8(w1, 0, NULL, 0, 0, 0,
+    test_wchar2utf8(NULL, 0, nullc, 0, 0, 0, "invalid params, all 0");
+    test_wchar2utf8(w1, 0, nullc, 0, 0, 0,
                     "invalid params, src buf not NULL");
-    test_wchar2utf8(NULL, 10, NULL, 0, 0, 0,
+    test_wchar2utf8(NULL, 10, nullc, 0, 0, 0,
                     "invalid params, src length is not 0");
     test_wchar2utf8(w1, sizeof(w1) / sizeof(*w1), u1, 0, 0, 0,
                     "invalid params, dst is not NULL");
@@ -1195,6 +1239,14 @@ static void test_escape_sequences(void)
     if (escape_code_length(L"\x1b[2J") != 4) err(L"test_escape_sequences failed on line %d\n", __LINE__);
     if (escape_code_length(L"\x1b[38;5;123mABC") != strlen("\x1b[38;5;123m")) err(L"test_escape_sequences failed on line %d\n", __LINE__);
     if (escape_code_length(L"\x1b@") != 2) err(L"test_escape_sequences failed on line %d\n", __LINE__);
+    
+    // iTerm2 escape sequences
+    if (escape_code_length(L"\x1b]50;CurrentDir=/tmp/foo\x07NOT_PART_OF_SEQUENCE") != 25) err(L"test_escape_sequences failed on line %d\n", __LINE__);
+    if (escape_code_length(L"\x1b]50;SetMark\x07NOT_PART_OF_SEQUENCE") != 13) err(L"test_escape_sequences failed on line %d\n", __LINE__);
+    if (escape_code_length(L"\x1b" L"]6;1;bg;red;brightness;255\x07NOT_PART_OF_SEQUENCE") != 28) err(L"test_escape_sequences failed on line %d\n", __LINE__);
+    if (escape_code_length(L"\x1b]Pg4040ff\x1b\\NOT_PART_OF_SEQUENCE") != 12) err(L"test_escape_sequences failed on line %d\n", __LINE__);
+    if (escape_code_length(L"\x1b]blahblahblah\x1b\\") != 16) err(L"test_escape_sequences failed on line %d\n", __LINE__);
+    if (escape_code_length(L"\x1b]blahblahblah\x07") != 15) err(L"test_escape_sequences failed on line %d\n", __LINE__);
 }
 
 class lru_node_test_t : public lru_node_t
@@ -1290,6 +1342,11 @@ static int expand_test(const wchar_t *in, int flags, ...)
         i++;
     }
     va_end(va);
+    
+    if (output.size() != i)
+    {
+        res = false;
+    }
 
     return res;
 
@@ -1316,6 +1373,11 @@ static void test_expand()
     {
         err(L"Cannot skip wildcard expansion");
     }
+    
+    if (!expand_test(L"/bin/l\\0", ACCEPT_INCOMPLETE, 0))
+    {
+        err(L"Failed to handle null escape in expansion");
+    }
 
     if (system("mkdir -p /tmp/fish_expand_test/")) err(L"mkdir failed");
     if (system("touch /tmp/fish_expand_test/.foo")) err(L"touch failed");
@@ -1331,7 +1393,7 @@ static void test_expand()
         err(L"Expansion not correctly handling literal path components in dotfiles");
     }
 
-    system("rm -Rf /tmp/fish_expand_test");
+    if (system("rm -Rf /tmp/fish_expand_test")) err(L"rm failed");
 }
 
 static void test_fuzzy_match(void)
@@ -1874,6 +1936,11 @@ static void test_complete(void)
     complete(L"echo (builtin scuttlebut", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 0);
 
+    /* Not after a redirection */
+    completions.clear();
+    complete(L"echo hi > scuttlebut", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 0);
+
     /* Trailing spaces (#1261) */
     complete_add(L"foobarbaz", false, 0, NULL, 0, NO_FILES, NULL, L"qux", NULL, COMPLETE_AUTO_SPACE);
     completions.clear();
@@ -1888,8 +1955,62 @@ static void test_complete(void)
     completions.clear();
     complete(L"echo \\$Foo", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.empty());
+    
+    /* File completions */
+    char saved_wd[PATH_MAX + 1] = {};
+    getcwd(saved_wd, sizeof saved_wd);
+    if (system("mkdir -p '/tmp/complete_test/'")) err(L"mkdir failed");
+    if (system("touch '/tmp/complete_test/testfile'")) err(L"touch failed");
+    if (chdir("/tmp/complete_test/")) err(L"chdir failed");
+    complete(L"cat te", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 1);
+    do_test(completions.at(0).completion == L"stfile");
+    completions.clear();
+    complete(L"cat /tmp/complete_test/te", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 1);
+    do_test(completions.at(0).completion == L"stfile");
+    completions.clear();
+    complete(L"echo sup > /tmp/complete_test/te", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 1);
+    do_test(completions.at(0).completion == L"stfile");
+    completions.clear();
+    complete(L"echo sup > /tmp/complete_test/te", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.size() == 1);
+    do_test(completions.at(0).completion == L"stfile");
+    completions.clear();
+    
+    // Zero escapes can cause problems. See #1631
+    complete(L"cat foo\\0", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.empty());
+    completions.clear();
+    complete(L"cat foo\\0bar", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.empty());
+    completions.clear();
+    complete(L"cat \\0", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.empty());
+    completions.clear();
+    complete(L"cat te\\0", completions, &vars, COMPLETION_REQUEST_DEFAULT);
+    do_test(completions.empty());
+    completions.clear();
 
     vars.pop();
+
+    if (chdir(saved_wd)) err(L"chdir failed");
+    if (system("rm -Rf '/tmp/complete_test/'")) err(L"rm failed");
+    
+    complete_set_variable_names(NULL);
+    
+    /* Test wraps */
+    do_test(comma_join(complete_get_wrap_chain(L"wrapper1")) == L"wrapper1");
+    complete_add_wrapper(L"wrapper1", L"wrapper2");
+    do_test(comma_join(complete_get_wrap_chain(L"wrapper1")) == L"wrapper1,wrapper2");
+    complete_add_wrapper(L"wrapper2", L"wrapper3");
+    do_test(comma_join(complete_get_wrap_chain(L"wrapper1")) == L"wrapper1,wrapper2,wrapper3");
+    complete_add_wrapper(L"wrapper3", L"wrapper1"); //loop!
+    do_test(comma_join(complete_get_wrap_chain(L"wrapper1")) == L"wrapper1,wrapper2,wrapper3");
+    complete_remove_wrapper(L"wrapper1", L"wrapper2");
+    do_test(comma_join(complete_get_wrap_chain(L"wrapper1")) == L"wrapper1");
+    do_test(comma_join(complete_get_wrap_chain(L"wrapper2")) == L"wrapper2,wrapper3,wrapper1");
 }
 
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)
@@ -1943,7 +2064,7 @@ static void test_completion_insertions()
     TEST_1_COMPLETION(L"'foo^", L"bar", COMPLETE_REPLACES_TOKEN, false, L"bar ^");
 }
 
-static void perform_one_autosuggestion_test(const wcstring &command, const wcstring &wd, const wcstring &expected, long line)
+static void perform_one_autosuggestion_special_test(const wcstring &command, const wcstring &wd, const wcstring &expected, long line)
 {
     const environment_t &vars = parser_t::principal_parser().vars();
     wcstring suggestion;
@@ -1974,55 +2095,80 @@ static void test_autosuggest_suggest_special()
     if (system("mkdir -p ~/test_autosuggest_suggest_special/")) err(L"mkdir failed"); //make sure tilde is handled
 
     const wcstring wd = L"/tmp/autosuggest_test/";
-    perform_one_autosuggestion_test(L"cd /tmp/autosuggest_test/0", wd, L"cd /tmp/autosuggest_test/0foobar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"/tmp/autosuggest_test/0", wd, L"cd \"/tmp/autosuggest_test/0foobar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '/tmp/autosuggest_test/0", wd, L"cd '/tmp/autosuggest_test/0foobar/'", __LINE__);
-    perform_one_autosuggestion_test(L"cd 0", wd, L"cd 0foobar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"0", wd, L"cd \"0foobar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '0", wd, L"cd '0foobar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd /tmp/autosuggest_test/0", wd, L"cd /tmp/autosuggest_test/0foobar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"/tmp/autosuggest_test/0", wd, L"cd \"/tmp/autosuggest_test/0foobar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '/tmp/autosuggest_test/0", wd, L"cd '/tmp/autosuggest_test/0foobar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd 0", wd, L"cd 0foobar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"0", wd, L"cd \"0foobar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '0", wd, L"cd '0foobar/'", __LINE__);
 
-    perform_one_autosuggestion_test(L"cd /tmp/autosuggest_test/1", wd, L"cd /tmp/autosuggest_test/1foo\\ bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"/tmp/autosuggest_test/1", wd, L"cd \"/tmp/autosuggest_test/1foo bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '/tmp/autosuggest_test/1", wd, L"cd '/tmp/autosuggest_test/1foo bar/'", __LINE__);
-    perform_one_autosuggestion_test(L"cd 1", wd, L"cd 1foo\\ bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"1", wd, L"cd \"1foo bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '1", wd, L"cd '1foo bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd /tmp/autosuggest_test/1", wd, L"cd /tmp/autosuggest_test/1foo\\ bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"/tmp/autosuggest_test/1", wd, L"cd \"/tmp/autosuggest_test/1foo bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '/tmp/autosuggest_test/1", wd, L"cd '/tmp/autosuggest_test/1foo bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd 1", wd, L"cd 1foo\\ bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"1", wd, L"cd \"1foo bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '1", wd, L"cd '1foo bar/'", __LINE__);
 
-    perform_one_autosuggestion_test(L"cd /tmp/autosuggest_test/2", wd, L"cd /tmp/autosuggest_test/2foo\\ \\ bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"/tmp/autosuggest_test/2", wd, L"cd \"/tmp/autosuggest_test/2foo  bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '/tmp/autosuggest_test/2", wd, L"cd '/tmp/autosuggest_test/2foo  bar/'", __LINE__);
-    perform_one_autosuggestion_test(L"cd 2", wd, L"cd 2foo\\ \\ bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"2", wd, L"cd \"2foo  bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '2", wd, L"cd '2foo  bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd /tmp/autosuggest_test/2", wd, L"cd /tmp/autosuggest_test/2foo\\ \\ bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"/tmp/autosuggest_test/2", wd, L"cd \"/tmp/autosuggest_test/2foo  bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '/tmp/autosuggest_test/2", wd, L"cd '/tmp/autosuggest_test/2foo  bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd 2", wd, L"cd 2foo\\ \\ bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"2", wd, L"cd \"2foo  bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '2", wd, L"cd '2foo  bar/'", __LINE__);
 
-    perform_one_autosuggestion_test(L"cd /tmp/autosuggest_test/3", wd, L"cd /tmp/autosuggest_test/3foo\\\\bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"/tmp/autosuggest_test/3", wd, L"cd \"/tmp/autosuggest_test/3foo\\bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '/tmp/autosuggest_test/3", wd, L"cd '/tmp/autosuggest_test/3foo\\bar/'", __LINE__);
-    perform_one_autosuggestion_test(L"cd 3", wd, L"cd 3foo\\\\bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"3", wd, L"cd \"3foo\\bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '3", wd, L"cd '3foo\\bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd /tmp/autosuggest_test/3", wd, L"cd /tmp/autosuggest_test/3foo\\\\bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"/tmp/autosuggest_test/3", wd, L"cd \"/tmp/autosuggest_test/3foo\\bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '/tmp/autosuggest_test/3", wd, L"cd '/tmp/autosuggest_test/3foo\\bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd 3", wd, L"cd 3foo\\\\bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"3", wd, L"cd \"3foo\\bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '3", wd, L"cd '3foo\\bar/'", __LINE__);
 
-    perform_one_autosuggestion_test(L"cd /tmp/autosuggest_test/4", wd, L"cd /tmp/autosuggest_test/4foo\\'bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"/tmp/autosuggest_test/4", wd, L"cd \"/tmp/autosuggest_test/4foo'bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '/tmp/autosuggest_test/4", wd, L"cd '/tmp/autosuggest_test/4foo\\'bar/'", __LINE__);
-    perform_one_autosuggestion_test(L"cd 4", wd, L"cd 4foo\\'bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"4", wd, L"cd \"4foo'bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '4", wd, L"cd '4foo\\'bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd /tmp/autosuggest_test/4", wd, L"cd /tmp/autosuggest_test/4foo\\'bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"/tmp/autosuggest_test/4", wd, L"cd \"/tmp/autosuggest_test/4foo'bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '/tmp/autosuggest_test/4", wd, L"cd '/tmp/autosuggest_test/4foo\\'bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd 4", wd, L"cd 4foo\\'bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"4", wd, L"cd \"4foo'bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '4", wd, L"cd '4foo\\'bar/'", __LINE__);
 
-    perform_one_autosuggestion_test(L"cd /tmp/autosuggest_test/5", wd, L"cd /tmp/autosuggest_test/5foo\\\"bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"/tmp/autosuggest_test/5", wd, L"cd \"/tmp/autosuggest_test/5foo\\\"bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '/tmp/autosuggest_test/5", wd, L"cd '/tmp/autosuggest_test/5foo\"bar/'", __LINE__);
-    perform_one_autosuggestion_test(L"cd 5", wd, L"cd 5foo\\\"bar/", __LINE__);
-    perform_one_autosuggestion_test(L"cd \"5", wd, L"cd \"5foo\\\"bar/\"", __LINE__);
-    perform_one_autosuggestion_test(L"cd '5", wd, L"cd '5foo\"bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd /tmp/autosuggest_test/5", wd, L"cd /tmp/autosuggest_test/5foo\\\"bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"/tmp/autosuggest_test/5", wd, L"cd \"/tmp/autosuggest_test/5foo\\\"bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '/tmp/autosuggest_test/5", wd, L"cd '/tmp/autosuggest_test/5foo\"bar/'", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd 5", wd, L"cd 5foo\\\"bar/", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd \"5", wd, L"cd \"5foo\\\"bar/\"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '5", wd, L"cd '5foo\"bar/'", __LINE__);
 
-    perform_one_autosuggestion_test(L"cd ~/test_autosuggest_suggest_specia", wd, L"cd ~/test_autosuggest_suggest_special/", __LINE__);
-
+    perform_one_autosuggestion_special_test(L"cd ~/test_autosuggest_suggest_specia", wd, L"cd ~/test_autosuggest_suggest_special/", __LINE__);
+    
     // A single quote should defeat tilde expansion
-    perform_one_autosuggestion_test(L"cd '~/test_autosuggest_suggest_specia'", wd, L"", __LINE__);
+    perform_one_autosuggestion_special_test(L"cd '~/test_autosuggest_suggest_specia'", wd, L"", __LINE__);
 
-    system("rm -Rf '/tmp/autosuggest_test/'");
-    system("rm -Rf ~/test_autosuggest_suggest_special/");
+    if (system("rm -Rf '/tmp/autosuggest_test/'")) err(L"rm failed");
+    if (system("rm -Rf ~/test_autosuggest_suggest_special/")) err(L"rm failed");
+}
+
+static void perform_one_autosuggestion_should_ignore_test(const wcstring &command, const wcstring &wd, long line)
+{
+    completion_list_t comps;
+    env_stack_t vars;
+    complete(command, comps, &vars, COMPLETION_REQUEST_AUTOSUGGESTION);
+    do_test(comps.empty());
+    if (! comps.empty())
+    {
+        const wcstring &suggestion = comps.front().completion;
+        printf("line %ld: complete() expected to return nothing for %ls\n", line, command.c_str());
+        printf("  instead got: %ls\n", suggestion.c_str());
+    }
+}
+
+static void test_autosuggestion_ignores()
+{
+    say(L"Testing scenarios that should produce no autosuggestions");
+    const wcstring wd = L"/tmp/autosuggest_test/";
+    // Do not do file autosuggestions immediately after certain statement terminators - see #1631
+    perform_one_autosuggestion_should_ignore_test(L"echo PIPE_TEST|", wd, __LINE__);
+    perform_one_autosuggestion_should_ignore_test(L"echo PIPE_TEST&", wd, __LINE__);
+    perform_one_autosuggestion_should_ignore_test(L"echo PIPE_TEST#comment", wd, __LINE__);
+    perform_one_autosuggestion_should_ignore_test(L"echo PIPE_TEST;", wd, __LINE__);
 }
 
 static void test_autosuggestion_combining()
@@ -2167,6 +2313,277 @@ static void test_input()
     {
         err(L"Expected to read char R_DOWN_LINE, but instead got %ls\n", describe_char(c).c_str());
     }
+}
+
+#define UVARS_PER_THREAD 8
+#define UVARS_TEST_PATH L"/tmp/fish_uvars_test/varsfile.txt"
+
+static int test_universal_helper(int *x)
+{
+    env_universal_t uvars(UVARS_TEST_PATH);
+    for (int j=0; j < UVARS_PER_THREAD; j++)
+    {
+        const wcstring key = format_string(L"key_%d_%d", *x, j);
+        const wcstring val = format_string(L"val_%d_%d", *x, j);
+        uvars.set(key, val, false);
+        bool synced = uvars.sync(NULL);
+        if (! synced)
+        {
+            err(L"Failed to sync universal variables");
+        }
+        fputc('.', stderr);
+    }
+    
+    /* Last step is to delete the first key */
+    uvars.remove(format_string(L"key_%d_%d", *x, 0));
+    bool synced = uvars.sync(NULL);
+    if (! synced)
+    {
+        err(L"Failed to sync universal variables");
+    }
+    fputc('.', stderr);
+    
+    return 0;
+}
+
+static void test_universal()
+{
+    say(L"Testing universal variables");
+    if (system("mkdir -p /tmp/fish_uvars_test/")) err(L"mkdir failed");
+    
+    const int threads = 16;
+    for (int i=0; i < threads; i++)
+    {
+        iothread_perform(test_universal_helper, (void (*)(int *, int))NULL, new int(i));
+    }
+    iothread_drain_all();
+    
+    env_universal_t uvars(UVARS_TEST_PATH);
+    bool loaded = uvars.load();
+    if (! loaded)
+    {
+        err(L"Failed to load universal variables");
+    }
+    for (int i=0; i < threads; i++)
+    {
+        for (int j=0; j < UVARS_PER_THREAD; j++)
+        {
+            const wcstring key = format_string(L"key_%d_%d", i, j);
+            env_var_t expected_val;
+            if (j == 0)
+            {
+                expected_val = env_var_t::missing_var();
+            }
+            else
+            {
+                expected_val = format_string(L"val_%d_%d", i, j);
+            }
+            const env_var_t var = uvars.get(key);
+            if (j == 0)
+            {
+                assert(expected_val.missing());
+            }
+            if (var != expected_val)
+            {
+                const wchar_t *missing_desc = L"<missing>";
+                err(L"Wrong value for key %ls: expected %ls, got %ls\n", key.c_str(), (expected_val.missing() ? missing_desc : expected_val.c_str()), (var.missing() ? missing_desc : var.c_str()));
+            }
+        }
+    }
+    
+    if (system("rm -Rf /tmp/fish_uvars_test")) err(L"rm failed");
+    putc('\n', stderr);
+}
+
+static bool callback_data_less_than(const callback_data_t &a, const callback_data_t &b) {
+    return a.key < b.key;
+}
+
+static void test_universal_callbacks()
+{
+    say(L"Testing universal callbacks");
+    if (system("mkdir -p /tmp/fish_uvars_test/")) err(L"mkdir failed");
+    env_universal_t uvars1(UVARS_TEST_PATH);
+    env_universal_t uvars2(UVARS_TEST_PATH);
+    
+    /* Put some variables into both */
+    uvars1.set(L"alpha", L"1", false);
+    uvars1.set(L"beta", L"1", false);
+    uvars1.set(L"delta", L"1", false);
+    uvars1.set(L"epsilon", L"1", false);
+    uvars1.set(L"lambda", L"1", false);
+    uvars1.set(L"kappa", L"1", false);
+    uvars1.set(L"omicron", L"1", false);
+    
+    uvars1.sync(NULL);
+    uvars2.sync(NULL);
+    
+    /* Change uvars1 */
+    uvars1.set(L"alpha", L"2", false); //changes value
+    uvars1.set(L"beta", L"1", true); //changes export
+    uvars1.remove(L"delta"); //erases value
+    uvars1.set(L"epsilon", L"1", false); //changes nothing
+    uvars1.sync(NULL);
+    
+    /* Change uvars2. It should treat its value as correct and ignore changes from uvars1. */
+    uvars2.set(L"lambda", L"1", false); //same value
+    uvars2.set(L"kappa", L"2", false); //different value
+
+    /* Now see what uvars2 sees */
+    callback_data_list_t callbacks;
+    uvars2.sync(&callbacks);
+    
+    /* Sort them to get them in a predictable order */
+    std::sort(callbacks.begin(), callbacks.end(), callback_data_less_than);
+    
+    /* Should see exactly two changes */
+    do_test(callbacks.size() == 3);
+    do_test(callbacks.at(0).type == SET);
+    do_test(callbacks.at(0).key == L"alpha");
+    do_test(callbacks.at(0).val == L"2");
+    do_test(callbacks.at(1).type == SET_EXPORT);
+    do_test(callbacks.at(1).key == L"beta");
+    do_test(callbacks.at(1).val == L"1");
+    do_test(callbacks.at(2).type == ERASE);
+    do_test(callbacks.at(2).key == L"delta");
+    do_test(callbacks.at(2).val == L"");
+
+    
+    if (system("rm -Rf /tmp/fish_uvars_test")) err(L"rm failed");
+}
+
+bool poll_notifier(universal_notifier_t *note)
+{
+    bool result = false;
+    if (note->usec_delay_between_polls() > 0)
+    {
+        result = note->poll();
+    }
+    
+    int fd = note->notification_fd();
+    if (! result && fd >= 0)
+    {
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        struct timeval tv = {0, 0};
+        if (select(fd + 1, &fds, NULL, NULL, &tv) > 0 && FD_ISSET(fd, &fds))
+        {
+            result = note->notification_fd_became_readable(fd);
+        }
+    }
+    return result;
+}
+
+static void trigger_or_wait_for_notification(universal_notifier_t *notifier, universal_notifier_t::notifier_strategy_t strategy)
+{
+    switch (strategy)
+    {
+        case universal_notifier_t::strategy_default:
+            assert(0 && "strategy_default should be passed");
+            break;
+            
+        case universal_notifier_t::strategy_shmem_polling:
+            // nothing required
+            break;
+            
+        case universal_notifier_t::strategy_notifyd:
+            // notifyd requires a round trip to the notifyd server, which means we have to wait a little bit to receive it
+            // In practice, this seems to be enough
+            usleep(1000000 / 25);
+            break;
+            
+        case universal_notifier_t::strategy_named_pipe:
+        case universal_notifier_t::strategy_null:
+            break;
+    }
+}
+
+static void test_notifiers_with_strategy(universal_notifier_t::notifier_strategy_t strategy)
+{
+    assert(strategy != universal_notifier_t::strategy_default);
+    say(L"Testing universal notifiers with strategy %d", (int)strategy);
+    universal_notifier_t *notifiers[16];
+    size_t notifier_count = sizeof notifiers / sizeof *notifiers;
+    
+    // Populate array of notifiers
+    for (size_t i=0; i < notifier_count; i++)
+    {
+        notifiers[i] = universal_notifier_t::new_notifier_for_strategy(strategy, UVARS_TEST_PATH);
+    }
+    
+    // Nobody should poll yet
+    for (size_t i=0; i < notifier_count; i++)
+    {
+        if (poll_notifier(notifiers[i]))
+        {
+            err(L"Universal variable notifier polled true before any changes, with strategy %d", (int)strategy);
+        }
+    }
+
+    // Tweak each notifier. Verify that others see it.
+    for (size_t post_idx=0; post_idx < notifier_count; post_idx++)
+    {
+        notifiers[post_idx]->post_notification();
+        
+        // Do special stuff to "trigger" a notification for testing
+        trigger_or_wait_for_notification(notifiers[post_idx], strategy);
+        
+        for (size_t i=0; i < notifier_count; i++)
+        {
+            // We aren't concerned with the one who posted
+            // Poll from it (to drain it), and then skip it
+            if (i == post_idx)
+            {
+                poll_notifier(notifiers[i]);
+                continue;
+            }
+            
+            if (! poll_notifier(notifiers[i]))
+            {
+                err(L"Universal variable notifier (%lu) %p polled failed to notice changes, with strategy %d", i, notifiers[i], (int)strategy);
+            }
+        }
+        
+        // Named pipes have special cleanup requirements
+        if (strategy == universal_notifier_t::strategy_named_pipe)
+        {
+            usleep(1000000 / 10); //corresponds to NAMED_PIPE_FLASH_DURATION_USEC
+            // Have to clean up the posted one first, so that the others see the pipe become no longer readable
+            poll_notifier(notifiers[post_idx]);
+            for (size_t i=0; i < notifier_count; i++)
+            {
+                poll_notifier(notifiers[i]);
+            }
+        }
+    }
+    
+    // Nobody should poll now
+    for (size_t i=0; i < notifier_count; i++)
+    {
+        if (poll_notifier(notifiers[i]))
+        {
+            err(L"Universal variable notifier polled true after all changes, with strategy %d", (int)strategy);
+        }
+    }
+    
+    // Clean up
+    for (size_t i=0; i < notifier_count; i++)
+    {
+        delete notifiers[i];
+    }
+}
+
+static void test_universal_notifiers()
+{
+    if (system("mkdir -p /tmp/fish_uvars_test/ && touch /tmp/fish_uvars_test/varsfile.txt")) err(L"mkdir failed");
+    test_notifiers_with_strategy(universal_notifier_t::strategy_shmem_polling);
+    test_notifiers_with_strategy(universal_notifier_t::strategy_named_pipe);
+#if __APPLE__
+    test_notifiers_with_strategy(universal_notifier_t::strategy_notifyd);
+#endif
+    
+    if (system("rm -Rf /tmp/fish_uvars_test/")) err(L"rm failed");
 }
 
 class history_tests_t
@@ -2407,7 +2824,8 @@ void history_tests_t::test_history_merge(void)
     const size_t count = 3;
     const wcstring name = L"merge_test";
     history_t *hists[count] = {new history_t(name), new history_t(name), new history_t(name)};
-    wcstring texts[count] = {L"History 1", L"History 2", L"History 3"};
+    const wcstring texts[count] = {L"History 1", L"History 2", L"History 3"};
+    const wcstring alt_texts[count] = {L"History Alt 1", L"History Alt 2", L"History Alt 3"};
 
     /* Make sure history is clear */
     for (size_t i=0; i < count; i++)
@@ -2448,6 +2866,32 @@ void history_tests_t::test_history_merge(void)
     {
         do_test(history_contains(everything, texts[i]));
     }
+
+    /* Tell all histories to merge. Now everybody should have everything. */
+    for (size_t i=0; i < count; i++)
+    {
+        hists[i]->incorporate_external_changes();
+    }
+    /* Add some more per-history items */
+    for (size_t i=0; i < count; i++)
+    {
+        hists[i]->add(alt_texts[i]);
+    }
+    /* Everybody should have old items, but only one history should have each new item */
+    for (size_t i = 0; i < count; i++)
+    {
+        for (size_t j=0; j < count; j++)
+        {
+            /* Old item */
+            do_test(history_contains(hists[i], texts[j]));
+
+            /* New item */
+            bool does_contain = history_contains(hists[i], alt_texts[j]);
+            bool should_contain = (i == j);
+            do_test(should_contain == does_contain);
+        }
+    }
+
 
     /* Clean up */
     for (size_t i=0; i < 3; i++)
@@ -2512,7 +2956,7 @@ static bool history_equals(history_t &hist, const wchar_t * const *strings)
 void history_tests_t::test_history_formats(void)
 {
     const wchar_t *name;
-
+    
     // Test inferring and reading legacy and bash history formats
     name = L"history_sample_fish_1_x";
     say(L"Testing %ls", name);
@@ -2604,6 +3048,33 @@ void history_tests_t::test_history_formats(void)
         }
         test_history.clear();
         fclose(f);
+    }
+    
+    name = L"history_sample_corrupt1";
+    say(L"Testing %ls", name);
+    if (! install_sample_history(name))
+    {
+        err(L"Couldn't open file tests/%ls", name);
+    }
+    else
+    {
+        /* We simply invoke get_string_representation. If we don't die, the test is a success. */
+        history_t &test_history = history_t::history_with_name(name);
+        const wchar_t *expected[] =
+        {
+            L"no_newline_at_end_of_file",
+            
+            L"corrupt_prefix",
+            
+            L"this_command_is_ok",
+            
+            NULL
+        };
+        if (! history_equals(test_history, expected))
+        {
+            err(L"test_history_formats failed for %ls\n", name);
+        }
+        test_history.clear();
     }
 }
 
@@ -3020,6 +3491,8 @@ static void test_highlighting(void)
         {L"ls", highlight_spec_command},
         {L"param2", highlight_spec_param},
         {L")", highlight_spec_operator},
+        {L"|", highlight_spec_statement_terminator},
+        {L"cat", highlight_spec_command},
         {NULL, -1}
     };
 
@@ -3127,7 +3600,7 @@ static void test_highlighting(void)
 
         // Generate the text
         wcstring text;
-        std::vector<int> expected_colors;
+        std::vector<highlight_spec_t> expected_colors;
         for (size_t i=0; i < component_count; i++)
         {
             if (i > 0)
@@ -3162,7 +3635,10 @@ static void test_highlighting(void)
         }
     }
 
-    system("rm -Rf /tmp/fish_highlight_test");
+    if (system("rm -Rf /tmp/fish_highlight_test"))
+    {
+        err(L"rm failed");
+    }
 }
 
 /**
@@ -3170,6 +3646,23 @@ static void test_highlighting(void)
 */
 int main(int argc, char **argv)
 {
+    // Look for the file tests/test.fish. We expect to run in a directory containing that file.
+    // If we don't find it, walk up the directory hierarchy until we do, or error
+    while (access("./tests/test.fish", F_OK) != 0)
+    {
+        char wd[PATH_MAX + 1] = {};
+        getcwd(wd, sizeof wd);
+        if (! strcmp(wd, "/"))
+        {
+            fprintf(stderr, "Unable to find 'tests' directory, which should contain file test.fish\n");
+            exit(EXIT_FAILURE);
+        }
+        if (chdir(dirname(wd)) < 0)
+        {
+            perror("chdir");
+        }
+    }
+    
     setlocale(LC_ALL, "");
     //srand(time(0));
     configure_thread_assertions_for_testing();
@@ -3221,7 +3714,11 @@ int main(int argc, char **argv)
     if (should_test_function("colors")) test_colors();
     if (should_test_function("complete")) test_complete();
     if (should_test_function("input")) test_input();
+    if (should_test_function("universal")) test_universal();
+    if (should_test_function("universal")) test_universal_callbacks();
+    if (should_test_function("notifiers")) test_universal_notifiers();
     if (should_test_function("completion_insertions")) test_completion_insertions();
+    if (should_test_function("autosuggestion_ignores")) test_autosuggestion_ignores();
     if (should_test_function("autosuggestion_combining")) test_autosuggestion_combining();
     if (should_test_function("autosuggest_suggest_special")) test_autosuggest_suggest_special();
     if (should_test_function("history")) history_tests_t::test_history();

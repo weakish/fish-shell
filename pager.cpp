@@ -464,6 +464,13 @@ bool pager_t::completion_try_print(size_t cols, const wcstring &prefix, const co
     {
         rendering->remaining_to_disclose = 0;
     }
+    
+    /* If we have only one row remaining to disclose, then squelch the comment row. This prevents us from consuming a line to show "...and 1 more row" */
+    if (! this->fully_disclosed && rendering->remaining_to_disclose == 1)
+    {
+        term_height += 1;
+        rendering->remaining_to_disclose = 0;
+    }
 
     int pref_tot_width=0;
     int min_tot_width = 0;
@@ -599,21 +606,21 @@ bool pager_t::completion_try_print(size_t cols, const wcstring &prefix, const co
         if (rendering->remaining_to_disclose == 1)
         {
             /* I don't expect this case to ever happen */
-            progress_text = format_string(L"%lsand 1 more row", ellipsis_string);
+            progress_text = format_string(_(L"%lsand 1 more row"), ellipsis_string);
         }
         else if (rendering->remaining_to_disclose > 1)
         {
-            progress_text = format_string(L"%lsand %lu more rows", ellipsis_string, (unsigned long)rendering->remaining_to_disclose);
+            progress_text = format_string(_(L"%lsand %lu more rows"), ellipsis_string, (unsigned long)rendering->remaining_to_disclose);
         }
         else if (start_row > 0 || stop_row < row_count)
         {
             /* We have a scrollable interface. The +1 here is because we are zero indexed, but want to present things as 1-indexed. We do not add 1 to stop_row or row_count because these are the "past the last value" */
-            progress_text = format_string(L"rows %lu to %lu of %lu", start_row + 1, stop_row, row_count);
+            progress_text = format_string(_(L"rows %lu to %lu of %lu"), start_row + 1, stop_row, row_count);
         }
         else if (completion_infos.empty() && ! unfiltered_completion_infos.empty())
         {
             /* Everything is filtered */
-            progress_text = L"(no matches)";
+            progress_text = _(L"(no matches)");
         }
 
         if (! progress_text.empty())
