@@ -166,6 +166,7 @@ public:
     }
 };
 
+/* An environment_t is a base class for variable storage. The base provides a getter function only - no setting. */
 class environment_t
 {
     private:
