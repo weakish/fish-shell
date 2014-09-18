@@ -41,7 +41,6 @@ struct builtin_script_t
 };
 
 struct builtin_script_t;
-class environment_t;
 
 /**
   A class that represents a path from which we can autoload, and the autoloaded contents.

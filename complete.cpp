@@ -106,27 +106,6 @@
 #define C_(string) (string)
 #endif
 
-/* Testing apparatus */
-const wcstring_list_t *s_override_variable_names = NULL;
-
-void complete_set_variable_names(const wcstring_list_t *names)
-{
-    s_override_variable_names = names;
-}
-
-static inline wcstring_list_t complete_get_variable_names(const env_stack_t *vars)
-{
-    assert(vars != NULL);
-    if (s_override_variable_names != NULL)
-    {
-        return *s_override_variable_names;
-    }
-    else
-    {
-        return vars->get_names(0);
-    }
-}
-
 /**
    Struct describing a completion option entry.
 
@@ -1448,7 +1427,7 @@ bool completer_t::complete_variable(const wcstring &str, size_t start_offset)
     size_t varlen = wcslen(var);
     bool res = false;
 
-    const wcstring_list_t names = complete_get_variable_names(vars);
+    const wcstring_list_t names = this->vars->get_names(0);
     for (size_t i=0; i<names.size(); i++)
     {
         const wcstring & env_name = names.at(i);
@@ -1627,6 +1606,7 @@ bool completer_t::try_complete_user(const wcstring &str)
 
 void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps, const env_stack_t *vars, completion_request_flags_t flags)
 {
+    assert(vars != NULL);
     /* Determine the innermost subcommand */
     const wchar_t *cmdsubst_begin, *cmdsubst_end;
     parse_util_cmdsubst_extent(cmd_with_subcmds.c_str(), cmd_with_subcmds.size(), &cmdsubst_begin, &cmdsubst_end);

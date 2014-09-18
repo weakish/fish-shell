@@ -1998,8 +1998,6 @@ static void test_complete(void)
     if (chdir(saved_wd)) err(L"chdir failed");
     if (system("rm -Rf '/tmp/complete_test/'")) err(L"rm failed");
     
-    complete_set_variable_names(NULL);
-    
     /* Test wraps */
     do_test(comma_join(complete_get_wrap_chain(L"wrapper1")) == L"wrapper1");
     complete_add_wrapper(L"wrapper1", L"wrapper2");
