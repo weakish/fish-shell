@@ -1462,52 +1462,22 @@ void env_universal_barrier()
     }
 }
 
-env_vars_snapshot_t::env_vars_snapshot_t() { }
-
-/* The "current" variables are not a snapshot at all, but instead trampoline to env_get_string, etc. We identify the current snapshot based on pointer values. */
-const env_vars_snapshot_t &env_vars_snapshot_t::current()
-{
-    static const env_vars_snapshot_t sCurrentSnapshot;
-    return sCurrentSnapshot;
-}
-
-bool env_vars_snapshot_t::is_current() const
-{
-    return this == &current();
-}
-
 env_var_t env_vars_snapshot_t::get(const wcstring &key, env_mode_flags_t mode) const
 {
-    /* If we represent the current state, bounce to get */
-    if (this->is_current())
-    {
-        return parser_t::principal_parser().vars().get(key, mode);
-    }
-    else
-    {
-        std::map<wcstring, wcstring>::const_iterator iter = vars.find(key);
-        return (iter == vars.end() ? env_var_t::missing_var() : env_var_t(iter->second));
-    }
+    std::map<wcstring, wcstring>::const_iterator iter = vars.find(key);
+    return (iter == vars.end() ? env_var_t::missing_var() : env_var_t(iter->second));
 }
 
 wcstring_list_t env_vars_snapshot_t::get_names(env_mode_flags_t flags) const
 {
-    /* If we represent the current state, bounce to get */
-    if (this->is_current())
+    wcstring_list_t result;
+    std::map<wcstring, wcstring>::const_iterator iter = vars.begin();
+    while (iter != vars.end())
     {
-        return parser_t::principal_parser().vars().get_names(flags);
+        result.push_back(iter->first);
+        ++iter;
     }
-    else
-    {
-        wcstring_list_t result;
-        std::map<wcstring, wcstring>::const_iterator iter = vars.begin();
-        while (iter != vars.end())
-        {
-            result.push_back(iter->first);
-            ++iter;
-        }
-        return result;
-    }
+    return result;
 }
 
 const wchar_t * const env_vars_snapshot_t::highlighting_keys[] = {L"PATH", L"CDPATH", L"fish_function_path", L"PWD", USER_ABBREVIATIONS_VARIABLE_NAME, NULL};

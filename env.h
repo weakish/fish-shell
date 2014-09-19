@@ -270,18 +270,12 @@ wcstring env_get_pwd_slash(const environment_t &vars);
 class env_vars_snapshot_t : public environment_t
 {
     std::map<wcstring, wcstring> vars;
-    bool is_current() const;
-
-    env_vars_snapshot_t();
 
 public:
     env_vars_snapshot_t(const environment_t &env, const wchar_t * const * keys);
 
     env_var_t get(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT) const;
     wcstring_list_t get_names(env_mode_flags_t flags) const;
-
-    // Returns the fake snapshot representing the live variables array
-    static const env_vars_snapshot_t &current();
 
     // vars necessary for highlighting
     static const wchar_t * const highlighting_keys[];
