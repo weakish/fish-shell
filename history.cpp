@@ -1768,9 +1768,9 @@ bool file_detection_context_t::paths_are_valid(const path_list_t &paths)
     return perform_file_detection(false) > 0;
 }
 
-file_detection_context_t::file_detection_context_t(history_t *hist, history_identifier_t ident) :
+file_detection_context_t::file_detection_context_t(const environment_t &vars, history_t *hist, history_identifier_t ident) :
     history(hist),
-    working_directory(env_get_pwd_slash(env_vars_snapshot_t::current())),
+    working_directory(env_get_pwd_slash(vars)),
     history_item_identifier(ident)
 {
 }
@@ -1806,7 +1806,7 @@ static bool string_could_be_path(const wcstring &potential_path)
     return true;
 }
 
-void history_t::add_with_file_detection(const wcstring &str)
+void history_t::add_with_file_detection(const environment_t &vars, const wcstring &str)
 {
     ASSERT_IS_MAIN_THREAD();
     path_list_t potential_paths;
@@ -1861,7 +1861,7 @@ void history_t::add_with_file_detection(const wcstring &str)
         identifier = ++sLastIdentifier;
 
         /* Create a new detection context */
-        file_detection_context_t *context = new file_detection_context_t(this, identifier);
+        file_detection_context_t *context = new file_detection_context_t(vars, this, identifier);
         context->potential_paths.swap(potential_paths);
 
         /* Prevent saving until we're done, so we have time to get the paths */

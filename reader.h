@@ -226,14 +226,14 @@ void reader_pop();
    - The command to be completed as a null terminated array of wchar_t
    - An array_list_t in which completions will be inserted.
 */
-typedef void (*complete_function_t)(const wcstring &, std::vector<completion_t> &, const env_stack_t *, completion_request_flags_t);
+typedef void (*complete_function_t)(const wcstring &, std::vector<completion_t> &, const environment_t *, completion_request_flags_t);
 void reader_set_complete_function(complete_function_t);
 
 /**
  The type of a highlight function.
  */
-class env_vars_snapshot_t;
-typedef void (*highlight_function_t)(const wcstring &, std::vector<highlight_spec_t> &, size_t, wcstring_list_t *, const env_vars_snapshot_t &vars);
+class environment_t;
+typedef void (*highlight_function_t)(const wcstring &, std::vector<highlight_spec_t> &, size_t, wcstring_list_t *, const environment_t &vars);
 
 /**
  Specify function for syntax highlighting. The function must take these arguments:

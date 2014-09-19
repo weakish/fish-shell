@@ -58,14 +58,14 @@ bool path_get_path(const wcstring &cmd,
 */
 bool path_get_cdpath(const wcstring &dir,
                      wcstring *out_or_NULL,
-                     const wchar_t *wd = NULL,
-                     const environment_t &vars = env_vars_snapshot_t::current());
+                     const wchar_t *wd,
+                     const environment_t &vars);
 
 /** Returns whether the path can be used for an implicit cd command; if so, also returns the path by reference (if desired). This requires it to start with one of the allowed prefixes (., .., ~) and resolve to a directory. */
 bool path_can_be_implicit_cd(const wcstring &path,
-                             wcstring *out_path = NULL,
-                             const wchar_t *wd = NULL,
-                             const env_vars_snapshot_t &vars = env_vars_snapshot_t::current());
+                             wcstring *out_path,
+                             const wchar_t *wd,
+                             const environment_t &vars);
 
 /**
    Remove double slashes and trailing slashes from a path,

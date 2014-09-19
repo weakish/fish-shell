@@ -823,7 +823,7 @@ bool reader_expand_abbreviation_in_command(const wcstring &cmdline, size_t curso
         assert(matching_cmd_node->type == parse_token_type_string);
         const wcstring token = matching_cmd_node->get_source(subcmd);
         wcstring abbreviation;
-        if (expand_abbreviation(token, env_vars_snapshot_t::current(), &abbreviation))
+        if (expand_abbreviation(token, parser_t::principal_parser().vars(), &abbreviation))
         {
             /* There was an abbreviation! Replace the token in the full command. Maintain the relative position of the cursor. */
             if (output != NULL)
@@ -1432,7 +1432,7 @@ struct autosuggestion_context_t
         search_string(term),
         cursor_pos(pos),
         searcher(*history, term, HISTORY_SEARCH_TYPE_PREFIX),
-        detector(history),
+        detector(parser_t::principal_parser().vars(), history),
         var_snapshot(parser_t::principal_parser().vars(), env_vars_snapshot_t::highlighting_keys),
         var_stack(&parser_t::principal_parser().vars()),
         generation_count(s_generation_count)
@@ -3571,7 +3571,7 @@ const wchar_t *reader_readline(int nchars)
                         const editable_line_t *el = &data->command_line;
                         if (data->history != NULL && ! el->empty() && el->text.at(0) != L' ')
                         {
-                            data->history->add_with_file_detection(el->text);
+                            data->history->add_with_file_detection(parser.vars(), el->text);
                         }
                         finished=1;
                         update_buff_pos(&data->command_line, data->command_line.size());

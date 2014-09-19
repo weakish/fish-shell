@@ -216,8 +216,7 @@ std::vector<wcstring> expand_get_all_process_names(void);
 
 /** Abbreviation support. Expand src as an abbreviation, returning true if one was found, false if not. If result is not-null, returns the abbreviation by reference. */
 #define USER_ABBREVIATIONS_VARIABLE_NAME L"fish_user_abbreviations"
-class env_vars_snapshot_t;
-bool expand_abbreviation(const wcstring &src, const env_vars_snapshot_t &vars, wcstring *output);
+bool expand_abbreviation(const wcstring &src, const environment_t &vars, wcstring *output);
 
 /* Terrible hacks */
 bool fish_xdm_login_hack_hack_hack_hack(std::vector<std::string> *cmds, int argc, const char * const *argv);

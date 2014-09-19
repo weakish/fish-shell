@@ -2117,7 +2117,7 @@ bool fish_openSUSE_dbus_hack_hack_hack_hack(std::vector<completion_t> *args)
     return result;
 }
 
-bool expand_abbreviation(const wcstring &src, const env_vars_snapshot_t &vars, wcstring *output)
+bool expand_abbreviation(const wcstring &src, const environment_t &vars, wcstring *output)
 {
     if (src.empty())
         return false;

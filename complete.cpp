@@ -327,7 +327,7 @@ class completer_t
 {
     const completion_request_flags_t flags;
     const wcstring initial_cmd;
-    const env_stack_t * const vars;
+    const environment_t * const vars;
     std::vector<completion_t> completions;
 
     /** Table of completions conditions that have already been tested and the corresponding test results */
@@ -363,7 +363,7 @@ class completer_t
 
 
 public:
-    completer_t(const wcstring &c, completion_request_flags_t f, const env_stack_t *v) :
+    completer_t(const wcstring &c, completion_request_flags_t f, const environment_t *v) :
         flags(f),
         initial_cmd(c),
         vars(v)
@@ -677,7 +677,7 @@ void complete_remove(const wchar_t *cmd,
 /**
    Find the full path and commandname from a command string 'str'.
 */
-static void parse_cmd_string(const wcstring &str, wcstring &path, wcstring &cmd, const env_stack_t &vars)
+static void parse_cmd_string(const wcstring &str, wcstring &path, wcstring &cmd, const environment_t &vars)
 {
     if (! path_get_path(str, &path, vars))
     {
@@ -1604,7 +1604,7 @@ bool completer_t::try_complete_user(const wcstring &str)
     return res;
 }
 
-void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps, const env_stack_t *vars, completion_request_flags_t flags)
+void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps, const environment_t *vars, completion_request_flags_t flags)
 {
     assert(vars != NULL);
     /* Determine the innermost subcommand */

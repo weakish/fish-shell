@@ -159,6 +159,8 @@ class environment_t
     
     public:
     virtual env_var_t get(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT) const = 0;
+    virtual wcstring_list_t get_names(env_mode_flags_t flags) const = 0;
+
     environment_t();
     virtual ~environment_t();
 };
@@ -238,7 +240,7 @@ class env_stack_t : public environment_t
     void pop();
     
     /** Returns all variable names. */
-    wcstring_list_t get_names(int flags) const;
+    wcstring_list_t get_names(env_mode_flags_t flags) const;
     
     void update_export_array_if_necessary(bool recalc);
     const null_terminated_array_t<char> &get_export_array() const;
@@ -263,8 +265,7 @@ const char * const * env_export_arr(bool recalc);
 int env_set_pwd();
 
 /* Returns the PWD with a terminating slash */
-class env_vars_snapshot_t;
-wcstring env_get_pwd_slash(const env_vars_snapshot_t &snapshot);
+wcstring env_get_pwd_slash(const environment_t &vars);
 
 class env_vars_snapshot_t : public environment_t
 {
@@ -277,6 +278,7 @@ public:
     env_vars_snapshot_t(const environment_t &env, const wchar_t * const * keys);
 
     env_var_t get(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT) const;
+    wcstring_list_t get_names(env_mode_flags_t flags) const;
 
     // Returns the fake snapshot representing the live variables array
     static const env_vars_snapshot_t &current();

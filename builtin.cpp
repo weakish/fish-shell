@@ -3055,7 +3055,7 @@ static int builtin_cd(parser_t &parser, wchar_t **argv)
     bool got_cd_path = false;
     if (! dir_in.missing())
     {
-        got_cd_path = path_get_cdpath(dir_in, &dir);
+        got_cd_path = path_get_cdpath(dir_in, &dir, NULL, parser.vars());
     }
 
     if (!got_cd_path)

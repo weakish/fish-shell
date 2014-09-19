@@ -145,7 +145,7 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
     if (wd)
     {
         size_t len = wcslen(wd);
-        assert(wd[len - 1] == L'/');
+        assert(len > 0 && wd[len - 1] == L'/');
     }
 
     wcstring_list_t paths;
@@ -222,7 +222,7 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
     return success;
 }
 
-bool path_can_be_implicit_cd(const wcstring &path, wcstring *out_path, const wchar_t *wd, const env_vars_snapshot_t &vars)
+bool path_can_be_implicit_cd(const wcstring &path, wcstring *out_path, const wchar_t *wd, const environment_t &vars)
 {
     wcstring exp_path = path;
     expand_tilde(exp_path, vars);

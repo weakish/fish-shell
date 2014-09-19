@@ -891,7 +891,7 @@ parse_execution_result_t parse_execution_context_t::populate_plain_process(job_t
             {
                 /* Ok, no arguments or redirections; check to see if the first argument is a directory */
                 wcstring implicit_cd_path;
-                use_implicit_cd = path_can_be_implicit_cd(cmd, &implicit_cd_path);
+                use_implicit_cd = path_can_be_implicit_cd(cmd, &implicit_cd_path, NULL /* wd */, this->parser->vars());
             }
         }
 

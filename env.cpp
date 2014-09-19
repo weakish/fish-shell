@@ -449,9 +449,9 @@ int env_set_pwd()
     return 1;
 }
 
-wcstring env_get_pwd_slash(const env_vars_snapshot_t &snapshot)
+wcstring env_get_pwd_slash(const environment_t &vars)
 {
-    env_var_t pwd = snapshot.get(L"PWD");
+    env_var_t pwd = vars.get(L"PWD");
     if (pwd.missing_or_empty())
     {
         return L"";
@@ -1260,7 +1260,7 @@ static void add_key_to_string_set(const var_table_t &envs, std::set<wcstring> *s
     }
 }
 
-wcstring_list_t env_stack_t::get_names(int flags) const
+wcstring_list_t env_stack_t::get_names(env_mode_flags_t flags) const
 {
     scoped_lock locker(s_env_lock);
 
@@ -1478,7 +1478,7 @@ bool env_vars_snapshot_t::is_current() const
 
 env_var_t env_vars_snapshot_t::get(const wcstring &key, env_mode_flags_t mode) const
 {
-    /* If we represent the current state, bounce to env_get_string */
+    /* If we represent the current state, bounce to get */
     if (this->is_current())
     {
         return parser_t::principal_parser().vars().get(key, mode);
@@ -1487,6 +1487,26 @@ env_var_t env_vars_snapshot_t::get(const wcstring &key, env_mode_flags_t mode) c
     {
         std::map<wcstring, wcstring>::const_iterator iter = vars.find(key);
         return (iter == vars.end() ? env_var_t::missing_var() : env_var_t(iter->second));
+    }
+}
+
+wcstring_list_t env_vars_snapshot_t::get_names(env_mode_flags_t flags) const
+{
+    /* If we represent the current state, bounce to get */
+    if (this->is_current())
+    {
+        return parser_t::principal_parser().vars().get_names(flags);
+    }
+    else
+    {
+        wcstring_list_t result;
+        std::map<wcstring, wcstring>::const_iterator iter = vars.begin();
+        while (iter != vars.end())
+        {
+            result.push_back(iter->first);
+            ++iter;
+        }
+        return result;
     }
 }
 

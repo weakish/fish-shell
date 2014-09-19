@@ -579,7 +579,6 @@ bool autosuggest_validate_from_history(const history_item_t &item, file_detectio
             }
             else
             {
-                detector.potential_paths = paths;
                 suggestionOK = detector.paths_are_valid(paths);
             }
         }
@@ -933,7 +932,7 @@ class highlighter_t
     const size_t cursor_pos;
 
     /* Environment variables. Again, a reference member variable! */
-    const env_vars_snapshot_t &vars;
+    const environment_t &vars;
 
     /* Whether it's OK to do I/O */
     const bool io_ok;
@@ -969,7 +968,7 @@ class highlighter_t
 public:
 
     /* Constructor */
-    highlighter_t(const wcstring &str, size_t pos, const env_vars_snapshot_t &ev, const wcstring &wd, bool can_do_io) : buff(str), cursor_pos(pos), vars(ev), io_ok(can_do_io), working_directory(wd), color_array(str.size())
+    highlighter_t(const wcstring &str, size_t pos, const environment_t &ev, const wcstring &wd, bool can_do_io) : buff(str), cursor_pos(pos), vars(ev), io_ok(can_do_io), working_directory(wd), color_array(str.size())
     {
         /* Parse the tree */
         parse_tree_from_string(buff, parse_flag_continue_after_error | parse_flag_include_comments, &this->parse_tree, NULL);
@@ -1265,7 +1264,7 @@ void highlighter_t::color_children(const parse_node_t &parent, parse_token_type_
 }
 
 /* Determine if a command is valid */
-static bool command_is_valid(const wcstring &cmd, enum parse_statement_decoration_t decoration, const wcstring &working_directory, const env_vars_snapshot_t &vars)
+static bool command_is_valid(const wcstring &cmd, enum parse_statement_decoration_t decoration, const wcstring &working_directory, const environment_t &vars)
 {
     /* Determine which types we check, based on the decoration */
     bool builtin_ok = true, function_ok = true, abbreviation_ok = true, command_ok = true, implicit_cd_ok = true;
@@ -1486,7 +1485,7 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
     return color_array;
 }
 
-void highlight_shell(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const env_vars_snapshot_t &vars)
+void highlight_shell(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const environment_t &vars)
 {
     /* Get the working directory */
     const wcstring working_directory = env_get_pwd_slash(vars);
@@ -1496,7 +1495,7 @@ void highlight_shell(const wcstring &buff, std::vector<highlight_spec_t> &color,
     color = highlighter.highlight();
 }
 
-void highlight_shell_no_io(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const env_vars_snapshot_t &vars)
+void highlight_shell_no_io(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const environment_t &vars)
 {
     /* Get the working directory */
     const wcstring working_directory = env_get_pwd_slash(vars);
@@ -1617,7 +1616,7 @@ static void highlight_universal_internal(const wcstring &buffstr, std::vector<hi
     }
 }
 
-void highlight_universal(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const env_vars_snapshot_t &vars)
+void highlight_universal(const wcstring &buff, std::vector<highlight_spec_t> &color, size_t pos, wcstring_list_t *error, const environment_t &vars)
 {
     assert(buff.size() == color.size());
     std::fill(color.begin(), color.end(), 0);

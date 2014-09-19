@@ -35,6 +35,7 @@ enum history_search_type_t
     HISTORY_SEARCH_TYPE_PREFIX
 };
 
+/* A history identifier is a number that uniquely identifies a history item within a session. */
 typedef uint32_t history_identifier_t;
 
 class history_item_t
@@ -104,6 +105,7 @@ enum history_file_type_t
     history_type_fish_1_x
 };
 
+class environment_t;
 class history_t
 {
     friend class history_tests_t;
@@ -215,7 +217,7 @@ public:
     void remove(const wcstring &str);
 
     /** Add a new history item to the end */
-    void add_with_file_detection(const wcstring &str);
+    void add_with_file_detection(const environment_t &vars, const wcstring &str);
 
     /** Saves history */
     void save();
@@ -339,7 +341,7 @@ void history_sanity_check();
 struct file_detection_context_t
 {
     /* Constructor */
-    file_detection_context_t(history_t *hist, history_identifier_t ident = 0);
+    file_detection_context_t(const environment_t &vars, history_t *hist, history_identifier_t ident = 0);
 
     /* Determine which of potential_paths are valid, and put them in valid_paths */
     int perform_file_detection();

@@ -1429,17 +1429,15 @@ static void test_abbreviations(void)
     int ret = env_set(USER_ABBREVIATIONS_VARIABLE_NAME, abbreviations, ENV_LOCAL);
     if (ret != 0) err(L"Unable to set abbreviation variable");
     
-    const env_vars_snapshot_t &vars_snapshot = env_vars_snapshot_t::current();
-    
     wcstring result;
-    if (expand_abbreviation(L"", vars_snapshot, &result)) err(L"Unexpected success with empty abbreviation");
-    if (expand_abbreviation(L"nothing", vars_snapshot, &result)) err(L"Unexpected success with missing abbreviation");
+    if (expand_abbreviation(L"", vars, &result)) err(L"Unexpected success with empty abbreviation");
+    if (expand_abbreviation(L"nothing", vars, &result)) err(L"Unexpected success with missing abbreviation");
 
-    if (! expand_abbreviation(L"gc", vars_snapshot, &result)) err(L"Unexpected failure with gc abbreviation");
+    if (! expand_abbreviation(L"gc", vars, &result)) err(L"Unexpected failure with gc abbreviation");
     if (result != L"git checkout") err(L"Wrong abbreviation result for gc");
     result.clear();
 
-    if (! expand_abbreviation(L"foo", vars_snapshot, &result)) err(L"Unexpected failure with foo abbreviation");
+    if (! expand_abbreviation(L"foo", vars, &result)) err(L"Unexpected failure with foo abbreviation");
     if (result != L"bar") err(L"Wrong abbreviation result for foo");
 
     bool expanded;
@@ -3612,7 +3610,8 @@ static void test_highlighting(void)
         do_test(expected_colors.size() == text.size());
 
         std::vector<highlight_spec_t> colors(text.size());
-        highlight_shell(text, colors, 20, NULL, env_vars_snapshot_t::current());
+        const env_stack_t &vars = parser_t::principal_parser().vars();
+        highlight_shell(text, colors, 20, NULL, vars);
 
         if (expected_colors.size() != colors.size())
         {
