@@ -32,6 +32,7 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 
 CXX := @CXX@
 INSTALL:=@INSTALL@
+SED := @SED@
 
 
 #
@@ -90,7 +91,7 @@ FISH_OBJS := function.o builtin.o complete.o env.o exec.o expand.o		\
 	signal.o io.o parse_util.o common.o screen.o path.o autoload.o		\
 	parser_keywords.o iothread.o color.o postfork.o	\
 	builtin_test.o parse_tree.o parse_productions.o parse_execution.o \
-	pager.o utf8.o fish_version.o docopt_registration.o \
+	pager.o utf8.o wcstringutil.o fish_version.o docopt_registration.o \
 	docopt/docopt_fish.o docopt/docopt_fish_parse_tree.o
 
 FISH_INDENT_OBJS := fish_indent.o print_help.o common.o	\
@@ -262,7 +263,7 @@ prof: all
 
 user_doc: $(HDR_FILES_SRC) Doxyfile.user $(HTML_SRC) $(HELP_SRC) doc.h $(HDR_FILES) lexicon_filter
 	(cat Doxyfile.user; echo INPUT_FILTER=./lexicon_filter; \
-	echo PROJECT_NUMBER=$(FISH_BUILD_VERSION) | sed "s/-.*//") | doxygen - && touch user_doc; \
+	echo PROJECT_NUMBER=$(FISH_BUILD_VERSION) | $(SED) "s/-.*//") | doxygen - && touch user_doc; \
 	cd user_doc/html && rm -f bc_s.png bdwn.png closed.png ftv2*.png nav*.png open.png sync_*.png tab*.* doxygen.* dynsections.js jquery.js pages.html
 
 #
@@ -288,26 +289,42 @@ doc/refman.pdf: doc
 # This target runs both the low level code tests and the high level script tests.
 #
 
-# normally we'd just depend on test_low_level and test_fishscript
-# But I'd rather not mix test output when doing parallel building with the -j flag
-# Instead we'll depend on the dependencies of those targets, for parallel building,
-# and use recursive make to actually invoke the tests themselves
-test: $(PROGRAMS) fish_tests
-	@$(MAKE) test_low_level
-	@$(MAKE) test_fishscript
+test: test_low_level test_high_level
 .PHONY: test
 
-test_low_level: fish_tests
+# We want the various tests to run serially so their output doesn't mix
+# We can do that by adding ordering dependencies based on what goals are being used.
+
+test_goals := test_low_level test_fishscript test_interactive
+
+# The following variables define targets that depend on the tests. If any more targets
+# are added that depend, directly or indirectly, on tests, they need to be recorded here.
+test_test_deps = test_low_level $(test_high_level_test_deps)
+test_high_level_test_deps = test_fishscript test_interactive
+
+active_test_goals = $(filter $(test_goals),$(foreach a,$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL)),$(a) $($(a)_test_deps)))
+filter_up_to = $(eval b:=1)$(foreach a,$(2),$(and $(b),$(if $(subst $(1),,$(a)),$(a),$(eval b:=))))
+
+test_low_level: fish_tests $(call filter_up_to,test_low_level,$(active_test_goals))
 	./fish_tests
 .PHONY: test_low_level
 
-test_fishscript: $(PROGRAMS)
-	@rm -rf tests/tmp.config
-	@mkdir -p tests/tmp.config/fish
-	@echo 'set fish_function_path "$$PWD/../share/functions"' > tests/tmp.config/fish/config.fish
+test_high_level: test_fishscript test_interactive
+.PHONY: test_high_level
+
+test_fishscript: $(PROGRAMS) test_fishscript_config $(call filter_up_to,test_fishscript,$(active_test_goals))
 	cd tests; XDG_CONFIG_HOME="$$PWD"/tmp.config ../fish test.fish
 .PHONY: test_fishscript
 
+test_interactive: $(PROGRAMS) test_fishscript_config $(call filter_up_to,test_interactive,$(active_test_goals))
+	cd tests; XDG_CONFIG_HOME="$$PWD"/tmp.config ../fish interactive.fish
+.PHONY: test_interactive
+
+test_fishscript_config:
+	@rm -rf tests/tmp.config
+	@mkdir -p tests/tmp.config/fish
+	@echo 'set fish_function_path "$$PWD/../share/functions"' > tests/tmp.config/fish/config.fish
+.PHONY: test_fishscript_config
 
 #
 # commands.hdr collects documentation on all commands, functions and
@@ -340,7 +357,7 @@ toc.txt: $(HDR_FILES:index.hdr=index.hdr.in)
 	for i in $(HDR_FILES:index.hdr=index.hdr.in); do\
 		NAME=`basename $$i .hdr`; \
 		NAME=`basename $$NAME .hdr.in`; \
-		sed <$$i >>toc.tmp -n \
+		$(SED) <$$i >>toc.tmp -n \
 		-e 's,.*\\page *\([^ ]*\) *\(.*\)$$,- <a href="'$$NAME'.html" id="toc-'$$NAME'">\2</a>,p' \
 		-e 's,.*\\section *\([^ ]*\) *\([^-]*\)\(.*\)$$,  - <a href="'$$NAME'.html#\1">\2</a>,p'; \
 	done
@@ -362,20 +379,20 @@ doc_src/index.hdr: toc.txt doc_src/index.hdr.in
 lexicon.txt: doc_src/commands.hdr $(FUNCTIONS_DIR_FILES) $(COMPLETIONS_DIR_FILES) share/functions/__fish_config_interactive.fish
 	-rm lexicon.tmp lexicon_catalog.tmp lexicon_catalog.txt $@
 	# Scan sources for commands/functions/binaries/colours. If GNU sed was portable, this could be much smarter.
-	sed <command_list_toc.txt >>lexicon.tmp -n \
+	$(SED) <command_list_toc.txt >>lexicon.tmp -n \
 		-e "s|^.*>\([a-z][a-z_]*\)</a>|'\1'|w lexicon_catalog.tmp" \
 		-e "s|'\(.*\)'|bltn \1|p"; mv lexicon_catalog.tmp lexicon_catalog.txt; \
-	printf "%s\n" $(COMPLETIONS_DIR_FILES) | sed -n \
-		-e "s|[^ ]*/\([a-z][a-z_-]*\).fish|'\1'|p" | fgrep -vx -f lexicon_catalog.txt | sed >>lexicon.tmp -n \
+	printf "%s\n" $(COMPLETIONS_DIR_FILES) | $(SED) -n \
+		-e "s|[^ ]*/\([a-z][a-z_-]*\).fish|'\1'|p" | fgrep -vx -f lexicon_catalog.txt | $(SED) >>lexicon.tmp -n \
 		-e 'w lexicon_catalog.tmp' \
 		-e "s|'\(.*\)'|cmnd \1|p"; cat lexicon_catalog.tmp >> lexicon_catalog.txt; \
-	printf "%s\n" $(FUNCTIONS_DIR_FILES) | sed -n \
-		-e "s|[^ ]*/\([a-z][a-z_-]*\).fish|'\1'|p" | fgrep -vx -f lexicon_catalog.txt | sed >>lexicon.tmp -n \
+	printf "%s\n" $(FUNCTIONS_DIR_FILES) | $(SED) -n \
+		-e "s|[^ ]*/\([a-z][a-z_-]*\).fish|'\1'|p" | fgrep -vx -f lexicon_catalog.txt | $(SED) >>lexicon.tmp -n \
 		-e 'w lexicon_catalog.tmp' \
 		-e "s|'\(.*\)'|func \1|p"; \
-	sed <share/functions/__fish_config_interactive.fish >>lexicon.tmp -n \
+	$(SED) <share/functions/__fish_config_interactive.fish >>lexicon.tmp -n \
 		-e '/set_default/s/.*\(fish_[a-z][a-z_]*\).*$$/clrv \1/p'; \
-	sed <lexicon_filter.in >>lexicon.tmp -n \
+	$(SED) <lexicon_filter.in >>lexicon.tmp -n \
 		-e '/^#.!#/s/^#.!# \(.... [a-z][a-z_]*\)/\1/p'; \
 	mv lexicon.tmp lexicon.txt; rm -f lexicon_catalog.tmp lexicon_catalog.txt;
 
@@ -392,16 +409,15 @@ lexicon.txt: doc_src/commands.hdr $(FUNCTIONS_DIR_FILES) $(COMPLETIONS_DIR_FILES
 
 lexicon_filter: lexicon.txt lexicon_filter.in
 	-rm $@.tmp $@
-	# Clean the filter input comments and set the shebang as sed can reside in
-	# /bin or /usr/bin and some versions dont allow more than one comment!.
-	sed <$@.in >$@.tmp -e 's|@sed@|'"`which sed`"'|' -e '/^[ ]*#[^!]/d'
+	# Set the shebang as sed can reside in multiple places.
+	$(SED) <$@.in >$@.tmp -e 's|@sed@|'$(SED)'|'
 	# Scan through the lexicon, transforming each line to something useful to Doxygen.
-	if echo x | sed "/[[:<:]]x/d" 2>/dev/null; then \
+	if echo x | $(SED) "/[[:<:]]x/d" 2>/dev/null; then \
 		WORDBL='[[:<:]]'; WORDBR='[[:>:]]'; \
 	else \
 		WORDBL='\<'; WORDBR='\>'; \
 	fi; \
-	sed <lexicon.txt >>$@.tmp -n \
+	$(SED) <lexicon.txt >>$@.tmp -n \
 		-e "s|^\([a-z][a-z][a-z][a-z]\) \([a-z_-]*\)$$|s,$$WORDBL\2$$WORDBR,@\1{\2},g|p" \
 		-e '$$G;s/.*\n/b tidy/p'; \
 	mv $@.tmp $@; if test -x $@; then true; else chmod a+x $@; fi
@@ -429,7 +445,7 @@ doc.h: $(HDR_FILES)
 	echo "*/" >>$@
 
 %: %.in
-	sed <$@.in >$@ \
+	$(SED) <$@.in >$@ \
 		-e "s,@sysconfdir\@,$(sysconfdir),g" \
 		-e "s,@datadir\@,$(datadir),g" \
 		-e "s,@docdir\@,$(docdir),g" \
@@ -511,7 +527,7 @@ share/man: $(HELP_SRC) lexicon_filter
 	-mkdir share/man
 	touch share/man
 	-rm -Rf share/man/man1
-	PROJECT_NUMBER=`echo $(FISH_BUILD_VERSION)| sed "s/-.*//"` INPUT_FILTER=./lexicon_filter \
+	PROJECT_NUMBER=`echo $(FISH_BUILD_VERSION)| $(SED) "s/-.*//"` INPUT_FILTER=./lexicon_filter \
 	./build_tools/build_documentation.sh Doxyfile.help ./doc_src ./share
 
 #
@@ -666,10 +682,15 @@ install-force: all install-translations
 	@echo fish is now installed on your system.
 	@echo To run fish, type \'fish\' in your terminal.
 	@echo
-	@if type chsh &> /dev/null; then \
+	@if type chsh >/dev/null 2>&1; then \
 		echo To use fish as your login shell:; \
 		grep -q -- "$(DESTDIR)$(bindir)/fish" /etc/shells || echo \* add the line \'$(DESTDIR)$(bindir)/fish\' to the file \'/etc/shells\'.; \
 		echo \* use the command \'chsh -s $(DESTDIR)$(bindir)/fish\'.; \
+		echo; \
+	fi;
+	@if type chcon >/dev/null 2>&1; then \
+		echo If you have SELinux enabled, you may need to manually update the security policy:; \
+		echo \* use the command \'chcon -t shell_exec_t $(DESTDIR)$(bindir)/fish\'.; \
 		echo; \
 	fi;
 	@echo To set your colors, run \'fish_config\'
@@ -844,9 +865,10 @@ builtin.o: io.h function.h event.h complete.h proc.h parse_tree.h tokenizer.h
 builtin.o: parse_constants.h parser.h reader.h highlight.h env.h color.h
 builtin.o: wgetopt.h sanity.h wildcard.h expand.h input_common.h input.h
 builtin.o: intern.h exec.h parse_util.h autoload.h lru.h parser_keywords.h
-builtin.o: path.h history.h builtin_set.cpp builtin_commandline.cpp
-builtin.o: builtin_complete.cpp builtin_ulimit.cpp builtin_jobs.cpp
-builtin.o: builtin_set_color.cpp output.h screen.h builtin_printf.cpp
+builtin.o: path.h history.h wcstringutil.h builtin_set.cpp
+builtin.o: builtin_commandline.cpp builtin_complete.cpp builtin_ulimit.cpp
+builtin.o: builtin_jobs.cpp builtin_set_color.cpp output.h screen.h
+builtin.o: builtin_printf.cpp
 builtin_commandline.o: config.h signal.h fallback.h util.h wutil.h common.h
 builtin_commandline.o: builtin.h io.h wgetopt.h reader.h complete.h
 builtin_commandline.o: highlight.h env.h color.h proc.h parse_tree.h
@@ -861,6 +883,7 @@ builtin_jobs.o: config.h fallback.h signal.h util.h wutil.h common.h
 builtin_jobs.o: builtin.h io.h proc.h parse_tree.h tokenizer.h
 builtin_jobs.o: parse_constants.h parser.h event.h function.h wgetopt.h
 builtin_printf.o: common.h util.h
+builtin_scripts.o: builtin_scripts.h
 builtin_set.o: config.h signal.h fallback.h util.h wutil.h common.h builtin.h
 builtin_set.o: io.h env.h expand.h parse_constants.h wgetopt.h proc.h
 builtin_set.o: parse_tree.h tokenizer.h parser.h event.h function.h
@@ -912,6 +935,7 @@ fish_tests.o: highlight.h env.h color.h builtin.h function.h event.h
 fish_tests.o: autoload.h lru.h wutil.h expand.h parser.h output.h screen.h
 fish_tests.o: exec.h path.h history.h iothread.h postfork.h parse_util.h
 fish_tests.o: pager.h input.h input_common.h utf8.h env_universal_common.h
+fish_tests.o: wcstringutil.h
 fish_version.o: fish_version.h
 function.o: config.h signal.h wutil.h common.h util.h fallback.h function.h
 function.o: event.h proc.h io.h parse_tree.h tokenizer.h parse_constants.h
@@ -931,7 +955,7 @@ input.o: complete.h highlight.h env.h color.h proc.h parse_tree.h tokenizer.h
 input.o: parse_constants.h sanity.h input_common.h input.h parser.h event.h
 input.o: function.h expand.h output.h screen.h intern.h
 input_common.o: config.h fallback.h signal.h util.h common.h wutil.h
-input_common.o: input_common.h iothread.h
+input_common.o: input_common.h env_universal_common.h env.h iothread.h
 intern.o: config.h fallback.h signal.h util.h wutil.h common.h intern.h
 io.o: config.h fallback.h signal.h util.h wutil.h common.h exec.h proc.h io.h
 io.o: parse_tree.h tokenizer.h parse_constants.h
@@ -994,6 +1018,7 @@ signal.o: parse_tree.h tokenizer.h parse_constants.h
 tokenizer.o: config.h fallback.h signal.h util.h wutil.h common.h tokenizer.h
 utf8.o: utf8.h
 util.o: config.h fallback.h signal.h util.h common.h wutil.h
+wcstringutil.o: config.h wcstringutil.h common.h util.h
 wgetopt.o: config.h wgetopt.h wutil.h common.h util.h fallback.h signal.h
 wildcard.o: config.h fallback.h signal.h util.h wutil.h common.h complete.h
 wildcard.o: wildcard.h expand.h parse_constants.h reader.h io.h highlight.h

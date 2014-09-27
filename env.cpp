@@ -323,9 +323,9 @@ static void react_to_variable_change(const wcstring &key)
     {
         handle_locale();
     }
-    else if (key == L"fish_term256")
+    else if (key == L"fish_term256" || key == L"fish_term24bit")
     {
-        update_fish_term256();
+        update_fish_color_support();
         reader_react_to_color_change();
     }
     else if (string_prefixes_string(L"fish_color_", key))
@@ -542,8 +542,10 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
     wcstring nshlvl_str = L"1";
     if (! shlvl_str.missing())
     {
-        long shlvl_i = wcstol(shlvl_str.c_str(), NULL, 10);
-        if (shlvl_i >= 0)
+        wchar_t *end;
+        long shlvl_i = wcstol(shlvl_str.c_str(), &end, 10);
+        while (iswspace(*end)) ++end; /* skip trailing whitespace */
+        if (shlvl_i >= 0 && *end == '\0')
         {
             nshlvl_str = to_string<long>(shlvl_i + 1);
         }
