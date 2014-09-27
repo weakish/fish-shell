@@ -198,7 +198,7 @@ option_t option_t::parse_from_string(const string_t &str, range_t *remaining, st
         append_error(errors, name_range.start, error_bad_option_separator, "Long options must use a space or equals separator");
     }
     
-    // Generate errors
+    // Generate errors for missing name
     if (name_range.empty()) {
         append_error(errors, name_range.start, error_invalid_option_name, "Missing option name");
     }
@@ -640,6 +640,31 @@ static size_t find_colon(const range_t &r, const string_t &src) {
     return colon_pos < r.end() ? colon_pos : npos;
 }
 
+// Computes the indent for a line starting at start and extending len. Tabs are treated as 4 spaces. newlines are unexpected, and treated as one space.
+static size_t compute_indent(const string_t &src, size_t start, size_t len)
+{
+    const size_t tabstop = 4;
+    assert(src.size() >= len);
+    assert(start + len >= start); // no overflow
+    size_t result = 0;
+    for (size_t i=start; i < start + len; i++)
+    {
+        char_t c = src.at(i);
+        if (c != L'\t')
+        {
+            // not a tab
+            result += 1;
+        }
+        else
+        {
+            // is a tab. Round up to the next highest multiple of tabstop.
+            // If we're already a multiple of tabstop, we want to go bigger.
+            result = (result + tabstop) / tabstop * tabstop;
+        }
+    }
+    return result;
+}
+
 /* Finds the headers containing name (for example, "Options:") and returns source ranges for them. Header lines are not included. We allow the section names to be indented, but must be less idented than the previous line. If include_unindented_lines is true, then non-header lines that are less indented are included:
 
   Usage: foo
@@ -656,8 +681,8 @@ range_list_t source_ranges_for_section(const char *name, bool include_other_top_
     while (get_next_line(this->source, &line_range)) {
         range_t trimmed_line_range = trim_whitespace(line_range, this->source);
         assert(trimmed_line_range.start >= line_range.start);
-        size_t line_start = trimmed_line_range.start;
-        size_t line_indent = line_start - line_range.start;
+        size_t trimmed_line_start = trimmed_line_range.start;
+        size_t line_indent = compute_indent(this->source, line_range.start, trimmed_line_start - line_range.start);
         
         // It's a header line if its indent is not greater than the previous header and it's empty
         size_t colon_pos = npos;
@@ -678,7 +703,7 @@ range_list_t source_ranges_for_section(const char *name, bool include_other_top_
             
             // Check to see if the name is found before the first colon
             // Note that if name is not found at all, name_pos will have value npos, which is huge (and therefore not smaller than line_end)
-            size_t name_pos = find_case_insensitive(source, name, line_start);
+            size_t name_pos = find_case_insensitive(source, name, trimmed_line_start);
             size_t line_end = trimmed_line_range.end();
             in_desired_section = (name_pos < line_end && name_pos < colon_pos);
 
@@ -884,6 +909,7 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
     /* Parse the argument into an 'option'. Note that this option does not appear in the options list because its range reflects the string in the argument. TODO: Need to distinguish between equivalent ways of specifying parameters (--foo=bar and --foo bar) */
     error_list_t local_errors;
     option_t arg_as_option = parse_option_from_argument(arg, &local_errors);
+    assert(arg_as_option.separator != option_t::sep_none);
     
     // Hacktastic - parse_option_from_string can't distinguish between one-char long options, and short options. So force the issue: if we want a single long option but we get a single short, then stomp it.
     if (type == option_t::single_long && arg_as_option.type == option_t::single_short) {
@@ -899,6 +925,8 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
         const option_t &opt = options.at(i);
         // This comparison is terrifying. It's just comparing two substrings: one in source (the given option) and the name portion of the argument
         if (opt.type == type && this->range_equals_string(opt.name, arg, arg_as_option.name.start, arg_as_option.name.length)) {
+            // Should never have separator_none for long options
+            assert(opt.separator != option_t::sep_none);
             matches.push_back(opt);
         }
     }
@@ -926,7 +954,6 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
         }
     }
 
-    /* TODO: handle unambiguous prefix */
     /* TODO: Better error reporting */
     /* TODO: can eliminate matches array entirely, just use a single index */
 
@@ -971,6 +998,16 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
             append_argv_error(out_errors, *idx, error_option_unexpected_argument, "Option does not expect an argument");
             errored = true;
         }
+        
+        // If we want strict separators, check for separator agreement
+        if (! errored && (flags & flag_short_options_strict_separators)) {
+            if (arg_as_option.separator != match.separator) {
+                // TODO: improve this error
+                append_argv_error(out_errors, *idx, error_wrong_separator, "Option expects a different separator");
+                errored = true;            
+            }
+        }
+        
         if (! errored) {
             out_result->push_back(resolved_option_t(match, name_idx, arg_index, value_range));
             *idx += 1;
@@ -981,7 +1018,7 @@ bool parse_long(const string_list_t &argv, option_t::type_t type, parse_flags_t 
 }
 
 // Given a list of short options, try parsing out an unseparated short, i.e. -DNDEBUG. We only look at short options with no separator. TODO: Use out_suggestion
-bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors, string_t *out_suggestion UNUSED) const {
+bool parse_unseparated_short(const string_list_t &argv, parse_flags_t flags, size_t *idx, const option_list_t &options, resolved_option_list_t *out_result, error_list_t *out_errors, string_t *out_suggestion UNUSED) const {
     const string_t &arg = argv.at(*idx);
     assert(substr_equals("-", arg, 1));
     assert(arg.size() > 1); // must not be just a single dash
@@ -990,15 +1027,18 @@ bool parse_unseparated_short(const string_list_t &argv, size_t *idx, const optio
     // Construct the list of options in-order, corresponding to this argument
     std::vector<option_t> matches;
     
+    // If strict_separators is set, then we require that the option have sep_none
+    // If not set, then we don't care if the separators match
+    const bool relaxed_separators = ! (flags & flag_short_options_strict_separators);
+    
     for (size_t i=0; i < options.size(); i++) {
         const option_t &opt = options.at(i);
-        if (opt.type == option_t::single_short && opt.separator == option_t::sep_none) {
+        if (opt.type == option_t::single_short && opt.has_value() && (relaxed_separators || opt.separator == option_t::sep_none)) {
             // Candidate short option.
             // This looks something like -DNDEBUG. We want to see if the D matches.
             // Compare the character at offset 1 (to account for the dash) and length 1 (since it's a short option)
             if (this->range_equals_string(opt.name, arg, 1, 1)) {
                 // Expect to always want a value here
-                assert(opt.has_value());
                 matches.push_back(opt);
             }
         }
@@ -1152,17 +1192,19 @@ void separate_argv_into_options_and_positionals(const string_list_t &argv, const
              Try to parse it as a long option; if that fails try to parse it as a short option.
              We cache the errors locally so that failing to parse it as a long option doesn't report an error if it parses successfully as a short option. This may result in duplicate error messages.
              */
-            error_list_t local_errors;
-            if (parse_long(argv, option_t::single_long, flags, &idx, options, out_resolved_options, &local_errors, out_suggestion)) {
+            error_list_t local_long_errors, local_short_errors;
+            if (parse_long(argv, option_t::single_long, flags, &idx, options, out_resolved_options, &local_long_errors, out_suggestion)) {
                 // parse_long succeeded
-            } else if (parse_unseparated_short(argv, &idx, options, out_resolved_options, &local_errors, out_suggestion)) {
+            } else if (parse_unseparated_short(argv, flags, &idx, options, out_resolved_options, &local_short_errors, out_suggestion)) {
                 // parse_unseparated_short will have updated idx and out_resolved_options
-            } else if (parse_short(argv, flags, &idx, options, out_resolved_options, &local_errors, out_suggestion)) {
+            } else if (parse_short(argv, flags, &idx, options, out_resolved_options, &local_short_errors, out_suggestion)) {
                 // parse_short succeeded.
             } else {
-                // Unparseable argument
+                /* Unparseable argument.
+                Say the user enters -Dfoo. This may be an unknown long option, or a short option with a value. If there is a short option -D, then it is more likely that the error from the short option parsing is what we want. So ensure the short erorrs appear at the front of the list. */
                 if (out_errors) {
-                    out_errors->insert(out_errors->begin(), local_errors.begin(), local_errors.end());
+                    out_errors->insert(out_errors->begin(), local_long_errors.begin(), local_long_errors.end());
+                    out_errors->insert(out_errors->begin(), local_short_errors.begin(), local_short_errors.end());
                 }
                 idx += 1;
             }
