@@ -4,6 +4,7 @@ function psub --description "Read from stdin into a file and output the filename
 
 	set -l filename
 	set -l funcname
+	set -l dir
 	set -l use_fifo 1
 	set -l shortopt -o hf
 	set -l longopt -l help,file
@@ -45,16 +46,16 @@ function psub --description "Read from stdin into a file and output the filename
 		return
 	end
 
-	if test use_fifo = 1
+	if test $use_fifo = 1
 		# Write output to pipe. This needs to be done in the background so
 		# that the command substitution exits without needing to wait for
 		# all the commands to exit
-                set dir (mktemp -d /tmp/.psub.XXXXXXXXXX); or return
-                set filename $dir/psub.fifo
+		set dir (mktemp -d /tmp/.psub.XXXXXXXXXX); or return
+		set filename $dir/psub.fifo
 		mkfifo $filename
 		cat >$filename &
 	else
-                set filename (mktemp /tmp/.psub.XXXXXXXXXX)
+		set filename (mktemp /tmp/.psub.XXXXXXXXXX)
 		cat >$filename
 	end
 
@@ -70,6 +71,6 @@ function psub --description "Read from stdin into a file and output the filename
 	end
 
 	# Make sure we erase file when caller exits
-	eval function $funcname --on-job-exit caller\; command rm $filename\; functions -e $funcname\; end
+	eval function $funcname --on-job-exit caller\; command rm $filename\; set -q dir\; and rmdir $dir \; functions -e $funcname\; end
 
 end
