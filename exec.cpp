@@ -516,9 +516,6 @@ static void internal_exec_helper(parser_t &parser,
     std::vector<int> opened_fds;
     bool transmorgrified = io_transmogrify(ios, &morphed_chain, &opened_fds);
 
-    int is_block_old=is_block;
-    is_block=1;
-
     /*
       Did the transmogrification fail - if so, set error status and return
     */
@@ -544,7 +541,6 @@ static void internal_exec_helper(parser_t &parser,
     morphed_chain.clear();
     io_cleanup_fds(opened_fds);
     job_reap(0);
-    is_block=is_block_old;
 }
 
 /* Returns whether we can use posix spawn for a given process in a given job.
@@ -860,6 +856,7 @@ void exec_job(parser_t &parser, job_t *j)
 
                 wcstring_list_t named_arguments = function_get_named_arguments(p->argv0());
                 bool shadows = function_get_shadows(p->argv0());
+                std::map<wcstring,env_var_t> inherit_vars = function_get_inherit_vars(p->argv0());
 
                 signal_block();
 
@@ -872,12 +869,16 @@ void exec_job(parser_t &parser, job_t *j)
                 parser.push_block(newv);
 
                 /*
-                  set_argv might trigger an event
+                  setting variables might trigger an event
                   handler, hence we need to unblock
                   signals.
                 */
                 signal_unblock();
                 parse_util_set_argv(p->get_argv()+1, named_arguments);
+                for (std::map<wcstring,env_var_t>::const_iterator it = inherit_vars.begin(), end = inherit_vars.end(); it != end; ++it)
+                {
+                    env_set(it->first, it->second.missing() ? NULL : it->second.c_str(), ENV_LOCAL | ENV_USER);
+                }
                 signal_block();
 
                 parser.forbid_function(p->argv0());
@@ -909,7 +910,6 @@ void exec_job(parser_t &parser, job_t *j)
                 break;
             }
 
-            case INTERNAL_BLOCK:
             case INTERNAL_BLOCK_NODE:
             {
                 if (p->next)
@@ -930,17 +930,7 @@ void exec_job(parser_t &parser, job_t *j)
 
                 if (! exec_error)
                 {
-                    if (p->type == INTERNAL_BLOCK)
-                    {
-                        /* The block contents (as in, fish code) are stored in argv0 (ugh) */
-                        assert(p->argv0() != NULL);
-                        internal_exec_helper(parser, p->argv0(), NODE_OFFSET_INVALID, TOP, process_net_io_chain);
-                    }
-                    else
-                    {
-                        assert(p->type == INTERNAL_BLOCK_NODE);
-                        internal_exec_helper(parser, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
-                    }
+                    internal_exec_helper(parser, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
                 }
                 break;
             }
@@ -1108,7 +1098,6 @@ void exec_job(parser_t &parser, job_t *j)
         switch (p->type)
         {
 
-            case INTERNAL_BLOCK:
             case INTERNAL_BLOCK_NODE:
             case INTERNAL_FUNCTION:
             {
