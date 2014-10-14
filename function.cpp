@@ -150,12 +150,25 @@ void function_init()
     VOMIT_ON_FAILURE(pthread_mutexattr_destroy(&a));
 }
 
+static std::map<wcstring,env_var_t> snapshot_vars(const wcstring_list_t &vars)
+{
+    std::map<wcstring,env_var_t> result;
+    // use of principal_parser here is temporary
+    const environment_t &env = parser_t::principal_parser().vars();
+    for (wcstring_list_t::const_iterator it = vars.begin(), end = vars.end(); it != end; ++it)
+    {
+        result.insert(std::make_pair(*it, env.get(*it)));
+    }
+    return result;
+}
+
 function_info_t::function_info_t(const function_data_t &data, const wchar_t *filename, int def_offset, bool autoload) :
     definition(data.definition),
     description(data.description),
     definition_file(intern(filename)),
     definition_offset(def_offset),
     named_arguments(data.named_arguments),
+    inherit_vars(snapshot_vars(data.inherit_vars)),
     is_autoload(autoload),
     shadows(data.shadows)
 {
@@ -167,6 +180,7 @@ function_info_t::function_info_t(const function_info_t &data, const wchar_t *fil
     definition_file(intern(filename)),
     definition_offset(def_offset),
     named_arguments(data.named_arguments),
+    inherit_vars(data.inherit_vars),
     is_autoload(autoload),
     shadows(data.shadows)
 {
@@ -266,6 +280,13 @@ wcstring_list_t function_get_named_arguments(const wcstring &name)
     scoped_lock lock(functions_lock);
     const function_info_t *func = function_get(name);
     return func ? func->named_arguments : wcstring_list_t();
+}
+
+std::map<wcstring,env_var_t> function_get_inherit_vars(const wcstring &name)
+{
+    scoped_lock lock(functions_lock);
+    const function_info_t *func = function_get(name);
+    return func ? func->inherit_vars : std::map<wcstring,env_var_t>();
 }
 
 int function_get_shadows(const wcstring &name)

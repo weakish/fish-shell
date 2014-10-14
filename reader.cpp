@@ -1309,7 +1309,6 @@ wcstring completion_apply_to_command_line(const wcstring &val_str, complete_flag
     {
         size_t move_cursor;
         const wchar_t *begin, *end;
-        wchar_t *escaped;
 
         const wchar_t *buff = command_line.c_str();
         parse_util_token_extent(buff, cursor_pos, &begin, 0, 0, 0);
@@ -1321,10 +1320,9 @@ wcstring completion_apply_to_command_line(const wcstring &val_str, complete_flag
         {
             /* Respect COMPLETE_DONT_ESCAPE_TILDES */
             bool no_tilde = !!(flags & COMPLETE_DONT_ESCAPE_TILDES);
-            escaped = escape(val, ESCAPE_ALL | ESCAPE_NO_QUOTED | (no_tilde ? ESCAPE_NO_TILDE : 0));
+            wcstring escaped = escape(val, ESCAPE_ALL | ESCAPE_NO_QUOTED | (no_tilde ? ESCAPE_NO_TILDE : 0));
             sb.append(escaped);
-            move_cursor = wcslen(escaped);
-            free(escaped);
+            move_cursor = escaped.size();
         }
         else
         {
@@ -2970,7 +2968,10 @@ static int read_i(void)
             update_buff_pos(&data->command_line, 0);
             data->command_line.text.clear();
             data->command_line_changed(&data->command_line);
+            wcstring_list_t argv(1, command);
+            event_fire_generic(L"fish_preexec", &argv);
             reader_run_command(parser, command);
+            event_fire_generic(L"fish_postexec", &argv);
             if (data->end_loop)
             {
                 handle_end_loop();
@@ -3004,10 +3005,13 @@ static int can_read(int fd)
 /**
    Test if the specified character is in the private use area that
    fish uses to store internal characters
+
+    Note: Allow U+F8FF because that's the Apple symbol, which is in the
+    OS X US keyboard layout.
 */
 static int wchar_private(wchar_t c)
 {
-    return ((c >= 0xe000) && (c <= 0xf8ff));
+    return ((c >= 0xe000) && (c < 0xf8ff));
 }
 
 /**

@@ -285,6 +285,12 @@ void parser_t::push_block(block_t *new_current)
 
     this->block_stack.push_back(new_current);
 
+    // Types TOP and SUBST are not considered blocks for the purposes of `status -b`
+    if (type != TOP && type != SUBST)
+    {
+        is_block = 1;
+    }
+
     if ((new_current->type() != FUNCTION_DEF) &&
             (new_current->type() != FAKE) &&
             (new_current->type() != TOP))
@@ -312,6 +318,19 @@ void parser_t::pop_block()
         this->vars().pop();
 
     delete old;
+
+    // Figure out if `status -b` should consider us to be in a block now
+    int new_is_block=0;
+    for (std::vector<block_t*>::const_iterator it = block_stack.begin(), end = block_stack.end(); it != end; ++it)
+    {
+        const enum block_type_t type = (*it)->type();
+        if (type != TOP && type != SUBST)
+        {
+            new_is_block = 1;
+            break;
+        }
+    }
+    is_block = new_is_block;
 }
 
 void parser_t::pop_block(const block_t *expected)
@@ -868,8 +887,19 @@ int parser_t::eval(const wcstring &cmd, const io_chain_t &io, enum block_type_t 
 
     /* Parse the source into a tree, if we can */
     parse_node_tree_t tree;
-    if (! parse_tree_from_string(cmd, parse_flag_none, &tree, NULL))
+    parse_error_list_t error_list;
+    if (! parse_tree_from_string(cmd, parse_flag_none, &tree, this->show_errors ? &error_list : NULL))
     {
+        if (this->show_errors)
+        {
+            /* Get a backtrace */
+            wcstring backtrace_and_desc;
+            this->get_backtrace(cmd, error_list, &backtrace_and_desc);
+
+            /* Print it */
+            fprintf(stderr, "%ls", backtrace_and_desc.c_str());
+        }
+
         return 1;
     }
 

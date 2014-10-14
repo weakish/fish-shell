@@ -394,7 +394,8 @@ public:
     void complete_cmd(const wcstring &str,
                       bool use_function,
                       bool use_builtin,
-                      bool use_command);
+                      bool use_command,
+                      bool use_implicit_cd);
 
     void complete_from_args(const wcstring &str,
                             const wcstring &args,
@@ -894,7 +895,7 @@ static wcstring complete_function_desc(const wcstring &fn)
 
    \param comp the list to add all completions to
 */
-void completer_t::complete_cmd(const wcstring &str_cmd, bool use_function, bool use_builtin, bool use_command)
+void completer_t::complete_cmd(const wcstring &str_cmd, bool use_function, bool use_builtin, bool use_command, bool use_implicit_cd)
 {
     /* Paranoia */
     if (str_cmd.empty())
@@ -916,6 +917,10 @@ void completer_t::complete_cmd(const wcstring &str_cmd, bool use_function, bool 
                 this->complete_cmd_desc(str_cmd);
             }
         }
+    }
+    if (use_implicit_cd)
+    {
+        (void)expand_string(str_cmd, *this->vars, this->completions, ACCEPT_INCOMPLETE | EXPAND_SKIP_CMDSUBST | DIRECTORIES_ONLY | this->expand_flags(), NULL);
     }
     if (str_cmd.find(L'/') == wcstring::npos && str_cmd.at(0) != L'~')
     {
@@ -1622,6 +1627,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
     bool use_command = 1;
     bool use_function = 1;
     bool use_builtin = 1;
+    bool use_implicit_cd = 1;
 
     //debug( 1, L"Complete '%ls'", cmd.c_str() );
 
@@ -1703,6 +1709,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                     use_command = true;
                     use_function = true;
                     use_builtin = true;
+                    use_implicit_cd = true;
                     break;
 
                 case parse_statement_decoration_command:
@@ -1710,19 +1717,21 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                     use_command = true;
                     use_function = false;
                     use_builtin = false;
+                    use_implicit_cd = false;
                     break;
 
                 case parse_statement_decoration_builtin:
                     use_command = false;
                     use_function = false;
                     use_builtin = true;
+                    use_implicit_cd = false;
                     break;
             }
 
             if (cmd_node && cmd_node->location_in_or_at_end_of_source_range(pos))
             {
                 /* Complete command filename */
-                completer.complete_cmd(current_token, use_function, use_builtin, use_command);
+                completer.complete_cmd(current_token, use_function, use_builtin, use_command, use_implicit_cd);
             }
             else
             {

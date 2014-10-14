@@ -547,10 +547,9 @@ bool env_universal_t::move_new_vars_file_into_place(const wcstring &src, const w
     return ret == 0;
 }
 
-/**
- Get environment variable value.
- */
-static env_var_t fishd_env_get(const char *key)
+
+/** Get environment variable value. Note that we must not call into env.cpp since it may hold a lock, and we'd deadlock. */
+static env_var_t get_from_environment(const char *key)
 {
     const char *env = getenv(key);
     if (env != NULL)
@@ -567,8 +566,8 @@ static wcstring fishd_get_config()
 {
     bool done = false;
     wcstring result;
-    
-    env_var_t xdg_dir = fishd_env_get("XDG_CONFIG_HOME");
+
+    env_var_t xdg_dir = get_from_environment("XDG_CONFIG_HOME");
     if (! xdg_dir.missing_or_empty())
     {
         result = xdg_dir;
@@ -580,7 +579,7 @@ static wcstring fishd_get_config()
     }
     else
     {
-        env_var_t home = fishd_env_get("HOME");
+        env_var_t home = get_from_environment("HOME");
         if (! home.missing_or_empty())
         {
             result = home;

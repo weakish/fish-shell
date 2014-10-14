@@ -13,13 +13,6 @@ static bool production_is_empty(const production_t *production)
     return (*production)[0] == token_type_invalid;
 }
 
-void swap2(parse_node_tree_t &a, parse_node_tree_t &b)
-{
-    fprintf(stderr, "Swapping!\n");
-    // This uses the base vector implementation
-    a.swap(b);
-}
-
 /** Returns a string description of this parse error */
 wcstring parse_error_t::describe_with_prefix(const wcstring &src, const wcstring &prefix, bool is_interactive, bool skip_caret) const
 {
@@ -283,7 +276,7 @@ static wcstring token_type_user_presentable_description(parse_token_type_t type,
 
     switch (type)
     {
-            /* Hackish. We only support the following types. */
+        /* Hackish. We only support the following types. */
         case symbol_statement:
             return L"a command";
 
@@ -305,8 +298,38 @@ static wcstring token_type_user_presentable_description(parse_token_type_t type,
         case parse_token_type_end:
             return L"end of the statement";
 
+        case parse_token_type_terminate:
+            return L"end of the input";
+
         default:
             return format_string(L"a %ls", token_type_description(type).c_str());
+    }
+}
+
+static wcstring block_type_user_presentable_description(parse_token_type_t type)
+{
+    switch (type)
+    {
+        case symbol_for_header:
+            return L"for loop";
+
+        case symbol_while_header:
+            return L"while loop";
+
+        case symbol_function_header:
+            return L"function definition";
+
+        case symbol_begin_header:
+            return L"begin";
+
+        case symbol_if_statement:
+            return L"if statement";
+
+        case symbol_switch_statement:
+            return L"switch statement";
+
+        default:
+            return token_type_description(type);
     }
 }
 
@@ -513,10 +536,14 @@ class parse_ll_t
     /* The symbol stack can contain terminal types or symbols. Symbols go on to do productions, but terminal types are just matched against input tokens. */
     bool top_node_handle_terminal_types(parse_token_t token);
 
-    void parse_error(const wchar_t *expected, parse_token_t token);
+    void parse_error_unexpected_token(const wchar_t *expected, parse_token_t token);
     void parse_error(parse_token_t token, parse_error_code_t code, const wchar_t *format, ...);
+    void parse_error_at_location(size_t location, parse_error_code_t code, const wchar_t *format, ...);
     void parse_error_failed_production(struct parse_stack_element_t &elem, parse_token_t token);
     void parse_error_unbalancing_token(parse_token_t token);
+
+    /* Reports an error for an unclosed block, e.g. 'begin;'. Returns true on success, false on failure (e.g. it is not an unclosed block) */
+    bool report_error_for_unclosed_block();
 
     void dump_stack(void) const;
 
@@ -565,7 +592,7 @@ class parse_ll_t
         assert(child_start_big < NODE_OFFSET_INVALID);
         node_offset_t child_start = static_cast<node_offset_t>(child_start_big);
 
-        // To avoid constructing multiple nodes, we push_back a single one that we modify
+        // To avoid constructing multiple nodes, we make a single one that we modify
         parse_node_t representative_child(token_type_invalid);
         representative_child.parent = parent_node_idx;
 
@@ -682,6 +709,8 @@ void parse_ll_t::dump_stack(void) const
 // Give each node a source range equal to the union of the ranges of its children
 // Terminal nodes already have source ranges (and no children)
 // Since children always appear after their parents, we can implement this very simply by walking backwards
+// We then do a second pass to give empty nodes an empty source range (but with a valid offset)
+// We do this by walking forward. If a child of a node has an invalid source range, we set it equal to the end of the source range of its previous child
 void parse_ll_t::determine_node_ranges(void)
 {
     size_t idx = nodes.size();
@@ -710,6 +739,30 @@ void parse_ll_t::determine_node_ranges(void)
             assert(max_end >= min_start);
             parent->source_start = min_start;
             parent->source_length = max_end - min_start;
+        }
+    }
+
+    /* Forwards pass */
+    size_t size = nodes.size();
+    for (idx = 0; idx < size; idx++)
+    {
+        /* Since we populate the source range based on the sibling node, it's simpler to walk over the children of each node.
+        We keep a running "child_source_cursor" which is meant to be the end of the child's source range. It's initially set to the beginning of the parent' source range. */
+        parse_node_t *parent = &nodes[idx];
+        // If the parent doesn't have a valid source range, then none of its children will either; skip it entirely
+        if (parent->source_start == SOURCE_OFFSET_INVALID)
+        {
+            continue;
+        }
+        source_offset_t child_source_cursor = parent->source_start;
+        for (size_t child_idx = 0; child_idx < parent->child_count; child_idx++)
+        {
+            parse_node_t *child = &nodes[parent->child_start + child_idx];
+            if (child->source_start == SOURCE_OFFSET_INVALID)
+            {
+                child->source_start = child_source_cursor;
+            }
+            child_source_cursor = child->source_start + child->source_length;
         }
     }
 }
@@ -746,6 +799,26 @@ void parse_ll_t::parse_error(parse_token_t token, parse_error_code_t code, const
 
         err.source_start = token.source_start;
         err.source_length = token.source_length;
+        this->errors.push_back(err);
+    }
+}
+
+void parse_ll_t::parse_error_at_location(size_t source_location, parse_error_code_t code, const wchar_t *fmt, ...)
+{
+    this->fatal_errored = true;
+    if (this->should_generate_error_messages)
+    {
+        //this->dump_stack();
+        parse_error_t err;
+
+        va_list va;
+        va_start(va, fmt);
+        err.text = vformat_string(fmt, va);
+        err.code = code;
+        va_end(va);
+
+        err.source_start = source_location;
+        err.source_length = 0;
         this->errors.push_back(err);
     }
 }
@@ -825,7 +898,7 @@ void parse_ll_t::parse_error_failed_production(struct parse_stack_element_t &sta
         if (! done)
         {
             const wcstring expected = stack_elem.user_presentable_description();
-            this->parse_error(expected.c_str(), token);
+            this->parse_error_unexpected_token(expected.c_str(), token);
         }
     }
 }
@@ -857,7 +930,7 @@ void parse_ll_t::report_tokenizer_error(parse_token_t token, int tok_err_code, c
     this->parse_error(token, parse_error_code, L"%ls", tok_error);
 }
 
-void parse_ll_t::parse_error(const wchar_t *expected, parse_token_t token)
+void parse_ll_t::parse_error_unexpected_token(const wchar_t *expected, parse_token_t token)
 {
     fatal_errored = true;
     if (this->should_generate_error_messages)
@@ -899,6 +972,42 @@ static bool type_is_terminal_type(parse_token_type_t type)
         default:
             return false;
     }
+}
+
+bool parse_ll_t::report_error_for_unclosed_block()
+{
+    bool reported_error = false;
+    /* Unclosed block, for example, 'while true ; '. We want to show the block node that opened it. */
+    const parse_node_t &top_node = this->node_for_top_symbol();
+
+    /* Hacktastic. We want to point at the source location of the block, but our block doesn't have a source range yet - only the terminal tokens do. So get the block statement corresponding to this end command. In general this block may be of a variety of types: if_statement, switch_statement, etc., each with different node structures. But keep descending the first child and eventually you hit a keyword: begin, if, etc. That's the keyword we care about. */
+    const parse_node_t *end_command = this->nodes.get_parent(top_node, symbol_end_command);
+    const parse_node_t *block_node = end_command ? this->nodes.get_parent(*end_command) : NULL;
+
+    if (block_node && block_node->type == symbol_block_statement)
+    {
+        // Get the header
+        block_node = this->nodes.get_child(*block_node, 0, symbol_block_header);
+        block_node = this->nodes.get_child(*block_node, 0); // specific statement
+    }
+    if (block_node != NULL)
+    {
+        // block_node is now an if_statement, switch_statement, for_header, while_header, function_header, or begin_header
+        // Hackish: descend down the first node until we reach the bottom. This will be a keyword node like SWITCH, which will have the source range. Ordinarily the source range would be known by the parent node too, but we haven't completed parsing yet, so we haven't yet propagated source ranges
+        const parse_node_t *cursor = block_node;
+        while (cursor->child_count > 0)
+        {
+            cursor = this->nodes.get_child(*cursor, 0);
+            assert(cursor != NULL);
+        }
+        if (cursor->source_start != NODE_OFFSET_INVALID)
+        {
+            const wcstring node_desc = block_type_user_presentable_description(block_node->type);
+            this->parse_error_at_location(cursor->source_start, parse_error_generic, L"Missing end to balance this %ls", node_desc.c_str());
+            reported_error = true;
+        }
+    }
+    return reported_error;
 }
 
 bool parse_ll_t::top_node_handle_terminal_types(parse_token_t token)
@@ -975,10 +1084,14 @@ bool parse_ll_t::top_node_handle_terminal_types(parse_token_t token)
                     }
                 }
             }
+            else if (stack_top.keyword == parse_keyword_end && token.type == parse_token_type_terminate && this->report_error_for_unclosed_block())
+            {
+                // Handled by report_error_for_unclosed_block
+            }
             else
             {
                 const wcstring expected = stack_top.user_presentable_description();
-                this->parse_error(expected.c_str(), token);
+                this->parse_error_unexpected_token(expected.c_str(), token);
             }
         }
 
@@ -1002,10 +1115,12 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
     // Handle special types specially. Note that these are the only types that can be pushed if the symbol stack is empty.
     if (token1.type == parse_special_type_parse_error || token1.type == parse_special_type_tokenizer_error || token1.type == parse_special_type_comment)
     {
-        parse_node_t err_node(token1.type);
-        err_node.source_start = token1.source_start;
-        err_node.source_length = token1.source_length;
-        nodes.push_back(err_node);
+        /* We set the special node's parent to the top of the stack. This means that we have an asymmetric relationship: the special node has a parent (which is the node we were trying to generate when we encountered the special node), but the parent node does not have the special node as a child. This means for example that parents don't have to worry about tracking any comment nodes, but we can still recover the parent from the comment. */
+        parse_node_t special_node(token1.type);
+        special_node.parent = symbol_stack.back().node_idx;
+        special_node.source_start = token1.source_start;
+        special_node.source_length = token1.source_length;
+        nodes.push_back(special_node);
         consumed = true;
 
         /* tokenizer errors are fatal */
@@ -1210,7 +1325,7 @@ const parse_node_t *parse_node_tree_t::get_child(const parse_node_t &parent, nod
 {
     const parse_node_t *result = NULL;
 
-    /* We may get nodes with no children if we had an imcomplete parse. Don't consider than an error */
+    /* We may get nodes with no children if we had an incomplete parse. Don't consider than an error */
     if (parent.child_count > 0)
     {
         PARSE_ASSERT(which < parent.child_count);

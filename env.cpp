@@ -358,7 +358,7 @@ static void handle_locale()
 
         if (get_is_interactive())
         {
-            debug(0, _(L"Changing language to English"));
+            debug(2, _(L"Changing language to English"));
         }
     }
 }
@@ -371,9 +371,9 @@ static void react_to_variable_change(const wcstring &key)
     {
         handle_locale();
     }
-    else if (key == L"fish_term256")
+    else if (key == L"fish_term256" || key == L"fish_term24bit")
     {
-        update_fish_term256();
+        update_fish_color_support();
         reader_react_to_color_change();
     }
     else if (string_prefixes_string(L"fish_color_", key))
@@ -463,17 +463,10 @@ wcstring env_get_pwd_slash(const environment_t &vars)
     return pwd;
 }
 
-// Some variables should not be arrays. This used to be handled by a startup script, but we'd like to get down to 0 forks for startup, so handle it here.
-static bool variable_can_be_array(const wcstring &key)
+/* Here is the whitelist of variables that we colon-delimit, both incoming from the environment and outgoing back to it. This is deliberately very short - we don't want to add language-specific values like CLASSPATH. */
+static bool variable_is_colon_delimited_array(const wcstring &str)
 {
-    if (key == L"DISPLAY")
-    {
-        return false;
-    }
-    else
-    {
-        return true;
-    }
+    return contains(str, L"PATH", L"MANPATH", L"CDPATH");
 }
 
 void env_init(const struct config_paths_t *paths /* or NULL */)
@@ -527,7 +520,7 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
             wcstring key = key_and_val.substr(0, eql);
             if (is_read_only(key) || is_electric(key)) continue;
             wcstring val = key_and_val.substr(eql + 1);
-            if (variable_can_be_array(val))
+            if (variable_is_colon_delimited_array(key))
             {
                 std::replace(val.begin(), val.end(), L':', ARRAY_SEP);
             }
@@ -570,11 +563,6 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
     env_set(L"version", version.c_str(), ENV_GLOBAL);
     env_set(L"FISH_VERSION", version.c_str(), ENV_GLOBAL);
 
-    /* Set up universal variables. The empty string means to use the deafult path. */
-    assert(s_universal_variables == NULL);
-    s_universal_variables = new env_universal_t(L"");
-    s_universal_variables->load();
-
     /*
       Set up SHLVL variable
     */
@@ -582,8 +570,10 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
     wcstring nshlvl_str = L"1";
     if (! shlvl_str.missing())
     {
-        long shlvl_i = wcstol(shlvl_str.c_str(), NULL, 10);
-        if (shlvl_i >= 0)
+        wchar_t *end;
+        long shlvl_i = wcstol(shlvl_str.c_str(), &end, 10);
+        while (iswspace(*end)) ++end; /* skip trailing whitespace */
+        if (shlvl_i >= 0 && *end == '\0')
         {
             nshlvl_str = to_string<long>(shlvl_i + 1);
         }
@@ -600,13 +590,18 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
         if (pw->pw_dir != NULL)
         {
             const wcstring dir = str2wcstring(pw->pw_dir);
-            env_set(L"HOME", dir.c_str(), ENV_GLOBAL);
+            env_set(L"HOME", dir.c_str(), ENV_GLOBAL | ENV_EXPORT);
         }
         free(unam_narrow);
     }
 
     /* Set PWD */
     env_set_pwd();
+
+    /* Set up universal variables. The empty string means to use the deafult path. */
+    assert(s_universal_variables == NULL);
+    s_universal_variables = new env_universal_t(L"");
+    s_universal_variables->load();
 
     /* Set g_log_forks */
     const env_var_t log_forks = vars->get(L"fish_log_forks");
@@ -971,9 +966,9 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
     return !erased;
 }
 
-env_var_t env_get_from_principal(const wcstring &key)
+env_var_t env_get_from_principal(const wcstring &key, env_mode_flags_t mode)
 {
-    return parser_t::principal_parser().vars().get(key);
+    return parser_t::principal_parser().vars().get(key, mode);
 }
 
 const wchar_t *env_var_t::c_str(void) const
@@ -1342,19 +1337,22 @@ void env_stack_t::get_exported(const env_node_t *n, std::map<wcstring, wcstring>
     }
 }
 
+/* Given a map from key to value, add values to out of the form key=value */
 static void export_func(const std::map<wcstring, wcstring> &envs, std::vector<std::string> &out)
 {
+    out.reserve(out.size() + envs.size());
     std::map<wcstring, wcstring>::const_iterator iter;
     for (iter = envs.begin(); iter != envs.end(); ++iter)
     {
-        const std::string ks = wcs2string(iter->first);
+        const wcstring &key = iter->first;
+        const std::string &ks = wcs2string(key);
         std::string vs = wcs2string(iter->second);
 
-        for (size_t i=0; i < vs.size(); i++)
+        /* Arrays in the value are ASCII record separator (0x1e) delimited. But some variables should have colons. Add those. */
+        if (variable_is_colon_delimited_array(key))
         {
-            char &vc = vs.at(i);
-            if (vc == ARRAY_SEP)
-                vc = ':';
+            /* Replace ARRAY_SEP with colon */
+            std::replace(vs.begin(), vs.end(), (char)ARRAY_SEP, ':');
         }
 
         /* Put a string on the vector */

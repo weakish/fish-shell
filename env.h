@@ -252,7 +252,7 @@ class env_stack_t : public environment_t
 /** Gets the variable with the specified name, or env_var_t::missing_var if it does not exist. */
 env_var_t env_get_from_main(const wcstring &key);
 
-env_var_t env_get_from_principal(const wcstring &key);
+env_var_t env_get_from_principal(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT);
 
 /** Synchronizes all universal variable changes: writes everything out, reads stuff in */
 void env_universal_barrier();

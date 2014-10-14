@@ -860,7 +860,7 @@ static bool expand_pid(const wcstring &instr_with_sep, expand_flags_t flags, std
         if (!(flags & ACCEPT_INCOMPLETE))
         {
             /* We failed to find anything */
-            append_syntax_error(errors, 1, FAILED_EXPANSION_PROCESS_ERR_MSG, in+1);
+            append_syntax_error(errors, 1, FAILED_EXPANSION_PROCESS_ERR_MSG, escape(in+1, ESCAPE_NO_QUOTED).c_str());
             return false;
         }
     }
@@ -1962,6 +1962,7 @@ static int expand_string_internal(const wcstring &input, parser_t *parser_or_nul
 
 int expand_string(const wcstring &input, const environment_t &vars, std::vector<completion_t> &output, expand_flags_t flags, parse_error_list_t *errors)
 {
+    /* This variant does not take a parser, so we can't execute shell code. This means that SKIP_CMDSUBST must be set. */
     assert(flags & EXPAND_SKIP_CMDSUBST);
     return expand_string_internal(input, NULL, vars, output, flags, errors);
 }
@@ -2132,13 +2133,15 @@ bool expand_abbreviation(const wcstring &src, const environment_t &vars, wcstrin
     wcstokenizer tokenizer(var, ARRAY_SEP_STR);
     while (tokenizer.next(line))
     {
-        /* Line is expected to be of the form 'foo=bar'. Parse out the first =. Be forgiving about spaces, but silently skip on failure (no equals, or equals at the end or beginning). Try to avoid copying any strings until we are sure this is a match. */
-        size_t equals = line.find(L'=');
-        if (equals == wcstring::npos || equals == 0 || equals + 1 == line.size())
+        /* Line is expected to be of the form 'foo=bar' or 'foo bar'. Parse out the first = or space. Silently skip on failure (no equals, or equals at the end or beginning). Try to avoid copying any strings until we are sure this is a match. */
+        size_t equals_pos = line.find(L'=');
+        size_t space_pos = line.find(L' ');
+        size_t separator = mini(equals_pos, space_pos);
+        if (separator == wcstring::npos || separator == 0 || separator + 1 == line.size())
             continue;
 
         /* Find the character just past the end of the command. Walk backwards, skipping spaces. */
-        size_t cmd_end = equals;
+        size_t cmd_end = separator;
         while (cmd_end > 0 && iswspace(line.at(cmd_end - 1)))
             cmd_end--;
 
@@ -2147,7 +2150,7 @@ bool expand_abbreviation(const wcstring &src, const environment_t &vars, wcstrin
         {
             /* Success. Set output to everythign past the end of the string. */
             if (output != NULL)
-                output->assign(line, equals + 1, wcstring::npos);
+                output->assign(line, separator + 1, wcstring::npos);
 
             result = true;
             break;
