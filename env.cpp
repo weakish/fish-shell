@@ -847,6 +847,9 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
         }
     }
     
+    // Must not hold the lock around react_to_variable_change or event firing
+    locker.unlock();
+    
     if (!is_universal)
     {
         event_t ev = event_t::variable_event(key);
@@ -860,9 +863,6 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
         //  debug( 1, L"env_set: return from event firing" );
     }
     
-    
-    // Must not hold the lock around react_to_variable_change
-    locker.unlock();
     react_to_variable_change(key);
     
     return 0;
