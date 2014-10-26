@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import unicode_literals
 # Whether we're Python 2
 import sys
 import multiprocessing.pool
@@ -35,13 +36,19 @@ except ImportError:
 FISH_BIN_PATH = False # will be set later
 def run_fish_cmd(text):
     from subprocess import PIPE
-    p = subprocess.Popen([FISH_BIN_PATH], stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    if IS_PY2:
-        out, err = p.communicate(text)
-    else:
-        out, err = p.communicate(bytes(text, 'utf-8'))
-        out = str(out, 'utf-8')
-        err = str(err, 'utf-8')
+    # ensure that fish is using UTF-8
+    ctype = os.environ.get("LC_ALL", os.environ.get("LC_CTYPE", os.environ.get("LANG")))
+    env = None
+    if re.search(r"\.utf-?8$", ctype, flags=re.I) is None:
+        # override LC_CTYPE with en_US.UTF-8
+        # We're assuming this locale exists.
+        # Fish makes the same assumption in config.fish
+        env = os.environ.copy()
+        env.update(LC_CTYPE="en_US.UTF-8", LANG="en_US.UTF-8")
+    p = subprocess.Popen([FISH_BIN_PATH], stdin=PIPE, stdout=PIPE, stderr=PIPE, env=env)
+    out, err = p.communicate(text.encode('utf-8'))
+    out = out.decode('utf-8', 'replace')
+    err = err.decode('utf-8', 'replace')
     return(out, err)
 
 def escape_fish_cmd(text):
@@ -423,11 +430,7 @@ class FishConfigTCPServer(SocketServer.TCPServer):
 class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     def write_to_wfile(self, txt):
-        if IS_PY2:
-            self.wfile.write(txt)
-        else: # Python 3
-            self.wfile.write(bytes(txt, 'utf-8'))
-
+        self.wfile.write(txt.encode('utf-8'))
 
     def do_get_colors(self):
         # Looks for fish_color_*.
@@ -527,7 +530,7 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         for name in self.do_get_variable_names('set -nxL'):
             if name in vars: vars[name].exported = True
 
-        return [vars[key].get_json_obj() for key in sorted(vars.keys(), key=str.lower)]
+        return [vars[key].get_json_obj() for key in sorted(vars.keys(), key=lambda x: x.lower())]
 
     def do_get_bindings(self):
         """ Get key bindings """
@@ -647,12 +650,13 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     def read_one_sample_prompt(self, path):
         try:
-            with open(path) as fd:
+            with open(path, 'rb') as fd:
                 extras_dict = {}
                 # Read one sample prompt from fd
                 function_lines = []
                 parsing_hashes = True
-                for line in fd:
+                unicode_lines = (line.decode('utf-8') for line in fd)
+                for line in unicode_lines:
                     # Parse hashes until parse_one_sample_prompt_hash return False
                     if parsing_hashes:
                         parsing_hashes = self.parse_one_sample_prompt_hash(line, extras_dict)
@@ -681,6 +685,33 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         result.append(current_metasample_async.get())
         result.extend([r for r in sample_results if r])
         return result
+
+    def do_get_abbreviations(self):
+        out, err = run_fish_cmd('abbr -s')
+        lines = (x for x in out.rstrip().split('\n'))
+        # Turn the output into something we can use
+        abbrout = (line[len('abbr -a '):].strip('\'') for line in lines)
+        abbrs = [x.split('=') for x in abbrout]
+
+        if abbrs[0][0]:
+            result = [{'word': x, 'phrase': y} for x, y in abbrs]
+        else:
+            result = []
+        return result
+
+    def do_remove_abbreviation(self, abbreviation):
+        out, err = run_fish_cmd('abbr -r %s' % abbreviation['word'])
+        if out or err:
+            return err
+        else:
+            return True
+
+    def do_save_abbreviation(self, abbreviation):
+        out, err = run_fish_cmd('abbr -a \'%s=%s\'' % (abbreviation['word'], abbreviation['phrase']))
+        if err:
+            return err
+        else:
+            return True
 
     def secure_startswith(self, haystack, needle):
         if len(haystack) < len(needle):
@@ -731,12 +762,15 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             output = self.do_get_color_for_variable(name)
         elif p == '/bindings/':
             output = self.do_get_bindings()
+        elif p == '/abbreviations/':
+            output = self.do_get_abbreviations()
         else:
             return SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
 
         # Return valid output
         self.send_response(200)
-        self.send_header('Content-type','text/html')
+        self.send_header('Content-type','application/json')
+        self.end_headers()
         self.write_to_wfile('\n')
 
         # Output JSON
@@ -752,22 +786,18 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             return self.send_error(403)
         self.path = p
 
-        if IS_PY2:
-            ctype, pdict = cgi.parse_header(self.headers.getheader('content-type'))
-        else: # Python 3
-            ctype, pdict = cgi.parse_header(self.headers['content-type'])
+        ctype, pdict = cgi.parse_header(self.headers['content-type'])
 
         if ctype == 'multipart/form-data':
             postvars = cgi.parse_multipart(self.rfile, pdict)
         elif ctype == 'application/x-www-form-urlencoded':
-            try:
-                length = int(self.headers.getheader('content-length'))
-            except AttributeError:
-                length = int(self.headers['content-length'])
-            # parse_qs borks if we give it a Unicode string in Python2.
+            length = int(self.headers['content-length'])
             url_str = self.rfile.read(length).decode('utf-8')
-            if IS_PY2: url_str = str(url_str)
             postvars = cgi.parse_qs(url_str, keep_blank_values=1)
+        elif ctype == 'application/json':
+            length = int(self.headers['content-length'])
+            url_str = self.rfile.read(length).decode('utf-8')
+            postvars = json.loads(url_str)
         else:
             postvars = {}
 
@@ -798,12 +828,25 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
                 output = ["OK"]
             else:
                 output = ["Unable to set prompt"]
+        elif p == '/save_abbreviation/':
+            r = self.do_save_abbreviation(postvars)
+            if r == True:
+                output = ["OK"]
+            else:
+                output = [r]
+        elif p == '/remove_abbreviation/':
+            r = self.do_remove_abbreviation(postvars)
+            if r == True:
+                output = ["OK"]
+            else:
+                output = [r]
         else:
-            return SimpleHTTPServer.SimpleHTTPRequestHandler.do_POST(self)
+            return self.send_error(404)
 
         # Return valid output
         self.send_response(200)
-        self.send_header('Content-type','text/html')
+        self.send_header('Content-type','application/json')
+        self.end_headers()
         self.write_to_wfile('\n')
 
         # Output JSON
@@ -812,6 +855,15 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def log_request(self, code='-', size='-'):
         """ Disable request logging """
         pass
+
+    def log_error(self, format, *args):
+        if format == 'code %d, message %s':
+            # This appears to be a send_error() message
+            # We want to include the path
+            (code, msg) = args
+            format = 'code %d, message %s, path %s'
+            args = (code, msg, self.path)
+        SimpleHTTPServer.SimpleHTTPRequestHandler.log_error(self, format, *args)
 
 redirect_template_html = """
 <!DOCTYPE html>
@@ -887,7 +939,7 @@ if PORT > 9000:
 # Just look at the first letter
 initial_tab = ''
 if len(sys.argv) > 1:
-    for tab in ['functions', 'prompt', 'colors', 'variables', 'history', 'bindings']:
+    for tab in ['functions', 'prompt', 'colors', 'variables', 'history', 'bindings', 'abbreviations']:
         if tab.startswith(sys.argv[1]):
             initial_tab = '#' + tab
             break

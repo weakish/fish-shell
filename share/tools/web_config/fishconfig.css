@@ -5,7 +5,7 @@ body {
 }
 
 #ancestor {
-    width: 800px;
+    width: 80%;
     margin-left: auto;
     margin-right: auto;
     margin-top: 25px;
@@ -228,6 +228,12 @@ body {
 
 .history_delete {
 	width: 20px;
+	border-bottom: #444 dotted 1px;
+}
+
+ .abbreviation_actions {
+	width: 5em;
+	text-align: right;
 	border-bottom: #444 dotted 1px;
 }
 

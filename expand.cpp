@@ -1843,7 +1843,6 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
         if (!(EXPAND_SKIP_HOME_DIRECTORIES & flags))
             expand_home_directory(next);
 
-
         if (flags & ACCEPT_INCOMPLETE)
         {
             if (! next.empty() && next.at(0) == PROCESS_EXPAND)
@@ -1853,10 +1852,7 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
                  interested in other completions, so we
                  short-circuit and return
                  */
-                if (!(flags & EXPAND_SKIP_PROCESS))
-                {
-                    expand_pid(next, flags, output, NULL);
-                }
+                expand_pid(next, flags, output, NULL);
                 return EXPAND_OK;
             }
             else
@@ -1864,12 +1860,9 @@ int expand_string(const wcstring &input, std::vector<completion_t> &output, expa
                 append_completion(*out, next);
             }
         }
-        else
+        else if (! expand_pid(next, flags, *out, errors))
         {
-            if (!(flags & EXPAND_SKIP_PROCESS) && ! expand_pid(next, flags, *out, errors))
-            {
-                return EXPAND_ERROR;
-            }
+            return EXPAND_ERROR;
         }
     }
 
@@ -2107,13 +2100,15 @@ bool expand_abbreviation(const wcstring &src, wcstring *output)
     wcstokenizer tokenizer(var, ARRAY_SEP_STR);
     while (tokenizer.next(line))
     {
-        /* Line is expected to be of the form 'foo=bar'. Parse out the first =. Be forgiving about spaces, but silently skip on failure (no equals, or equals at the end or beginning). Try to avoid copying any strings until we are sure this is a match. */
-        size_t equals = line.find(L'=');
-        if (equals == wcstring::npos || equals == 0 || equals + 1 == line.size())
+        /* Line is expected to be of the form 'foo=bar' or 'foo bar'. Parse out the first = or space. Silently skip on failure (no equals, or equals at the end or beginning). Try to avoid copying any strings until we are sure this is a match. */
+        size_t equals_pos = line.find(L'=');
+        size_t space_pos = line.find(L' ');
+        size_t separator = mini(equals_pos, space_pos);
+        if (separator == wcstring::npos || separator == 0 || separator + 1 == line.size())
             continue;
 
         /* Find the character just past the end of the command. Walk backwards, skipping spaces. */
-        size_t cmd_end = equals;
+        size_t cmd_end = separator;
         while (cmd_end > 0 && iswspace(line.at(cmd_end - 1)))
             cmd_end--;
 
@@ -2122,7 +2117,7 @@ bool expand_abbreviation(const wcstring &src, wcstring *output)
         {
             /* Success. Set output to everythign past the end of the string. */
             if (output != NULL)
-                output->assign(line, equals + 1, wcstring::npos);
+                output->assign(line, separator + 1, wcstring::npos);
 
             result = true;
             break;
