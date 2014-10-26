@@ -11,6 +11,7 @@
 #include "common.h"
 #include "io.h"
 #include <vector>
+#include <map>
 
 struct parse_error_t;
 typedef std::vector<parse_error_t> parse_error_list_t;
@@ -53,5 +54,8 @@ wcstring docopt_conditions_for_variable(const wcstring &cmd, const wcstring &var
 /* Given a command and an option like --foo, returns the description of that option */
 wcstring docopt_description_for_option(const wcstring &cmd, const wcstring &option);
 
+/* Given a command and a list of arguments, parses it into an argument list. Returns by reference: a map from argument name to value, a list of errors, and a list of unused arguments. If there is no docopt registration, the result is false. */
+typedef std::map<wcstring, wcstring_list_t> docopt_arguments_t;
+bool docopt_parse_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_arguments_t *out_arguments, parse_error_list_t *out_errors, std::vector<size_t> *out_unused_arguments);
 
 #endif

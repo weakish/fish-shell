@@ -10,15 +10,19 @@ Functions for handling the set of docopt descriptions
 #include "parse_constants.h"
 #include "parser.h"
 #include "docopt/docopt_fish.h"
+#include "expand.h"
 #include <map>
 #include <vector>
 #include <list>
+#include <set>
 #include <memory>
+#include <algorithm>
 
 typedef docopt_fish::argument_parser_t<wcstring> docopt_parser_t;
 typedef docopt_fish::error_t<wcstring> docopt_error_t;
 typedef std::vector<docopt_error_t> docopt_error_list_t;
 typedef std::vector<const docopt_parser_t *> parser_ref_list_t;
+typedef docopt_parser_t::argument_map_t docopt_argument_map_t;
 
 /* Weird function. Given a parser status and an existing argument status, convert the parser status to the argument status and return the "more valid" of the two. This supports our design for multiple parsers, where if any parser declares an argument valid, that argument is marked valid. */
 enum docopt_argument_status_t more_valid_status(docopt_fish::argument_status_t parser_status, docopt_argument_status_t existing_status)
@@ -339,6 +343,74 @@ class doc_register_t {
         }
         return result;
     }
+    
+    bool parse_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_arguments_t *out_arguments, parse_error_list_t *out_errors, std::vector<size_t> *out_unused_arguments)
+    {
+        scoped_lock locker(lock);
+        parser_ref_list_t parsers = this->get_parsers(cmd);
+        
+        // Common case
+        if (parsers.empty())
+        {
+            return false;
+        }
+        
+        // An argument is unused if it is unused in all cases
+        // This is the union of all unused arguments.
+        // Initially all are unused - prepopulate it with every index.
+        const size_t argv_size = argv.size();
+        std::vector<size_t> total_unused_args;
+        docopt_arguments_t total_args;
+        
+        total_unused_args.reserve(argv_size);
+        for (size_t i=0; i < argv_size; i++)
+        {
+            total_unused_args.push_back(i);
+        }
+        
+        // Now run over the docopt parser list
+        // TODO: errors!
+        for (size_t i=0; i < parsers.size(); i++)
+        {
+            docopt_error_list_t errors;
+            std::vector<size_t> local_unused_args;
+            docopt_argument_map_t args = parsers.at(i)->parse_arguments(argv, docopt_fish::flags_default, &errors, &local_unused_args);
+            
+            // Insert values from the argument map. Don't overwrite, so that earlier docopts take precedence
+            docopt_argument_map_t::const_iterator iter;
+            for (iter = args.begin(); iter != args.end(); ++iter)
+            {
+                // We could use insert() to avoid the two lookups, but the code is very ugly
+                const wcstring &key = iter->first;
+                if (total_args.find(key) != total_args.end())
+                {
+                    // The argument was already present, and we don't overwrite.
+                    continue;
+                }
+                
+                // Store the list of values associated with the argument. This may be empty.
+                total_args[key] = iter->second.values;
+            }
+            
+            // Intersect unused arguments
+            std::vector<size_t> intersected_unused_args;
+            std::set_intersection(local_unused_args.begin(), local_unused_args.end(),
+                                  total_unused_args.begin(), total_unused_args.end(),
+                                  std::back_inserter(intersected_unused_args));
+            total_unused_args.swap(intersected_unused_args);
+        }
+        
+        if (out_arguments != NULL)
+        {
+            out_arguments->swap(total_args);
+        }
+        if (out_unused_arguments != NULL)
+        {
+            out_unused_arguments->swap(total_unused_args);
+        }
+        
+        return true;
+    }
 
 };
 static doc_register_t default_register;
@@ -366,4 +438,9 @@ wcstring docopt_conditions_for_variable(const wcstring &cmd, const wcstring &var
 wcstring docopt_description_for_option(const wcstring &cmd, const wcstring &option)
 {
     return default_register.description_for_option(cmd, option);
+}
+
+bool docopt_parse_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_arguments_t *out_arguments, parse_error_list_t *out_errors, std::vector<size_t> *out_unused_arguments)
+{
+    return default_register.parse_arguments(cmd, argv, out_arguments, out_errors, out_unused_arguments);
 }

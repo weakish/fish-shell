@@ -2113,6 +2113,50 @@ static void test_docopt_complete(void)
     do_test(completions.at(0).completion == L"--help");
 }
 
+static void test_docopt_args(void)
+{
+    say(L"Testing argument parsing with docopt");
+    // This does not need to be a very complete test, since the docopt test suite is much more complete
+    const wcstring cmd = L"ogre";
+    
+    // docopt descriptions
+    const wchar_t *usage1 =
+    L"Usage:\n"
+    L"       ogre [options] [<pid>]\n"
+    L"\n"
+    L"Options:\n"
+    L"       -c, --command  Command Description\n"
+    L"       -g <val>, --group <val>\n"
+    ;
+    
+    const wchar_t *usage2 =
+    L"Usage:\n"
+    L"       ogre [options]\n"
+    L"\n"
+    L"Options:\n"
+    L"       -h, --help  Help\n"
+    ;
+    
+    docopt_register_usage(L"", L"fish_test", usage1, L"", NULL);
+    docopt_register_usage(L"", L"fish_test", usage2, L"", NULL);
+    
+    wcstring_list_t argv;
+    argv.push_back(cmd);
+    argv.push_back(L"--command");
+    argv.push_back(L"--group");
+    argv.push_back(L"grp");
+    
+    docopt_arguments_t arguments;
+    std::vector<size_t> unused_args;
+    parse_error_list_t errors;
+    bool ret = docopt_parse_arguments(cmd, argv, &arguments, &errors, &unused_args);
+    do_test(ret == true);
+    do_test(arguments.size() == 2);
+    do_test(arguments.find(L"--command") != arguments.end());
+    do_test(arguments.find(L"--group") != arguments.end());
+    do_test(arguments[L"--group"] == wcstring_list_t(1, L"grp"));
+}
+
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)
 {
     // str is given with a caret, which we use to represent the cursor position
@@ -3856,6 +3900,7 @@ int main(int argc, char **argv)
     if (should_test_function("colors")) test_colors();
     if (should_test_function("complete")) test_complete();
     if (should_test_function("docopt_complete")) test_docopt_complete();
+    if (should_test_function("docopt_args")) test_docopt_args();
     if (should_test_function("input")) test_input();
     if (should_test_function("universal")) test_universal();
     if (should_test_function("universal")) test_universal_callbacks();
