@@ -63,92 +63,45 @@ static int set_color_builtin_outputter(char c)
 /**
    set_color builtin
 */
+static const wchar_t * const g_set_color_usage =
+    L"Usage:\n"
+    L"       set_color [options] [<color>]\n"
+    L"\n"
+    L"Options:\n"
+    L"       -b <bgcolor>, --background <bgcolor>  sets the background color.\n"
+    L"       -c, --print_colors  prints a list of all valid color names.\n"
+    L"       -o, --bold  sets bold or extra bright mode.\n"
+    L"       -u, --underline  sets underlined mode.\n"
+    L"       -h, --help  displays a help message and exits.\n"
+;
+
 static int builtin_set_color(parser_t &parser, wchar_t **argv)
 {
-    /** Variables used for parsing the argument list */
-    const struct woption long_options[] =
-    {
-        { L"background", required_argument, 0, 'b'},
-        { L"help", no_argument, 0, 'h' },
-        { L"bold", no_argument, 0, 'o' },
-        { L"underline", no_argument, 0, 'u' },
-        { L"version", no_argument, 0, 'v' },
-        { L"print-colors", no_argument, 0, 'c' },
-        { 0, 0, 0, 0 }
-    };
-
-    const wchar_t *short_options = L"b:hvocu";
-
-    int argc = builtin_count_args(argv);
-
     /* Some code passes variables to set_color that don't exist, like $fish_user_whatever. As a hack, quietly return failure. */
-    if (argc <= 1)
+    if (argv[1] == NULL)
     {
         return EXIT_FAILURE;
     }
 
-    const wchar_t *bgcolor = NULL;
-    bool bold = false, underline=false;
-    int errret;
-
-    /* Parse options to obtain the requested operation and the modifiers */
-    woptind = 0;
-    while (1)
+    docopt_arguments_t args;
+    int status;
+    if (! parse_argv_or_show_help(parser, argv, &args, &status))
     {
-        int c = wgetopt_long(argc, argv, short_options, long_options, 0);
-
-        if (c == -1)
-        {
-            break;
-        }
-
-        switch (c)
-        {
-            case 0:
-                break;
-
-            case 'b':
-                bgcolor = woptarg;
-                break;
-
-            case 'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
-                return STATUS_BUILTIN_OK;
-
-            case 'o':
-                bold = true;
-                break;
-
-            case 'u':
-                underline = true;
-                break;
-
-            case 'c':
-                print_colors();
-                return STATUS_BUILTIN_OK;
-
-            case '?':
-                return STATUS_BUILTIN_ERROR;
-        }
+        return status;
     }
-
-    /* Remaining argument is foreground color */
-    const wchar_t *fgcolor = NULL;
-    if (woptind < argc)
+    
+    if (args.has(L"--print_colors"))
     {
-        if (woptind + 1 == argc)
-        {
-            fgcolor = argv[woptind];
-        }
-        else
-        {
-            append_format(stderr_buffer,
-                          _(L"%ls: Too many arguments\n"),
-                          argv[0]);
-            return STATUS_BUILTIN_ERROR;
-        }
+        print_colors();
+        return STATUS_BUILTIN_OK;
     }
-
+    
+    const wchar_t *fgcolor = args.get_or_null(L"<color>");
+    const wchar_t *bgcolor = args.get_or_null(L"--background");
+    bool bold = args.has(L"--bold");
+    bool underline = args.has(L"--underline");
+    int errret = -1;
+    
     if (fgcolor == NULL && bgcolor == NULL && !bold && !underline)
     {
         append_format(stderr_buffer,
@@ -186,7 +139,6 @@ static int builtin_set_color(parser_t &parser, wchar_t **argv)
     {
         return STATUS_BUILTIN_ERROR;
     }
-
 
     /* Save old output function so we can restore it */
     int (* const saved_writer_func)(char) = output_get_writer();
@@ -244,5 +196,6 @@ static int builtin_set_color(parser_t &parser, wchar_t **argv)
     stdout_buffer.append(str2wcstring(builtin_set_color_output));
     builtin_set_color_output.clear();
 
-    return STATUS_BUILTIN_OK;
+    return status;
 }
+

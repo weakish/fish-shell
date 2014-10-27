@@ -67,8 +67,11 @@ class docopt_arguments_t
     /* Returns the array of values for a given key, or an empty list if none */
     const wcstring_list_t &get_list(const wchar_t *) const;
     
-    /* Returns the single value for a given key, or an empty string if none */
+    /* Returns the first value for a given key, or an empty string if none */
     const wcstring &get(const wchar_t *) const;
+    
+    /* Returns the first value for a given key, or NULL if none */
+    const wchar_t *get_or_null(const wchar_t *) const;
     
     /* Helper function for "dumping" args to a string, for debugging */
     wcstring dump() const;

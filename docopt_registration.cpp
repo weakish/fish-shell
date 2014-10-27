@@ -476,6 +476,12 @@ const wcstring &docopt_arguments_t::get(const wchar_t *key) const
     return result.empty() ? empty : result.at(0);
 }
 
+const wchar_t *docopt_arguments_t::get_or_null(const wchar_t *key) const
+{
+    const wcstring_list_t &result = this->get_list(key);
+    return result.empty() ? NULL : result.at(0).c_str();
+}
+
 wcstring docopt_arguments_t::dump() const
 {
     wcstring result;

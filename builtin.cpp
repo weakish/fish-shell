@@ -4169,9 +4169,12 @@ static const builtin_data_t *builtin_lookup(const wcstring &name)
 }
 
 extern const wchar_t * const g_jobs_usage;
+extern const wchar_t * const g_set_color_usage;
 
-static void docopt_init() {
+static void docopt_init()
+{    
     docopt_register_usage(L"jobs", L"default", g_jobs_usage, L"", NULL);
+    docopt_register_usage(L"set_color", L"default", g_set_color_usage, L"", NULL);
 }
 
 void builtin_init()
