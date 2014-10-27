@@ -2152,9 +2152,9 @@ static void test_docopt_args(void)
     bool ret = docopt_parse_arguments(cmd, argv, &arguments, &errors, &unused_args);
     do_test(ret == true);
     do_test(arguments.size() == 2);
-    do_test(arguments.find(L"--command") != arguments.end());
-    do_test(arguments.find(L"--group") != arguments.end());
-    do_test(arguments[L"--group"] == wcstring_list_t(1, L"grp"));
+    do_test(arguments.has(L"--command"));
+    do_test(arguments.has(L"--group"));
+    do_test(arguments.get_list(L"--group") == wcstring_list_t(1, L"grp"));
 }
 
 static void test_1_completion(wcstring line, const wcstring &completion, complete_flags_t flags, bool append_only, wcstring expected, long source_line)

@@ -382,14 +382,14 @@ class doc_register_t {
             {
                 // We could use insert() to avoid the two lookups, but the code is very ugly
                 const wcstring &key = iter->first;
-                if (total_args.find(key) != total_args.end())
+                if (total_args.has(key))
                 {
                     // The argument was already present, and we don't overwrite.
                     continue;
                 }
                 
                 // Store the list of values associated with the argument. This may be empty.
-                total_args[key] = iter->second.values;
+                total_args.vals[key] = iter->second.values;
             }
             
             // Intersect unused arguments
@@ -443,4 +443,54 @@ wcstring docopt_description_for_option(const wcstring &cmd, const wcstring &opti
 bool docopt_parse_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_arguments_t *out_arguments, parse_error_list_t *out_errors, std::vector<size_t> *out_unused_arguments)
 {
     return default_register.parse_arguments(cmd, argv, out_arguments, out_errors, out_unused_arguments);
+}
+
+/* Returns a reference to the value in the map for the given key, or NULL */
+const wcstring_list_t *docopt_arguments_t::get_list_internal(const wcstring &key) const
+{
+    std::map<wcstring, wcstring_list_t>::const_iterator where = this->vals.find(key);
+    return where != this->vals.end() ? &where->second : NULL;
+}
+
+bool docopt_arguments_t::has(const wchar_t *key) const
+{
+    return this->vals.find(key) != this->vals.end();
+}
+
+bool docopt_arguments_t::has(const wcstring &key) const
+{
+    return this->vals.find(key) != this->vals.end();
+}
+
+const wcstring_list_t &docopt_arguments_t::get_list(const wchar_t *key) const
+{
+    static const wcstring_list_t empty;
+    const wcstring_list_t *result = this->get_list_internal(key);
+    return result ? *result : empty;
+}
+
+const wcstring &docopt_arguments_t::get(const wchar_t *key) const
+{
+    static const wcstring empty;
+    const wcstring_list_t &result = this->get_list(key);
+    return result.empty() ? empty : result.at(0);
+}
+
+wcstring docopt_arguments_t::dump() const
+{
+    wcstring result;
+    for (std::map<wcstring, wcstring_list_t>::const_iterator iter = this->vals.begin(); iter != this->vals.end(); ++iter)
+    {
+        append_format(result, L"arg: %ls -> %lu\n", iter->first.c_str(), iter->second.size());
+        for (size_t i=0; i < iter->second.size(); i++)
+        {
+            append_format(result, L"\t%ls\n", iter->second.at(i).c_str());
+        }
+    }
+    return result;
+}
+
+void docopt_arguments_t::swap(docopt_arguments_t &rhs)
+{
+    this->vals.swap(rhs.vals);
 }

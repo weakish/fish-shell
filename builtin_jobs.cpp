@@ -179,15 +179,15 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
 
     int found=0;
     jobs_mode_t mode = JOBS_DEFAULT;
-    if (args_contain(args, L"--pid"))
+    if (args.has(L"--pid"))
     {
         mode = JOBS_PRINT_PID;
     }
-    else if (args_contain(args, L"--command"))
+    else if (args.has(L"--command"))
     {
         mode = JOBS_PRINT_COMMAND;
     }
-    else if (args_contain(args, L"--group"))
+    else if (args.has(L"--group"))
     {
         mode = JOBS_PRINT_GROUP;
     }
@@ -198,7 +198,7 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
         found=1;
     }
 
-    if (args_contain(args, L"--last"))
+    if (args.has(L"--last"))
     {
         /* Ignore unconstructed jobs, i.e. ourself. */
         job_iterator_t jobs;
@@ -216,7 +216,7 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
     }
     else
     {
-        const wcstring_list_t &pids = args[L"<pid>"];
+        const wcstring_list_t &pids = args.get_list(L"<pid>");
         if (! pids.empty())
         {
             found = 1;

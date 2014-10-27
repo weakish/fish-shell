@@ -376,12 +376,6 @@ static void builtin_missing_argument(parser_t &parser, const wchar_t *cmd, const
 }
 
 
-static bool args_contain(const docopt_arguments_t &args, const wchar_t *key)
-{
-    assert(key != NULL);
-    return args.find(key) != args.end();
-}
-
 /* Helper function to perform docopt parsing. Returns true if execution should continue. */
 static bool parse_argv_or_show_help(parser_t &parser, const wchar_t * const * argv, docopt_arguments_t *out_args, int *out_status, bool dump_args = false)
 {
@@ -400,7 +394,7 @@ static bool parse_argv_or_show_help(parser_t &parser, const wchar_t * const * ar
         *out_status = STATUS_BUILTIN_ERROR;
         continue_execution = false;
     }
-    else if (args_contain(*out_args, L"--help"))
+    else if (out_args->has(L"--help"))
     {
         // Show help and then stop execution
         builtin_print_help(parser, argv[0], stderr_buffer);
@@ -410,14 +404,7 @@ static bool parse_argv_or_show_help(parser_t &parser, const wchar_t * const * ar
     // Some debugging code
     if (parsed && dump_args)
     {
-        for (docopt_arguments_t::const_iterator iter = out_args->begin(); iter != out_args->end(); ++iter)
-        {
-            fprintf(stderr, "arg: %ls -> %lu\n", iter->first.c_str(), iter->second.size());
-            for (size_t i=0; i < iter->second.size(); i++)
-            {
-                fprintf(stderr, "\t%ls\n", iter->second.at(i).c_str());
-            }
-        }
+        fprintf(stderr, "%ls", out_args->dump().c_str());
     }
     return continue_execution;
 }

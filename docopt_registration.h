@@ -42,6 +42,39 @@ enum docopt_parse_flags_t {
     flag_resolve_unambiguous_prefixes = 1U << 2,
 };
 
+/* Helper class for representing the result of parsing argv via docopt. */
+class docopt_arguments_t
+{
+    friend class doc_register_t;
+    // The map from key to value
+    std::map<wcstring, wcstring_list_t> vals;
+    
+    const wcstring_list_t *get_list_internal(const wcstring &key) const;
+    
+    public:
+    void swap(docopt_arguments_t &rhs);
+    
+    /* Returns true if there is a value for the given key */
+    bool has(const wchar_t *) const;
+    bool has(const wcstring &) const;
+    
+    /* Returns number of arguments */
+    size_t size() const
+    {
+        return vals.size();
+    }
+    
+    /* Returns the array of values for a given key, or an empty list if none */
+    const wcstring_list_t &get_list(const wchar_t *) const;
+    
+    /* Returns the single value for a given key, or an empty string if none */
+    const wcstring &get(const wchar_t *) const;
+    
+    /* Helper function for "dumping" args to a string, for debugging */
+    wcstring dump() const;
+};
+
+
 /* Given a command and proposed arguments for the command, return a vector of equal size containing a status for each argument. Returns an empty vector if we have no validation information. */
 std::vector<docopt_argument_status_t> docopt_validate_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_parse_flags_t flags = flags_default);
 
@@ -55,7 +88,6 @@ wcstring docopt_conditions_for_variable(const wcstring &cmd, const wcstring &var
 wcstring docopt_description_for_option(const wcstring &cmd, const wcstring &option);
 
 /* Given a command and a list of arguments, parses it into an argument list. Returns by reference: a map from argument name to value, a list of errors, and a list of unused arguments. If there is no docopt registration, the result is false. */
-typedef std::map<wcstring, wcstring_list_t> docopt_arguments_t;
 bool docopt_parse_arguments(const wcstring &cmd, const wcstring_list_t &argv, docopt_arguments_t *out_arguments, parse_error_list_t *out_errors, std::vector<size_t> *out_unused_arguments);
 
 #endif
