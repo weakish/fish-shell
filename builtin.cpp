@@ -375,6 +375,53 @@ static void builtin_missing_argument(parser_t &parser, const wchar_t *cmd, const
     builtin_print_help(parser, cmd, stderr_buffer);
 }
 
+
+static bool args_contain(const docopt_arguments_t &args, const wchar_t *key)
+{
+    assert(key != NULL);
+    return args.find(key) != args.end();
+}
+
+/* Helper function to perform docopt parsing. Returns true if execution should continue. */
+static bool parse_argv_or_show_help(parser_t &parser, const wchar_t * const * argv, docopt_arguments_t *out_args, int *out_status, bool dump_args = false)
+{
+    int argcount = builtin_count_args(argv);
+    assert(argcount >= 1);
+    bool continue_execution = true;
+    *out_status = STATUS_BUILTIN_OK;
+    parse_error_list_t errors;
+    const wcstring_list_t argv_list = wcstring_list_t(argv, argv + argcount);
+    const wcstring &cmd = argv_list.at(0);
+    bool parsed = docopt_parse_arguments(cmd, argv_list, out_args, &errors, NULL /* unused_args */);
+    if (! parsed)
+    {
+        // TODO: error handling
+        builtin_print_help(parser, argv[0], stderr_buffer);
+        *out_status = STATUS_BUILTIN_ERROR;
+        continue_execution = false;
+    }
+    else if (args_contain(*out_args, L"--help"))
+    {
+        // Show help and then stop execution
+        builtin_print_help(parser, argv[0], stderr_buffer);
+        continue_execution = false;
+    }
+    
+    // Some debugging code
+    if (parsed && dump_args)
+    {
+        for (docopt_arguments_t::const_iterator iter = out_args->begin(); iter != out_args->end(); ++iter)
+        {
+            fprintf(stderr, "arg: %ls -> %lu\n", iter->first.c_str(), iter->second.size());
+            for (size_t i=0; i < iter->second.size(); i++)
+            {
+                fprintf(stderr, "\t%ls\n", iter->second.at(i).c_str());
+            }
+        }
+    }
+    return continue_execution;
+}
+
 /*
   Here follows the definition of all builtin commands. The function
   names are all on the form builtin_NAME where NAME is the name of the
@@ -4134,22 +4181,10 @@ static const builtin_data_t *builtin_lookup(const wcstring &name)
     }
 }
 
-static void docopt_experiment_init() {
-    const wchar_t *jobs_desc =
-    L"Usage:\n"
-    L"       jobs [options] [<pid>]\n"
-    L"\n"
-    L"Options:\n"
-    L"       -c, --command  prints the command name for each process in jobs.\n"
-    L"       -g, --group  only prints the group ID of each job.\n"
-    L"       -h, --help  displays a help message and exits.\n"
-    L"       -l, --last  prints only the last job to be started.\n"
-    L"       -p, --pid  prints the process ID for each process in all jobs.\n"
-    L"Conditions:\n"
-    L"       <pid>  (jobs --pid)"
-    ;
-    
-    docopt_register_usage(L"jobs", L"default", jobs_desc, L"", NULL);
+extern const wchar_t * const g_jobs_usage;
+
+static void docopt_init() {
+    docopt_register_usage(L"jobs", L"default", g_jobs_usage, L"", NULL);
 }
 
 void builtin_init()
@@ -4161,7 +4196,7 @@ void builtin_init()
         intern_static(builtin_datas[i].name);
     }
     
-    docopt_experiment_init();
+    docopt_init();
 }
 
 void builtin_destroy()

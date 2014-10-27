@@ -28,14 +28,13 @@
 /**
    Print modes for the jobs builtin
 */
-enum
+enum jobs_mode_t
 {
     JOBS_DEFAULT, /**< Print lots of general info */
     JOBS_PRINT_PID, /**< Print pid of each process in job */
     JOBS_PRINT_COMMAND, /**< Print command name of each process in job */
     JOBS_PRINT_GROUP, /**< Print group id of job */
-}
-;
+};
 
 
 
@@ -154,120 +153,54 @@ static void builtin_jobs_print(const job_t *j, int mode, int header)
 }
 
 
+static const wchar_t * const g_jobs_usage =
+    L"Usage:\n"
+    L"       jobs [options] [<pid>...]\n"
+    L"\n"
+    L"Options:\n"
+    L"       -c, --command  prints the command name for each process in jobs.\n"
+    L"       -g, --group  only prints the group ID of each job.\n"
+    L"       -h, --help  displays a help message and exits.\n"
+    L"       -l, --last  prints only the last job to be started.\n"
+    L"       -p, --pid  prints the process ID for each process in all jobs.\n"
+    L"Conditions:\n"
+    L"       <pid>  (jobs --pid)"
+;
 
-/**
-   The jobs builtin. Used fopr printing running jobs. Defined in builtin_jobs.c.
-*/
+/** The jobs builtin. Used for printing running jobs. */
 static int builtin_jobs(parser_t &parser, wchar_t **argv)
 {
-    int argc=0;
-    int found=0;
-    int mode=JOBS_DEFAULT;
-    int print_last = 0;
-
-    argc = builtin_count_args(argv);
-    woptind=0;
-
-    while (1)
+    docopt_arguments_t args;
+    int status;
+    if (! parse_argv_or_show_help(parser, argv, &args, &status))
     {
-        static const struct woption
-                long_options[] =
-        {
-            {
-                L"pid", no_argument, 0, 'p'
-            }
-            ,
-            {
-                L"command", no_argument, 0, 'c'
-            }
-            ,
-            {
-                L"group", no_argument, 0, 'g'
-            }
-            ,
-            {
-                L"last", no_argument, 0, 'l'
-            }
-            ,
-            {
-                L"help", no_argument, 0, 'h'
-            }
-            ,
-            {
-                0, 0, 0, 0
-            }
-        }
-        ;
-
-        int opt_index = 0;
-
-        int opt = wgetopt_long(argc,
-                               argv,
-                               L"pclgh",
-                               long_options,
-                               &opt_index);
-        if (opt == -1)
-            break;
-
-        switch (opt)
-        {
-            case 0:
-                if (long_options[opt_index].flag != 0)
-                    break;
-                append_format(stderr_buffer,
-                              BUILTIN_ERR_UNKNOWN,
-                              argv[0],
-                              long_options[opt_index].name);
-
-                builtin_print_help(parser, argv[0], stderr_buffer);
-
-
-                return 1;
-
-
-            case 'p':
-                mode=JOBS_PRINT_PID;
-                break;
-
-            case 'c':
-                mode=JOBS_PRINT_COMMAND;
-                break;
-
-            case 'g':
-                mode=JOBS_PRINT_GROUP;
-                break;
-
-            case 'l':
-            {
-                print_last = 1;
-                break;
-            }
-
-            case 'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
-                return 0;
-
-            case '?':
-                builtin_unknown_option(parser, argv[0], argv[woptind-1]);
-                return 1;
-
-        }
+        return status;
     }
 
-
-    /*
-      Do not babble if not interactive
-    */
+    int found=0;
+    jobs_mode_t mode = JOBS_DEFAULT;
+    if (args_contain(args, L"--pid"))
+    {
+        mode = JOBS_PRINT_PID;
+    }
+    else if (args_contain(args, L"--command"))
+    {
+        mode = JOBS_PRINT_COMMAND;
+    }
+    else if (args_contain(args, L"--group"))
+    {
+        mode = JOBS_PRINT_GROUP;
+    }
+    
+    /* Do not babble if not interactive */
     if (builtin_out_redirect)
     {
         found=1;
     }
 
-    if (print_last)
+    if (args_contain(args, L"--last"))
     {
-        /*
-          Ignore unconstructed jobs, i.e. ourself.
-        */
+        /* Ignore unconstructed jobs, i.e. ourself. */
         job_iterator_t jobs;
         const job_t *j;
         while ((j = jobs.next()))
@@ -283,18 +216,17 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
     }
     else
     {
-        if (woptind < argc)
+        const wcstring_list_t &pids = args[L"<pid>"];
+        if (! pids.empty())
         {
-            int i;
-
             found = 1;
 
-            for (i=woptind; i<argc; i++)
+            for (size_t i=0; i < pids.size(); i++)
             {
                 int pid;
                 wchar_t *end;
                 errno=0;
-                pid=fish_wcstoi(argv[i], &end, 10);
+                pid=fish_wcstoi(pids.at(i).c_str(), &end, 10);
                 if (errno || *end)
                 {
                     append_format(stderr_buffer,
@@ -346,6 +278,6 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
         return 1;
     }
 
-    return 0;
+    return status;
 }
 
