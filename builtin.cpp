@@ -585,16 +585,15 @@ static int get_terminfo_sequence(const wchar_t *seq, wcstring *out_seq)
 /**
    Add specified key binding.
  */
-static int builtin_bind_add(const wchar_t *seq, const wchar_t **cmds, size_t cmds_len,
-                            const wchar_t *mode, const wchar_t *sets_mode, int terminfo)
+static int builtin_bind_add(const wcstring &seq, const wcstring_list_t &cmds, const wchar_t *mode, const wchar_t *sets_mode, int terminfo)
 {
 
     if (terminfo)
     {
         wcstring seq2;
-        if (get_terminfo_sequence(seq, &seq2))
+        if (get_terminfo_sequence(seq.c_str(), &seq2))
         {
-            input_mapping_add(seq2.c_str(), cmds, cmds_len, mode, sets_mode);
+            input_mapping_add(seq2.c_str(), cmds, mode, sets_mode);
         }
         else
         {
@@ -604,7 +603,7 @@ static int builtin_bind_add(const wchar_t *seq, const wchar_t **cmds, size_t cmd
     }
     else
     {
-        input_mapping_add(seq, cmds, cmds_len, mode, sets_mode);
+        input_mapping_add(seq.c_str(), cmds, mode, sets_mode);
     }
 
     return 0;
@@ -618,7 +617,7 @@ static int builtin_bind_add(const wchar_t *seq, const wchar_t **cmds, size_t cmd
    \param all if specified, _all_ key bindings will be erased
    \param mode if specified, only bindings from that mode will be erased. If not given and \c all is \c false, \c DEFAULT_BIND_MODE will be used.
  */
-static int builtin_bind_erase(wchar_t **seq, int all, const wchar_t *mode, int use_terminfo)
+static int builtin_bind_erase(const wcstring_list_t &seq_list, int all, const wchar_t *mode, int use_terminfo)
 {
     if (all)
     {
@@ -640,13 +639,13 @@ static int builtin_bind_erase(wchar_t **seq, int all, const wchar_t *mode, int u
         int res = 0;
 
         if (mode == NULL) mode = DEFAULT_BIND_MODE;
-
-        while (*seq)
+        for (size_t i=0; i < seq_list.size(); i++)
         {
+            const wcstring &seq = seq_list.at(i);
             if (use_terminfo)
             {
                 wcstring seq2;
-                if (get_terminfo_sequence(*seq++, &seq2))
+                if (get_terminfo_sequence(seq.c_str(), &seq2))
                 {
                     input_mapping_erase(seq2.c_str(), mode);
                 }
@@ -657,7 +656,7 @@ static int builtin_bind_erase(wchar_t **seq, int all, const wchar_t *mode, int u
             }
             else
             {
-                input_mapping_erase(*seq++, mode);
+                input_mapping_erase(seq, mode);
             }
         }
 
@@ -665,12 +664,38 @@ static int builtin_bind_erase(wchar_t **seq, int all, const wchar_t *mode, int u
     }
 }
 
+static const wchar_t * const g_bind_usage =
+    L"Usage:\n"
+    L"    bind [-M <MODE> | --mode <MODE>] [-m <NEW_MODE> | --sets-mode <NEW_MODE>]\n"
+    L"         [-k | --key] <SEQUENCE> <COMMAND>...\n"
+    L"    bind [-M <MODE> | --mode <MODE>] [-k | --key] <SEQUENCE>\n"
+    L"    bind (-f | --function-names)\n"
+    L"    bind (-K | --key-names) [(-a | --all)]\n"
+    L"    bind (-e | --erase) [-M <MODE> | --mode <MODE>]\n"
+    L"         [-a | --all] [-k | --key] [<SEQUENCE>...]\n"
+    L"    bind (-h | --help)\n"
+    L"Options:\n"
+    L"    -k, --key                                Specify a key name, such as 'left' or 'backspace' instead of a character sequence.\n"
+    L"    -K, --key-names                          Display a list of available key names. Specifying -a or --all"
+    L"                                             includes keys that don't have a known mapping\n"
+    L"    -M <MODE>, --mode <MODE>                 Specify a bind mode that the bind is used in. Defaults to 'default'\n"
+    L"    -m <NEW_MODE>, --sets-mode <NEW_MODE>    Change the current mode to NEW_MODE after this binding is executed\n"
+    L"    -e, --erase                              Erase the binding with the given sequence and mode instead of defining a new one.\n"
+    L"                                             Multiple sequences can be specified with this flag. Specifying -a or --all with -M or --mode\n"
+    L"                                             erases all binds in the given mode regardless of sequence. Specifying -a or --all\n"
+    L"                                             without -M or --mode erases all binds in all modes regardless of sequence.\n"
+    L"    -a, --all                                See --erase and --key-names.\n"
+;
 
-/**
-   The bind builtin, used for setting character sequences
-*/
-static int builtin_bind(parser_t &parser, wchar_t **argv)
+/** The bind builtin, used for setting character sequences */
+static int builtin_bind(parser_t &parser, wchar_t **in_argv)
 {
+    docopt_arguments_t args;
+    int status;
+    if (! parse_argv_or_show_help(parser, in_argv, &args, &status, 0 && true))
+    {
+        return status;
+    }
 
     enum
     {
@@ -678,102 +703,41 @@ static int builtin_bind(parser_t &parser, wchar_t **argv)
         BIND_ERASE,
         BIND_KEY_NAMES,
         BIND_FUNCTION_NAMES
-    };
-
-    int argc=builtin_count_args(argv);
-    int mode = BIND_INSERT;
-    int res = STATUS_BUILTIN_OK;
-    int all = 0;
-
+    } mode = BIND_INSERT;
+    
     const wchar_t *bind_mode = DEFAULT_BIND_MODE;
     bool bind_mode_given = false;
     const wchar_t *sets_bind_mode = DEFAULT_BIND_MODE;
     bool sets_bind_mode_given = false;
 
-    int use_terminfo = 0;
-
-    woptind=0;
-
-    static const struct woption long_options[] =
+    const bool use_terminfo = args.has(L"--key");
+    
+    const bool all = args.has(L"--all");
+    if (args.has(L"--erase"))
     {
-        { L"all", no_argument, 0, 'a' },
-        { L"erase", no_argument, 0, 'e' },
-        { L"function-names", no_argument, 0, 'f' },
-        { L"help", no_argument, 0, 'h' },
-        { L"key", no_argument, 0, 'k' },
-        { L"key-names", no_argument, 0, 'K' },
-        { L"mode", required_argument, 0, 'M' },
-        { L"sets-mode", required_argument, 0, 'm' },
-        { 0, 0, 0, 0 }
-    };
-
-    while (1)
-    {
-        int opt_index = 0;
-        int opt = wgetopt_long(argc,
-                               argv,
-                               L"aehkKfM:m:",
-                               long_options,
-                               &opt_index);
-
-        if (opt == -1)
-            break;
-
-        switch (opt)
-        {
-            case 0:
-                if (long_options[opt_index].flag != 0)
-                    break;
-                append_format(stderr_buffer,
-                              BUILTIN_ERR_UNKNOWN,
-                              argv[0],
-                              long_options[opt_index].name);
-                builtin_print_help(parser, argv[0], stderr_buffer);
-
-                return STATUS_BUILTIN_ERROR;
-
-            case 'a':
-                all = 1;
-                break;
-
-            case 'e':
-                mode = BIND_ERASE;
-                break;
-
-            case 'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
-                return STATUS_BUILTIN_OK;
-
-            case 'k':
-                use_terminfo = 1;
-                break;
-
-            case 'K':
-                mode = BIND_KEY_NAMES;
-                break;
-
-            case 'f':
-                mode = BIND_FUNCTION_NAMES;
-                break;
-
-            case 'M':
-                bind_mode = woptarg;
-                bind_mode_given = true;
-                break;
-
-            case 'm':
-                sets_bind_mode = woptarg;
-                sets_bind_mode_given = true;
-                break;
-
-            case '?':
-                builtin_unknown_option(parser, argv[0], argv[woptind-1]);
-                return STATUS_BUILTIN_ERROR;
-
-
-        }
+        mode = BIND_ERASE;
     }
-
+    else if (args.has(L"--key-names"))
+    {
+        mode = BIND_KEY_NAMES;
+    }
+    else if (args.has(L"--function-names"))
+    {
+        mode = BIND_FUNCTION_NAMES;
+    }
+    
+    if (args.has(L"--mode"))
+    {
+        bind_mode = args.get(L"--mode").c_str();
+        bind_mode_given = true;
+    }
+    
+    if (args.has(L"--sets-mode"))
+    {
+        sets_bind_mode = args.get(L"--sets-mode").c_str();
+        sets_bind_mode_given = true;
+    }
+    
     /*
      * if mode is given, but not new mode, default to new mode to mode
      */
@@ -782,69 +746,62 @@ static int builtin_bind(parser_t &parser, wchar_t **argv)
         sets_bind_mode = bind_mode;
     }
 
+    const wcstring_list_t &seq_list = args.get_list(L"<SEQUENCE>");
+    const wcstring_list_t &command_list = args.get_list(L"<COMMAND>");
     switch (mode)
     {
-
         case BIND_ERASE:
         {
-            if (builtin_bind_erase(&argv[woptind], all, bind_mode_given ? bind_mode : NULL, use_terminfo))
+            if (builtin_bind_erase(seq_list, all, bind_mode_given ? bind_mode : NULL, use_terminfo))
             {
-                res = STATUS_BUILTIN_ERROR;
+                status = STATUS_BUILTIN_ERROR;
             }
             break;
         }
 
         case BIND_INSERT:
         {
-            switch (argc-woptind)
+            if (seq_list.empty())
             {
-                case 0:
+                builtin_bind_list(bind_mode_given ? bind_mode : NULL);
+            }
+            else if (command_list.empty())
+            {
+                wcstring seq;
+                if (use_terminfo)
                 {
-                    builtin_bind_list(bind_mode_given ? bind_mode : NULL);
-                    break;
+                    if (!get_terminfo_sequence(seq_list.at(0).c_str(), &seq))
+                    {
+                        status = STATUS_BUILTIN_ERROR;
+                        // get_terminfo_sequence already printed the error
+                        break;
+                    }
                 }
-
-                case 1:
+                else
                 {
-                    wcstring seq;
+                    seq = seq_list.at(0);
+                }
+                if (!builtin_bind_list_one(seq, bind_mode))
+                {
+                    status = STATUS_BUILTIN_ERROR;
+                    wcstring eseq = escape_string(seq_list.at(0), 0);
                     if (use_terminfo)
                     {
-                        if (!get_terminfo_sequence(argv[woptind], &seq))
-                        {
-                            res = STATUS_BUILTIN_ERROR;
-                            // get_terminfo_sequence already printed the error
-                            break;
-                        }
+                        append_format(stderr_buffer, _(L"%ls: No binding found for key '%ls'\n"), in_argv[0], eseq.c_str());
                     }
                     else
                     {
-                        seq = argv[woptind];
+                        append_format(stderr_buffer, _(L"%ls: No binding found for sequence '%ls'\n"), in_argv[0], eseq.c_str());
                     }
-                    if (!builtin_bind_list_one(seq, bind_mode))
-                    {
-                        res = STATUS_BUILTIN_ERROR;
-                        wcstring eseq = escape_string(argv[woptind], 0);
-                        if (use_terminfo)
-                        {
-                            append_format(stderr_buffer, _(L"%ls: No binding found for key '%ls'\n"), argv[0], eseq.c_str());
-                        }
-                        else
-                        {
-                            append_format(stderr_buffer, _(L"%ls: No binding found for sequence '%ls'\n"), argv[0], eseq.c_str());
-                        }
-                    }
-                    break;
                 }
-
-                default:
+            }
+            else
+            {
+                if (builtin_bind_add(seq_list.at(0), command_list, bind_mode, sets_bind_mode, use_terminfo))
                 {
-                    if (builtin_bind_add(argv[woptind], (const wchar_t **)argv + (woptind + 1), argc - (woptind + 1), bind_mode, sets_bind_mode, use_terminfo))
-                    {
-                        res = STATUS_BUILTIN_ERROR;
-                    }
-                    break;
+                    status = STATUS_BUILTIN_ERROR;
                 }
-
+                
             }
             break;
         }
@@ -865,13 +822,13 @@ static int builtin_bind(parser_t &parser, wchar_t **argv)
 
         default:
         {
-            res = STATUS_BUILTIN_ERROR;
-            append_format(stderr_buffer, _(L"%ls: Invalid state\n"), argv[0]);
+            status = STATUS_BUILTIN_ERROR;
+            append_format(stderr_buffer, _(L"%ls: Invalid state\n"), in_argv[0]);
             break;
         }
     }
 
-    return res;
+    return status;
 }
 
 
@@ -4170,11 +4127,13 @@ static const builtin_data_t *builtin_lookup(const wcstring &name)
 
 extern const wchar_t * const g_jobs_usage;
 extern const wchar_t * const g_set_color_usage;
+extern const wchar_t * const g_bind_usage;
 
 static void docopt_init()
-{    
+{
     docopt_register_usage(L"jobs", L"default", g_jobs_usage, L"", NULL);
     docopt_register_usage(L"set_color", L"default", g_set_color_usage, L"", NULL);
+    docopt_register_usage(L"bind", L"default", g_bind_usage, L"", NULL);
 }
 
 void builtin_init()

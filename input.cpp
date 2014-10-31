@@ -357,19 +357,16 @@ static void input_mapping_insert_sorted(const input_mapping_t &new_mapping)
 }
 
 /* Adds an input mapping */
-void input_mapping_add(const wchar_t *sequence, const wchar_t **commands, size_t commands_len,
+void input_mapping_add(const wchar_t *sequence, const wcstring_list_t &commands_vector,
                        const wchar_t *mode, const wchar_t *sets_mode)
 {
     CHECK(sequence,);
-    CHECK(commands,);
     CHECK(mode,);
     CHECK(sets_mode,);
 
     // debug( 0, L"Add mapping from %ls to %ls in mode %ls", escape(sequence, ESCAPE_ALL).c_str(), escape(command, ESCAPE_ALL).c_str(), mode);
 
     // remove existing mappings with this sequence
-    const wcstring_list_t commands_vector(commands, commands + commands_len);
-
     for (size_t i=0; i<mapping_list.size(); i++)
     {
         input_mapping_t &m = mapping_list.at(i);
@@ -389,7 +386,7 @@ void input_mapping_add(const wchar_t *sequence, const wchar_t **commands, size_t
 void input_mapping_add(const wchar_t *sequence, const wchar_t *command,
                        const wchar_t *mode, const wchar_t *sets_mode)
 {
-    input_mapping_add(sequence, &command, 1, mode, sets_mode);
+    input_mapping_add(sequence, wcstring_list_t(1, command), mode, sets_mode);
 }
 
 /**
