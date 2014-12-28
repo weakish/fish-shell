@@ -22,6 +22,8 @@
 
 #if HAVE_NCURSES_H
 #include <ncurses.h>
+#elif HAVE_NCURSES_CURSES_H
+#include <ncurses/curses.h>
 #else
 #include <curses.h>
 #endif
@@ -56,45 +58,6 @@
 
 static int writeb_internal(char c);
 
-/**
- Names of different colors.
- */
-static const wchar_t *col[]=
-{
-    L"black",
-    L"red",
-    L"green",
-    L"brown",
-    L"yellow",
-    L"blue",
-    L"magenta",
-    L"purple",
-    L"cyan",
-    L"white",
-    L"normal"
-}
-;
-
-/**
- Mapping from color name (the 'col' array) to color index as used in
- ANSI color terminals, and also the fish_color_* constants defined
- in highlight.h. Non-ANSI terminals will display the wrong colors,
- since they use a different mapping.
- */
-static const int col_idx[]=
-{
-    0,
-    1,
-    2,
-    3,
-    3,
-    4,
-    5,
-    5,
-    6,
-    7,
-    FISH_COLOR_NORMAL,
-};
 
 /**
  The function used for output
@@ -527,134 +490,45 @@ void writestr(const wchar_t *str)
         delete[] buffer;
 }
 
-
-void writestr_ellipsis(const wchar_t *str, int max_width)
+rgb_color_t best_color(const std::vector<rgb_color_t> &candidates, color_support_t support)
 {
-    int written=0;
-    int tot;
-
-    CHECK(str,);
-
-    tot = fish_wcswidth(str);
-
-    if (tot <= max_width)
+    if (candidates.empty())
     {
-        writestr(str);
-        return;
+        return rgb_color_t::none();
     }
-
-    while (*str != 0)
+    
+    rgb_color_t first_rgb = rgb_color_t::none(), first_named = rgb_color_t::none();
+    for (size_t i=0; i < candidates.size(); i++)
     {
-        int w = fish_wcwidth(*str);
-        if (written+w+fish_wcwidth(ellipsis_char)>max_width)
+        const rgb_color_t &color = candidates.at(i);
+        if (first_rgb.is_none() && color.is_rgb())
         {
-            break;
+            first_rgb = color;
         }
-        written+=w;
-        writech(*(str++));
+        if (first_named.is_none() && color.is_named())
+        {
+            first_named = color;
+        }
     }
-
-    written += fish_wcwidth(ellipsis_char);
-    writech(ellipsis_char);
-
-    while (written < max_width)
+    // If we have both RGB and named colors, then prefer rgb if term256 is supported
+    rgb_color_t result = rgb_color_t::none();
+    bool has_term256 = !! (support & color_support_term256);
+    if ((!first_rgb.is_none() && has_term256) || first_named.is_none())
     {
-        written++;
-        writestr(L" ");
-    }
-}
-
-int write_escaped_str(const wchar_t *str, int max_len)
-{
-
-    int i;
-    int written=0;
-
-    CHECK(str, 0);
-
-    wcstring out = escape(str, ESCAPE_ALL);
-    int len = fish_wcswidth(out);
-
-    if (max_len && (max_len < len))
-    {
-        for (i=0; (written+fish_wcwidth(out[i]))<=(max_len-1); i++)
-        {
-            writech(out[i]);
-            written += fish_wcwidth(out[i]);
-        }
-        writech(ellipsis_char);
-        written += fish_wcwidth(ellipsis_char);
-
-        for (i=written; i<max_len; i++)
-        {
-            writech(L' ');
-            written++;
-        }
+        result = first_rgb;
     }
     else
     {
-        written = len;
-        writestr(out.c_str());
+        result = first_named;
     }
-
-    return written;
-}
-
-
-int output_color_code(const wcstring &val, bool is_background)
-{
-    size_t i;
-    int color=FISH_COLOR_NORMAL;
-    int is_bold=0;
-    int is_underline=0;
-
-    if (val.empty())
-        return FISH_COLOR_NORMAL;
-
-    wcstring_list_t el;
-    tokenize_variable_array(val, el);
-
-    for (size_t j=0; j < el.size(); j++)
+    if (result.is_none())
     {
-        const wcstring &next = el.at(j);
-        wcstring color_name;
-        if (is_background)
-        {
-            // look for something like "--background=red"
-            const wcstring prefix = L"--background=";
-            if (string_prefixes_string(prefix, next))
-            {
-                color_name = wcstring(next, prefix.size());
-            }
-
-        }
-        else
-        {
-            if (next == L"--bold" || next == L"-o")
-                is_bold = true;
-            else if (next == L"--underline" || next == L"-u")
-                is_underline = true;
-            else
-                color_name = next;
-        }
-
-        if (! color_name.empty())
-        {
-            for (i=0; i<FISH_COLORS; i++)
-            {
-                if (wcscasecmp(col[i], color_name.c_str()) == 0)
-                {
-                    color = col_idx[i];
-                    break;
-                }
-            }
-        }
-
+        result = candidates.at(0);
     }
-
-    return color | (is_bold?FISH_COLOR_BOLD:0) | (is_underline?FISH_COLOR_UNDERLINE:0);
+    return result;
 }
 
+/* This code should be refactored to enable sharing with builtin_set_color */
 rgb_color_t parse_color(const wcstring &val, bool is_background)
 {
     int is_bold=0;
@@ -697,30 +571,8 @@ rgb_color_t parse_color(const wcstring &val, bool is_background)
             }
         }
     }
-
-    // Pick the best candidate
-    rgb_color_t first_rgb = rgb_color_t::none(), first_named = rgb_color_t::none();
-    for (size_t i=0; i < candidates.size(); i++)
-    {
-        const rgb_color_t &color = candidates.at(i);
-        if (color.is_rgb() && first_rgb.is_none())
-            first_rgb = color;
-        if (color.is_named() && first_named.is_none())
-            first_named = color;
-    }
-
-    // If we have both RGB and named colors, then prefer rgb if term256 is supported
-    rgb_color_t result;
-    bool has_term256 = !! (output_get_color_support() & color_support_term256);
-    if ((!first_rgb.is_none() && has_term256) || first_named.is_none())
-    {
-        result = first_rgb;
-    }
-    else
-    {
-        result = first_named;
-    }
-
+    rgb_color_t result = best_color(candidates, output_get_color_support());
+    
     if (result.is_none())
         result = rgb_color_t::normal();
 

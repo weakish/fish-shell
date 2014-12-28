@@ -21,6 +21,8 @@
 
 #if HAVE_NCURSES_H
 #include <ncurses.h>
+#elif HAVE_NCURSES_CURSES_H
+#include <ncurses/curses.h>
 #else
 #include <curses.h>
 #endif
@@ -1029,8 +1031,6 @@ env_var_t env_stack_t::get(const wcstring &key, env_mode_flags_t mode) const
         scoped_lock lock(s_env_lock);
 
         const env_node_t *env = search_local ? top.get() : global.get();
-        wcstring result;
-
         while (env != NULL)
         {
             const var_entry_t *entry = env->find_entry(key);
@@ -1216,6 +1216,8 @@ void env_stack_t::pop()
                 break;
             }
         }
+        
+        locker.unlock();
 
         if (locale_changed)
             handle_locale();

@@ -80,3 +80,20 @@ echo $foo[d]
 
 echo ()[1]
 echo ()[d]
+
+# Test tilde expansion
+# On OS X, /tmp is symlinked to /private/tmp
+# $PWD is our best bet for resolving it
+set -l saved $PWD
+cd (mktemp -d)
+set tmpdir $PWD
+cd $saved
+mkdir $tmpdir/realhome
+ln -s $tmpdir/realhome $tmpdir/linkhome
+set expandedtilde (env HOME=$tmpdir/linkhome ../fish -c 'echo ~')
+if test $expandedtilde != $tmpdir/realhome
+	echo '~ expands to' $expandedtilde ' - expected ' $tmpdir/realhome
+end
+unlink $tmpdir/linkhome
+rmdir $tmpdir/realhome
+rmdir $tmpdir

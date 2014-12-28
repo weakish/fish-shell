@@ -3,6 +3,7 @@
 #include "fallback.h"
 #include "wutil.h"
 #include "proc.h"
+#include "expand.h"
 #include <vector>
 #include <algorithm>
 
@@ -215,7 +216,6 @@ wcstring token_type_description(parse_token_type_t type)
         case parse_token_type_terminate:
             return L"token_terminate";
 
-
         case parse_special_type_parse_error:
             return L"parse_error";
         case parse_special_type_tokenizer_error:
@@ -236,23 +236,24 @@ static const struct
 }
 keyword_map[] =
 {
+    /* Note that these must be sorted (except for the first), so that we can do binary search */
     KEYWORD_MAP(none),
-    KEYWORD_MAP(if),
-    KEYWORD_MAP(else),
-    KEYWORD_MAP(for),
-    KEYWORD_MAP(in),
-    KEYWORD_MAP(while),
-    KEYWORD_MAP(begin),
-    KEYWORD_MAP(function),
-    KEYWORD_MAP(switch),
-    KEYWORD_MAP(case),
-    KEYWORD_MAP(end),
     KEYWORD_MAP(and),
-    KEYWORD_MAP(or),
-    KEYWORD_MAP(not),
-    KEYWORD_MAP(command),
+    KEYWORD_MAP(begin),
     KEYWORD_MAP(builtin),
-    KEYWORD_MAP(exec)
+    KEYWORD_MAP(case),
+    KEYWORD_MAP(command),
+    KEYWORD_MAP(else),
+    KEYWORD_MAP(end),
+    KEYWORD_MAP(exec),
+    KEYWORD_MAP(for),
+    KEYWORD_MAP(function),
+    KEYWORD_MAP(if),
+    KEYWORD_MAP(in),
+    KEYWORD_MAP(not),
+    KEYWORD_MAP(or),
+    KEYWORD_MAP(switch),
+    KEYWORD_MAP(while)
 };
 
 wcstring keyword_description(parse_keyword_t k)
@@ -337,7 +338,10 @@ static wcstring block_type_user_presentable_description(parse_token_type_t type)
 wcstring parse_node_t::describe(void) const
 {
     wcstring result = token_type_description(type);
-    append_format(result, L" (prod %d)", this->production_idx);
+    if (type < FIRST_TERMINAL_TYPE)
+    {
+        append_format(result, L" (prod %d)", this->production_idx);
+    }
     return result;
 }
 
@@ -434,6 +438,10 @@ static void dump_tree_recursive(const parse_node_tree_t &nodes, const wcstring &
     if (node.child_count > 0)
     {
         append_format(*result, L" <%lu children>", node.child_count);
+    }
+    if (node.has_comments())
+    {
+        append_format(*result, L" <has_comments>", node.child_count);
     }
 
     if (node.has_source() && node.type == parse_token_type_string)
@@ -555,11 +563,6 @@ class parse_ll_t
         PARSE_ASSERT(top_symbol.node_idx != NODE_OFFSET_INVALID);
         PARSE_ASSERT(top_symbol.node_idx < nodes.size());
         return nodes.at(top_symbol.node_idx);
-    }
-
-    parse_token_type_t stack_top_type() const
-    {
-        return symbol_stack.back().type;
     }
 
     // Pop from the top of the symbol stack, then push the given production, updating node counts. Note that production_t has type "pointer to array" so some care is required.
@@ -1123,6 +1126,12 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
         nodes.push_back(special_node);
         consumed = true;
 
+        /* Mark special flags */
+        if (token1.type == parse_special_type_comment)
+        {
+            this->node_for_top_symbol().flags |= parse_node_flag_has_comments;
+        }
+
         /* tokenizer errors are fatal */
         if (token1.type == parse_special_type_tokenizer_error)
             this->fatal_errored = true;
@@ -1182,17 +1191,71 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
     }
 }
 
+/* Given an expanded string, returns any keyword it matches */
+static parse_keyword_t keyword_with_name(const wchar_t *name)
+{
+    /* Binary search on keyword_map. Start at 1 since 0 is keyword_none */
+    parse_keyword_t result = parse_keyword_none;
+    size_t left = 1, right = sizeof keyword_map / sizeof *keyword_map;
+    while (left < right)
+    {
+        size_t mid = left + (right - left)/2;
+        int cmp = wcscmp(name, keyword_map[mid].name);
+        if (cmp < 0)
+        {
+            right = mid; // name was smaller than mid
+        }
+        else if (cmp > 0)
+        {
+            left = mid + 1; // name was larger than mid
+        }
+        else
+        {
+            result = keyword_map[mid].keyword; // found it
+            break;
+        }
+    }
+    return result;
+}
+
+/* Given a token, returns the keyword it matches, or parse_keyword_none. */
 static parse_keyword_t keyword_for_token(token_type tok, const wchar_t *tok_txt)
 {
-    parse_keyword_t result = parse_keyword_none;
-    if (tok == TOK_STRING)
+    /* Only strings can be keywords */
+    if (tok != TOK_STRING)
     {
-        for (size_t i=0; i < sizeof keyword_map / sizeof *keyword_map; i++)
+        return parse_keyword_none;
+    }
+    
+    /* If tok_txt is clean (which most are), we can compare it directly. Otherwise we have to expand it. We only expand quotes, and we don't want to do expensive expansions like tilde expansions. So we do our own "cleanliness" check; if we find a character not in our allowed set we know it's not a keyword, and if we never find a quote we don't have to expand! Note that this lowercase set could be shrunk to be just the characters that are in keywords. */
+    parse_keyword_t result = parse_keyword_none;
+    bool needs_expand = false, all_chars_valid = true;
+    const wchar_t *chars_allowed_in_keywords = L"abcdefghijklmnopqrstuvwxyz'\"";
+    for (size_t i=0; tok_txt[i] != L'\0'; i++)
+    {
+        wchar_t c = tok_txt[i];
+        if (! wcschr(chars_allowed_in_keywords, c))
         {
-            if (! wcscmp(keyword_map[i].name, tok_txt))
+            all_chars_valid = false;
+            break;
+        }
+        // If we encounter a quote, we need expansion
+        needs_expand = needs_expand || c == L'"' || c == L'\'';
+    }
+    
+    if (all_chars_valid)
+    {
+        /* Expand if necessary */
+        if (! needs_expand)
+        {
+            result = keyword_with_name(tok_txt);
+        }
+        else
+        {
+            wcstring storage;
+            if (unescape_string(tok_txt, &storage, 0))
             {
-                result = keyword_map[i].keyword;
-                break;
+                result = keyword_with_name(storage.c_str());
             }
         }
     }
@@ -1251,6 +1314,9 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags,
     if (parse_flags & parse_flag_accept_incomplete_tokens)
         tok_options |= TOK_ACCEPT_UNFINISHED;
 
+    if (parse_flags & parse_flag_show_blank_lines)
+        tok_options |= TOK_SHOW_BLANK_LINES;
+
     if (errors == NULL)
         tok_options |= TOK_SQUASH_ERRORS;
 
@@ -1290,7 +1356,12 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags,
             if (parse_flags & parse_flag_continue_after_error)
             {
                 /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
-                size_t error_token_idx = (queue[1].type == parse_special_type_tokenizer_error ? 1 : 0);
+                size_t error_token_idx = 0;
+                if (queue[1].type == parse_special_type_tokenizer_error)
+                {
+                    error_token_idx = (queue[1].type == parse_special_type_tokenizer_error ? 1 : 0);
+                    token_count = -1; // so that it will be 0 after incrementing, and our tokenizer error will be ignored
+                }
 
                 /* Mark a special error token, and then keep going */
                 const parse_token_t token = {parse_special_type_parse_error, parse_keyword_none, false, false, queue[error_token_idx].source_start, queue[error_token_idx].source_length};
@@ -1370,19 +1441,6 @@ const parse_node_t *parse_node_tree_t::get_parent(const parse_node_t &node, pars
         }
     }
     return result;
-}
-
-const parse_node_t *parse_node_tree_t::get_first_ancestor_of_type(const parse_node_t &node, parse_token_type_t desired_type) const
-{
-    const parse_node_t *ancestor = &node;
-    while ((ancestor = this->get_parent(*ancestor)))
-    {
-        if (ancestor->type == desired_type)
-        {
-            break;
-        }
-    }
-    return ancestor;
 }
 
 static void find_nodes_recursive(const parse_node_tree_t &tree, const parse_node_t &parent, parse_token_type_t type, parse_node_tree_t::parse_node_list_t *result, size_t max_count)
@@ -1611,6 +1669,48 @@ parse_node_tree_t::parse_node_list_t parse_node_tree_t::specific_statements_for_
     return result;
 }
 
+parse_node_tree_t::parse_node_list_t parse_node_tree_t::comment_nodes_for_node(const parse_node_t &parent) const
+{
+    parse_node_list_t result;
+    if (parent.has_comments())
+    {
+        /* Walk all our nodes, looking for comment nodes that have the given node as a parent */
+        for (size_t i=0; i < this->size(); i++)
+        {
+            const parse_node_t &potential_comment = this->at(i);
+            if (potential_comment.type == parse_special_type_comment && this->get_parent(potential_comment) == &parent)
+            {
+                result.push_back(&potential_comment);
+            }
+        }
+    }
+    return result;
+}
+
+enum parse_bool_statement_type_t parse_node_tree_t::statement_boolean_type(const parse_node_t &node)
+{
+    assert(node.type == symbol_boolean_statement);
+    switch (node.production_idx)
+    {
+        // These magic numbers correspond to productions for boolean_statement
+        case 0:
+            return parse_bool_and;
+
+        case 1:
+            return parse_bool_or;
+
+        case 2:
+            return parse_bool_not;
+
+        default:
+        {
+            fprintf(stderr, "Unexpected production in boolean statement\n");
+            PARSER_DIE();
+            return (enum parse_bool_statement_type_t)(-1);
+        }
+    }
+}
+
 bool parse_node_tree_t::job_should_be_backgrounded(const parse_node_t &job) const
 {
     assert(job.type == symbol_job);
@@ -1619,7 +1719,8 @@ bool parse_node_tree_t::job_should_be_backgrounded(const parse_node_t &job) cons
     const parse_node_t *opt_background = get_child(job, 2, symbol_optional_background);
     if (opt_background != NULL)
     {
-        assert(opt_background->production_idx <= 1);
+        // We may get the value -1 if the node is not yet materialized (i.e. an incomplete parse tree)
+        assert(opt_background->production_idx == uint8_t(-1) || opt_background->production_idx <= 1);
         result = (opt_background->production_idx == 1);
     }
     return result;

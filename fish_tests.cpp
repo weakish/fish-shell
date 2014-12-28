@@ -458,10 +458,10 @@ static void test_tok()
     say(L"Test destruction of broken tokenizer");
     {
 
-        const wchar_t *str = L"string <redirection  2>&1 'nested \"quoted\" '(string containing subshells ){and,brackets}$as[$well (as variable arrays)] not_a_redirect^ ^ ^^is_a_redirect";
+        const wchar_t *str = L"string <redirection  2>&1 'nested \"quoted\" '(string containing subshells ){and,brackets}$as[$well (as variable arrays)] not_a_redirect^ ^ ^^is_a_redirect Compress_Newlines\n  \n\t\n   \nInto_Just_One";
         const int types[] =
         {
-            TOK_STRING, TOK_REDIRECT_IN, TOK_STRING, TOK_REDIRECT_FD, TOK_STRING, TOK_STRING, TOK_STRING, TOK_REDIRECT_OUT, TOK_REDIRECT_APPEND, TOK_STRING, TOK_END
+            TOK_STRING, TOK_REDIRECT_IN, TOK_STRING, TOK_REDIRECT_FD, TOK_STRING, TOK_STRING, TOK_STRING, TOK_REDIRECT_OUT, TOK_REDIRECT_APPEND, TOK_STRING, TOK_STRING, TOK_END, TOK_STRING, TOK_END
         };
 
         say(L"Test correct tokenization");
@@ -691,7 +691,37 @@ static void test_parser()
     {
         err(L"Bad escape in nested command substitution not reported as error");
     }
+    
+    if (! parse_util_detect_errors(L"false & ; and cat"))
+    {
+        err(L"'and' command after background not reported as error");
+    }
 
+    if (! parse_util_detect_errors(L"true & ; or cat"))
+    {
+        err(L"'or' command after background not reported as error");
+    }
+    
+    if (parse_util_detect_errors(L"true & ; not cat"))
+    {
+        err(L"'not' command after background falsely reported as error");
+    }
+
+    
+    if (! parse_util_detect_errors(L"if true & ; end"))
+    {
+        err(L"backgrounded 'if' conditional not reported as error");
+    }
+
+    if (! parse_util_detect_errors(L"if false; else if true & ; end"))
+    {
+        err(L"backgrounded 'else if' conditional not reported as error");
+    }
+
+    if (! parse_util_detect_errors(L"while true & ; end"))
+    {
+        err(L"backgrounded 'while' conditional not reported as error");
+    }
 
     say(L"Testing basic evaluation");
 #if 0

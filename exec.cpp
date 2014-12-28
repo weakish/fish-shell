@@ -361,12 +361,14 @@ static void launch_process_nofork(process_t *p)
     ASSERT_IS_MAIN_THREAD();
     ASSERT_IS_NOT_FORKED_CHILD();
 
-    char **argv = wcsv2strv(p->get_argv());
+    null_terminated_array_t<char> argv_array;
+    convert_wide_array_to_narrow(p->get_argv_array(), &argv_array);
+
     const char *const *envv = env_export_arr(false);
     char *actual_cmd = wcs2str(p->actual_cmd.c_str());
 
     /* Bounce to launch_process. This never returns. */
-    safe_launch_process(p, actual_cmd, argv, envv);
+    safe_launch_process(p, actual_cmd, argv_array.get(), envv);
 }
 
 
@@ -1388,6 +1390,7 @@ void exec_job(parser_t &parser, job_t *j)
                         /*
                           safe_launch_process _never_ returns...
                         */
+                        assert(0 && "safe_launch_process should not have returned");
                     }
                     else if (pid < 0)
                     {

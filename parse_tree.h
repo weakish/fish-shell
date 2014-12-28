@@ -59,8 +59,10 @@ enum
     parse_flag_accept_incomplete_tokens = 1 << 2,
 
     /* Indicate that the parser should not generate the terminate token, allowing an 'unfinished' tree where some nodes may have no productions. */
-    parse_flag_leave_unterminated = 1 << 3
+    parse_flag_leave_unterminated = 1 << 3,
 
+    /* Indicate that the parser should generate job_list entries for blank lines. */
+    parse_flag_show_blank_lines = 1 << 4
 };
 typedef unsigned int parse_tree_flags_t;
 
@@ -68,6 +70,13 @@ wcstring parse_dump_tree(const parse_node_tree_t &tree, const wcstring &src);
 
 wcstring token_type_description(parse_token_type_t type);
 wcstring keyword_description(parse_keyword_t type);
+
+enum
+{
+    /* Flag indicating that the node has associated comment nodes */
+    parse_node_flag_has_comments = 1 << 0
+};
+typedef uint8_t parse_node_flags_t;
 
 /** Class for nodes of a parse tree. Since there's a lot of these, the size and order of the fields is important. */
 class parse_node_t
@@ -94,11 +103,14 @@ public:
     /* Type of the node */
     enum parse_token_type_t type;
 
+    /* Node flags */
+    parse_node_flags_t flags;
+
     /* Description */
     wcstring describe(void) const;
 
     /* Constructor */
-    explicit parse_node_t(parse_token_type_t ty) : source_start(SOURCE_OFFSET_INVALID), source_length(0), parent(NODE_OFFSET_INVALID), child_start(0), child_count(0), production_idx(-1), type(ty)
+    explicit parse_node_t(parse_token_type_t ty) : source_start(SOURCE_OFFSET_INVALID), source_length(0), parent(NODE_OFFSET_INVALID), child_start(0), child_count(0), production_idx(-1), type(ty), flags(0)
     {
     }
 
@@ -114,6 +126,12 @@ public:
         /* Should never have a nonempty range with an invalid offset */
         assert(this->source_start != SOURCE_OFFSET_INVALID || this->source_length == 0);
         return this->source_length > 0;
+    }
+
+    /* Indicate if the node has comment nodes */
+    bool has_comments() const
+    {
+        return !! (this->flags & parse_node_flag_has_comments);
     }
 
     /* Gets source for the node, or the empty string if it has no source */
@@ -147,9 +165,6 @@ public:
 
     /* Get the node corresponding to the parent of the given node, or NULL if there is no such child. If expected_type is provided, only returns the parent if it is of that type. Note the asymmetry: get_child asserts since the children are known, but get_parent does not, since the parent may not be known. */
     const parse_node_t *get_parent(const parse_node_t &node, parse_token_type_t expected_type = token_type_invalid) const;
-
-    /* Returns the first ancestor of the given type, or NULL. */
-    const parse_node_t *get_first_ancestor_of_type(const parse_node_t &node, parse_token_type_t desired_type) const;
 
     /* Find all the nodes of a given type underneath a given node, up to max_count of them */
     typedef std::vector<const parse_node_t *> parse_node_list_t;
@@ -187,10 +202,15 @@ public:
     /* Given a job, return all of its statements. These are 'specific statements' (e.g. symbol_decorated_statement, not symbol_statement) */
     parse_node_list_t specific_statements_for_job(const parse_node_t &job) const;
 
+    /* Given a node, return all of its comment nodes. */
+    parse_node_list_t comment_nodes_for_node(const parse_node_t &node) const;
+
+    /* Returns the boolean type for a boolean node */
+    static enum parse_bool_statement_type_t statement_boolean_type(const parse_node_t &node);
+
     /* Given a job, return whether it should be backgrounded, because it has a & specifier */
     bool job_should_be_backgrounded(const parse_node_t &job) const;
 };
-
 
 /* The big entry point. Parse a string, attempting to produce a tree for the given goal type */
 bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t flags, parse_node_tree_t *output, parse_error_list_t *errors, parse_token_type_t goal = symbol_job_list);

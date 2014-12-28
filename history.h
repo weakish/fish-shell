@@ -222,9 +222,6 @@ public:
     /** Saves history */
     void save();
 
-    /** Performs a full (non-incremental) save */
-    void save_and_vacuum();
-
     /** Enable / disable automatic saving. Main thread only! */
     void disable_automatic_saving();
     void enable_automatic_saving();

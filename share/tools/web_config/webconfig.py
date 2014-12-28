@@ -39,7 +39,7 @@ def run_fish_cmd(text):
     # ensure that fish is using UTF-8
     ctype = os.environ.get("LC_ALL", os.environ.get("LC_CTYPE", os.environ.get("LANG")))
     env = None
-    if re.search(r"\.utf-?8$", ctype, flags=re.I) is None:
+    if ctype is None or re.search(r"\.utf-?8$", ctype, flags=re.I) is None:
         # override LC_CTYPE with en_US.UTF-8
         # We're assuming this locale exists.
         # Fish makes the same assumption in config.fish
@@ -687,17 +687,26 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         return result
 
     def do_get_abbreviations(self):
-        out, err = run_fish_cmd('abbr -s')
-        lines = (x for x in out.rstrip().split('\n'))
-        # Turn the output into something we can use
-        abbrout = (line[len('abbr -a '):].strip('\'') for line in lines)
-        abbrs = [x.split('=') for x in abbrout]
+        out, err = run_fish_cmd('echo -n -s $fish_user_abbreviations\x1e')
 
-        if abbrs[0][0]:
-            result = [{'word': x, 'phrase': y} for x, y in abbrs]
-        else:
-            result = []
+        lines = (x for x in out.rstrip().split('\x1e'))
+        abbrs = (re.split('[ =]', x, maxsplit=1) for x in lines if x)
+        result = [{'word': x, 'phrase': y} for x, y in abbrs]
         return result
+
+    def do_remove_abbreviation(self, abbreviation):
+        out, err = run_fish_cmd('abbr -r %s' % abbreviation['word'])
+        if out or err:
+            return err
+        else:
+            return True
+
+    def do_save_abbreviation(self, abbreviation):
+        out, err = run_fish_cmd('abbr -a \'%s %s\'' % (abbreviation['word'], abbreviation['phrase']))
+        if err:
+            return err
+        else:
+            return True
 
     def secure_startswith(self, haystack, needle):
         if len(haystack) < len(needle):
@@ -780,6 +789,10 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             length = int(self.headers['content-length'])
             url_str = self.rfile.read(length).decode('utf-8')
             postvars = cgi.parse_qs(url_str, keep_blank_values=1)
+        elif ctype == 'application/json':
+            length = int(self.headers['content-length'])
+            url_str = self.rfile.read(length).decode('utf-8')
+            postvars = json.loads(url_str)
         else:
             postvars = {}
 
@@ -810,12 +823,25 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
                 output = ["OK"]
             else:
                 output = ["Unable to set prompt"]
+        elif p == '/save_abbreviation/':
+            r = self.do_save_abbreviation(postvars)
+            if r == True:
+                output = ["OK"]
+            else:
+                output = [r]
+        elif p == '/remove_abbreviation/':
+            r = self.do_remove_abbreviation(postvars)
+            if r == True:
+                output = ["OK"]
+            else:
+                output = [r]
         else:
-            return SimpleHTTPServer.SimpleHTTPRequestHandler.do_POST(self)
+            return self.send_error(404)
 
         # Return valid output
         self.send_response(200)
-        self.send_header('Content-type','text/html')
+        self.send_header('Content-type','application/json')
+        self.end_headers()
         self.write_to_wfile('\n')
 
         # Output JSON

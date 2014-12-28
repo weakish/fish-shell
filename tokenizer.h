@@ -61,6 +61,10 @@ enum tokenizer_error
 */
 #define TOK_SQUASH_ERRORS 4
 
+/** Ordinarily, the tokenizer ignores newlines following a newline, or a semicolon.
+    This flag tells the tokenizer to return each of them as a separate END. */
+#define TOK_SHOW_BLANK_LINES 8
+
 typedef unsigned int tok_flags_t;
 
 /**
@@ -84,8 +88,10 @@ struct tokenizer_t
     bool has_next;
     /** Whether incomplete tokens are accepted*/
     bool accept_unfinished;
-    /** Whether commants should be returned*/
+    /** Whether comments should be returned*/
     bool show_comments;
+    /** Whether all blank lines are returned */
+    bool show_blank_lines;
     /** Type of last quote, can be either ' or ".*/
     wchar_t last_quote;
     /** Last error */
@@ -96,9 +102,6 @@ struct tokenizer_t
     /* Cached line number information */
     size_t cached_lineno_offset;
     int cached_lineno_count;
-
-    /** Return the line number of the character at the given offset */
-    int line_number_of_character_at_offset(size_t offset);
 
     /**
       Constructor for a tokenizer. b is the string that is to be
@@ -125,14 +128,9 @@ void tok_next(tokenizer_t *tok);
 enum token_type tok_last_type(tokenizer_t *tok);
 
 /**
-  Returns the last token string. The string should not be freed by the caller.
+  Returns the last token string. The string should not be freed by the caller. This returns nonsense results for some token types, like TOK_END.
 */
 const wchar_t *tok_last(tokenizer_t *tok);
-
-/**
-  Returns the type of quote from the last TOK_QSTRING
-*/
-wchar_t tok_last_quote(tokenizer_t *tok);
 
 /**
   Returns true as long as there are more tokens left
@@ -146,14 +144,6 @@ int tok_get_pos(const tokenizer_t *tok);
 
 /** Returns the extent of the current token */
 size_t tok_get_extent(const tokenizer_t *tok);
-
-/** Returns the token type after the current one, without adjusting the position. Optionally returns the next string by reference. */
-enum token_type tok_peek_next(tokenizer_t *tok, wcstring *out_next_string);
-
-/**
-   Returns the original string to tokenizer
- */
-const wchar_t *tok_string(tokenizer_t *tok);
 
 /**
    Returns only the first token from the specified string. This is a

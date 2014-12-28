@@ -613,7 +613,7 @@ static int builtin_bind_erase(wchar_t **seq, int all, const wchar_t *mode, int u
                 wcstring seq2;
                 if (get_terminfo_sequence(*seq++, &seq2))
                 {
-                    input_mapping_erase(seq2.c_str(), mode);
+                    input_mapping_erase(seq2, mode);
                 }
                 else
                 {
@@ -3502,7 +3502,6 @@ static int builtin_fg(parser_t &parser, wchar_t **argv)
             append_format(stderr_buffer,
                           _(L"%ls: There are no suitable jobs\n"),
                           argv[0]);
-            builtin_print_help(parser, argv[0], stderr_buffer);
         }
     }
     else if (argv[2] != 0)
@@ -4023,7 +4022,7 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
         const wcstring src = str2wcstring(&txt.at(0), txt.size());
         parse_node_tree_t parse_tree;
         parse_error_list_t errors;
-        bool success = parse_tree_from_string(src, parse_flag_none, &parse_tree, &errors);
+        bool success = parse_tree_from_string(src, parse_flag_include_comments, &parse_tree, &errors);
         if (! success)
         {
             stdout_buffer.append(L"Parsing failed:\n");
@@ -4036,7 +4035,7 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
             stdout_buffer.append(L"(Reparsed with continue after error)\n");
             parse_tree.clear();
             errors.clear();
-            parse_tree_from_string(src, parse_flag_continue_after_error, &parse_tree, &errors);
+            parse_tree_from_string(src, parse_flag_continue_after_error | parse_flag_include_comments, &parse_tree, &errors);
         }
         const wcstring dump = parse_dump_tree(parse_tree, src);
         stdout_buffer.append(dump);
