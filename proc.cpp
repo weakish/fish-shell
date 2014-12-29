@@ -78,11 +78,6 @@ Some of the code in this file is based on code from the Glibc manual.
 */
 #define BUFFER_SIZE 4096
 
-/**
-   Signal flag
-*/
-static sig_atomic_t got_signal=0;
-
 bool job_list_is_empty(void)
 {
     ASSERT_IS_MAIN_THREAD();
@@ -440,7 +435,6 @@ void job_handle_signal(int signal, siginfo_t *info, void *con)
 {
     /* This is the only place that this generation count is modified. It's OK if it overflows. */
     s_sigchld_generation_count += 1;
-    got_signal = 1;
 }
 
 /* Given a command like "cat file", truncate it to a reasonable length */
@@ -1023,71 +1017,59 @@ void job_continue(parser_t *parser, job_t *j, bool cont)
 
         if (job_get_flag(j, JOB_FOREGROUND))
         {
-            int quit = 0;
+            bool quit = false;
 
             /*
-               Wait for job to report. Looks a bit ugly because it has to
-               handle the possibility that a signal is dispatched while
-               running job_is_stopped().
+               Wait for job to report.
             */
-            while (!quit)
+            while (! job_is_stopped(j) && ! job_is_completed(j))
             {
-                do
-                {
-                    got_signal = 0;
-                    quit = job_is_stopped(j) || job_is_completed(j);
-                }
-                while (got_signal && !quit);
-
-                if (!quit)
-                {
-
 //					debug( 1, L"select_try()" );
-                    switch (select_try(j))
+                switch (select_try(j))
+                {
+                    case 1:
                     {
-                        case 1:
-                        {
-                            read_try(j);
-                            process_mark_finished_children(parser, false);
-                            break;
-                        }
-                        
-                        case 0:
-                        {
-                            /* No FDs are ready. Look for finished processes. */
-                            process_mark_finished_children(parser, false);
-                            break;
-                        }
+                        read_try(j);
+                        process_mark_finished_children(parser, false);
+                        break;
+                    }
+                    
+                    case 0:
+                    {
+                        /* No FDs are ready. Look for finished processes. */
+                        process_mark_finished_children(parser, false);
+                        break;
+                    }
 
-                        case -1:
+                    case -1:
+                    {
+                        /*
+                          If there is no funky IO magic, we can use
+                          waitpid instead of handling child deaths
+                          through signals. This gives a rather large
+                          speed boost (A factor 3 startup time
+                          improvement on my 300 MHz machine) on
+                          short-lived jobs.
+                        */
+#warning Signalled will never be set here - how to handle signals with condition variables?
+                        int processed = process_mark_finished_children(parser, true);
+                        bool signaled = (processed < 0);
+                        if (signaled)
                         {
                             /*
-                              If there is no funky IO magic, we can use
-                              waitpid instead of handling child deaths
-                              through signals. This gives a rather large
-                              speed boost (A factor 3 startup time
-                              improvement on my 300 MHz machine) on
-                              short-lived jobs.
+                              This probably means we got a
+                              signal. A signal might mean that the
+                              terminal emulator sent us a hup
+                              signal to tell is to close. If so,
+                              we should exit.
                             */
-#warning Signalled will never be set here - how to handle signals with condition variables?
-                            int processed = process_mark_finished_children(parser, true);
-                            bool signaled = (processed < 0);
-                            if (signaled)
+                            if (reader_exit_forced())
                             {
-                                /*
-                                 This probably means we got a
-                                 signal. A signal might mean that the
-                                 terminal emulator sent us a hup
-                                 signal to tell is to close. If so,
-                                 we should exit.
-                                 */
-                                if (reader_exit_forced())
-                                {
-                                    quit = 1;
-                                }
+                                quit = 1;
                             }
-                            break;
+
                         }
+                        break;
                     }
                 }
             }
