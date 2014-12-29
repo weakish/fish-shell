@@ -230,6 +230,19 @@ bool parser_t::is_principal() const
     return s_principal_parser != NULL && this == s_principal_parser;
 }
 
+void parser_t::assert_is_this_thread() const
+{
+    /* Our assertion is pretty lame at this point */
+    if (this->is_principal())
+    {
+        ASSERT_IS_MAIN_THREAD();
+    }
+    else
+    {
+        ASSERT_IS_BACKGROUND_THREAD();
+    }
+}
+
 /* A hacktastic function which enables getting access to the main thread environment from outside the main thread. This is used by the autoloading mechanisms (and ONLY by the autoloading mechanisms), since we do not yet support per-thread functions sets. */
 const environment_t &parser_t::principal_environment()
 {
@@ -741,10 +754,7 @@ int parser_t::get_lineno() const
 
 const wchar_t *parser_t::current_filename() const
 {
-    if (is_principal())
-    {
-        ASSERT_IS_MAIN_THREAD();
-    }
+    this->assert_is_this_thread();
 
     for (size_t i=0; i < this->block_count(); i++)
     {

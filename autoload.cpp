@@ -77,6 +77,7 @@ int autoload_t::unload(const wcstring &cmd)
 
 int autoload_t::load(parser_t &parser, const wcstring &cmd, bool reload)
 {
+    parser.assert_is_this_thread();
     int res;
     CHECK_BLOCK(0);
 

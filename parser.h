@@ -475,6 +475,9 @@ public:
        Write a stack trace starting at the specified block to the specified wcstring
     */
     void stack_trace(size_t block_idx, wcstring &buff) const;
+    
+    /** Assertion to verify that current thread is compatible for running code on this parser */
+    void assert_is_this_thread() const;
 };
 
 bool parser_use_threads();

@@ -80,7 +80,7 @@ static bool is_autoload = false;
 */
 static int load(parser_t &parser, const wcstring &name)
 {
-    ASSERT_IS_MAIN_THREAD();
+    parser.assert_is_this_thread();
     scoped_lock lock(functions_lock);
     bool was_autoload = is_autoload;
     int res;

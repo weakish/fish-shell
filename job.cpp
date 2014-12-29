@@ -303,7 +303,7 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
     scoped_lock locker(lock);
     if (! waitpid_thread_running && status_map.empty())
     {
-        fprintf(stderr, "Error: waiting for job when there is no job to wait for\n");
+        return false; // no jobs
     }
     while (result_pid == -1)
     {
@@ -340,6 +340,7 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
             else if (timeout_usec < 0)
             {
                 // wait forever
+#warning Need to figure out some way to interrupt this with signal handlers
                 pthread_cond_wait(&this->status_map_broadcaster, &this->lock);
             }
             else

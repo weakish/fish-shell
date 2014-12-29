@@ -292,15 +292,15 @@ static void handle_child_status(parser_t *parser, pid_t pid, int status)
     return;
 }
 
-static bool reap_job_and_apply_exit_status(parser_t *parser, long long timeout_usec)
+static int reap_job_and_apply_exit_status(parser_t *parser, long long timeout_usec)
 {
-    bool result = false;
+    int result = 0;
     pid_t pid = 0;
     int status = 0;
     if (job_store_t::global_store().wait_for_job_in_parser(*parser, &pid, &status, timeout_usec))
     {
         handle_child_status(parser, pid, status);
-        result = true;
+        result = 1;
     }
     return result;
 }
@@ -363,6 +363,7 @@ io_chain_t job_t::all_io_redirections() const
     return result;
 }
 
+
 typedef unsigned int process_generation_count_t;
 
 /* A static value tracking how many SIGCHLDs we have seen. This is only ever modified from within the SIGCHLD signal handler, and therefore does not need atomics or locks. TODO: must be parser specific */
@@ -371,6 +372,9 @@ static volatile process_generation_count_t s_sigchld_generation_count = 0;
 /* If we have received a SIGCHLD signal, process any children. If await is false, this returns immediately if no SIGCHLD has been received. If await is true, this waits for one. Returns true if something was processed. This returns the number of children processed, or -1 on error. */
 static int process_mark_finished_children(parser_t *parser, bool wants_await)
 {
+#if JOB_USE_REAPER_THREAD
+    return reap_job_and_apply_exit_status(parser, wants_await ? -1 : 0);
+#else
     ASSERT_IS_MAIN_THREAD();
     
     /* A static value tracking the SIGCHLD gen count at the time we last processed it. When this is different from s_sigchld_generation_count, it indicates there may be unreaped processes. There may not be if we reaped them via the other waitpid path. This is only ever modified from the main thread, and not from a signal handler. */
@@ -427,6 +431,7 @@ static int process_mark_finished_children(parser_t *parser, bool wants_await)
         s_last_processed_sigchld_generation_count = local_count;
         return processed_count;
     }
+#endif
 }
 
 
@@ -1044,9 +1049,6 @@ void job_continue(parser_t *parser, job_t *j, bool cont)
                         {
                             read_try(j);
                             process_mark_finished_children(parser, false);
-#if JOB_USE_REAPER_THREAD
-                            reap_job_and_apply_exit_status(parser, 0);
-#endif
                             break;
                         }
                         
@@ -1054,10 +1056,6 @@ void job_continue(parser_t *parser, job_t *j, bool cont)
                         {
                             /* No FDs are ready. Look for finished processes. */
                             process_mark_finished_children(parser, false);
-#if JOB_USE_REAPER_THREAD
-                            reap_job_and_apply_exit_status(parser, 0);
-#endif
-
                             break;
                         }
 
@@ -1071,15 +1069,9 @@ void job_continue(parser_t *parser, job_t *j, bool cont)
                               improvement on my 300 MHz machine) on
                               short-lived jobs.
                             */
-                            
-                            
-#if ! JOB_USE_REAPER_THREAD
+#warning Signalled will never be set here - how to handle signals with condition variables?
                             int processed = process_mark_finished_children(parser, true);
                             bool signaled = (processed < 0);
-#else
-                            reap_job_and_apply_exit_status(parser, 10000);
-                            bool signaled = true;
-#endif
                             if (signaled)
                             {
                                 /*
