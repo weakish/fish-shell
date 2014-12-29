@@ -195,8 +195,7 @@ parser_t::parser_t(enum parser_type_t type, bool errors) :
     parser_type(type),
     show_errors(errors),
     cancellation_requested(false),
-    is_within_fish_initialization(false),
-    last_status(0)
+    is_within_fish_initialization(false)
 {
 }
 
@@ -205,7 +204,6 @@ parser_t::parser_t(const parser_t &parent) :
     show_errors(parent.show_errors),
     cancellation_requested(parent.cancellation_requested),
     is_within_fish_initialization(parent.is_within_fish_initialization),
-    last_status(0),
     variable_stack(parent.variable_stack)
 {
 }

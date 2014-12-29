@@ -146,12 +146,12 @@ class env_node_t
     }
 };
 
-env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global)
+env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global), exit_status(0)
 {
 }
 
 /* This creates a "child stack", not a copy. */
-env_stack_t::env_stack_t(const env_stack_t &parent) : global(parent.global), top(parent.top), boundary(parent.top)
+env_stack_t::env_stack_t(const env_stack_t &parent) : global(parent.global), top(parent.top), boundary(parent.top), exit_status(parent.exit_status)
 {
 }
 
@@ -1022,15 +1022,7 @@ env_var_t env_stack_t::get(const wcstring &key, env_mode_flags_t mode) const
         }
         else if (key == L"status")
         {
-            #warning This is totally wrong.
-            if (is_main_thread())
-            {
-                return to_string(parser_t::principal_parser().get_last_status());
-            }
-            else
-            {
-                return L"sorry";
-            }
+            return to_string(this->exit_status);
         }
         else if (key == L"umask")
         {

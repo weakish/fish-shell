@@ -252,9 +252,6 @@ private:
     /** Indicates that we are within the process of initializing fish */
     bool is_within_fish_initialization;
     
-    /* Last result of execution */
-    int last_status;
-    
     /** Stack of execution contexts. We own these pointers and must delete them */
     std::vector<parse_execution_context_t *> execution_contexts;
 
@@ -405,12 +402,12 @@ public:
     /** Set and get the last status */
     int get_last_status() const
     {
-        return last_status;
+        return this->variable_stack.exit_status;
     }
     
     void set_last_status(int val)
     {
-        last_status = val;
+        this->variable_stack.exit_status = val;
     }
 
     /** Removes a job */

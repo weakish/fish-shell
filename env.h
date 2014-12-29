@@ -184,6 +184,9 @@ class env_stack_t : public environment_t
     /** The stack element that we must not pop */
     const env_node_ref_t boundary;
     
+    /** Hackish: The last exit status. The parser sets this directly. */
+    int exit_status;
+    
     /** Child stacks */
     explicit env_stack_t(const env_stack_t &parent);
     
