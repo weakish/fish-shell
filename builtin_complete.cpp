@@ -284,7 +284,7 @@ static void  builtin_complete_remove(const wcstring_list_t &cmd,
    tab-completions. Calls the functions in complete.c for any heavy
    lifting. Defined in builtin_complete.c
 */
-static int builtin_complete(parser_t &parser, wchar_t **argv)
+static int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
     ASSERT_IS_MAIN_THREAD();
     bool res=false;
@@ -350,11 +350,10 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             case 0:
                 if (long_options[opt_index].flag != 0)
                     break;
-                append_format(stderr_buffer,
-                              BUILTIN_ERR_UNKNOWN,
+                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN,
                               argv[0],
                               long_options[opt_index].name);
-                builtin_print_help(parser, argv[0], stderr_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
 
 
                 res = true;
@@ -385,7 +384,7 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                 }
                 else
                 {
-                    append_format(stderr_buffer, L"%ls: Invalid token '%ls'\n", argv[0], woptarg);
+                    streams.stderr_stream.append_format(L"%ls: Invalid token '%ls'\n", argv[0], woptarg);
                     res = true;
                 }
                 break;
@@ -437,11 +436,11 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
                 break;
 
             case 'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stdout_stream);
                 return 0;
 
             case '?':
-                builtin_unknown_option(parser, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
                 res = true;
                 break;
 
@@ -457,14 +456,13 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             parse_error_list_t errors;
             if (parse_util_detect_errors(condition_string, &errors, false /* do not accept incomplete */))
             {
-                append_format(stderr_buffer,
-                              L"%ls: Condition '%ls' contained a syntax error",
+                streams.stderr_stream.append_format(L"%ls: Condition '%ls' contained a syntax error",
                               argv[0],
                               condition);
                 for (size_t i=0; i < errors.size(); i++)
                 {
-                    append_format(stderr_buffer, L"\n%s: ", argv[0]);
-                    stderr_buffer.append(errors.at(i).describe(condition_string));
+                    streams.stderr_stream.append_format(L"\n%s: ", argv[0]);
+                    streams.stderr_stream.append(errors.at(i).describe(condition_string));
                 }
                 res = true;
             }
@@ -485,12 +483,11 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
             wcstring err_text;
             if (parser.detect_errors_in_argument_list(comp, &err_text, prefix.c_str()))
             {
-                append_format(stderr_buffer,
-                              L"%ls: Completion '%ls' contained a syntax error\n",
+                streams.stderr_stream.append_format(L"%ls: Completion '%ls' contained a syntax error\n",
                               argv[0],
                               comp);
-                stderr_buffer.append(err_text);
-                stderr_buffer.push_back(L'\n');
+                streams.stderr_stream.append(err_text);
+                streams.stderr_stream.push_back(L'\n');
                 res = true;
             }
         }
@@ -531,15 +528,15 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
 
                     /* The input data is meant to be something like you would have on the command line, e.g. includes backslashes. The output should be raw, i.e. unescaped. So we need to unescape the command line. See #1127 */
                     unescape_string_in_place(&faux_cmdline_with_completion, UNESCAPE_DEFAULT);
-                    stdout_buffer.append(faux_cmdline_with_completion);
+                    streams.stdout_stream.append(faux_cmdline_with_completion);
 
                     /* Append any description */
                     if (! next.description.empty())
                     {
-                        stdout_buffer.push_back(L'\t');
-                        stdout_buffer.append(next.description);
+                        streams.stdout_stream.push_back(L'\t');
+                        streams.stdout_stream.append(next.description);
                     }
-                    stdout_buffer.push_back(L'\n');
+                    streams.stdout_stream.push_back(L'\n');
                 }
 
                 recursion_level--;
@@ -547,10 +544,10 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
         }
         else if (woptind != argc)
         {
-            append_format(stderr_buffer,
+            streams.stderr_stream.append_format(
                           _(L"%ls: Too many arguments\n"),
                           argv[0]);
-            builtin_print_help(parser, argv[0], stderr_buffer);
+            builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
 
             res = true;
         }
@@ -558,7 +555,9 @@ static int builtin_complete(parser_t &parser, wchar_t **argv)
         {
             /* No arguments specified, meaning we print the definitions of
              * all specified completions to stdout.*/
-            complete_print(stdout_buffer);
+            wcstring tmp;
+            complete_print(tmp);
+            streams.stdout_stream.append(tmp);
         }
         else
         {

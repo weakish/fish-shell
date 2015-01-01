@@ -71,7 +71,7 @@ static int cpu_use(const job_t *j)
 /**
    Print information about the specified job
 */
-static void builtin_jobs_print(const job_t *j, int mode, int header)
+static void builtin_jobs_print(io_streams_t &streams, const job_t *j, int mode, int header)
 {
     process_t *p;
     switch (mode)
@@ -84,22 +84,22 @@ static void builtin_jobs_print(const job_t *j, int mode, int header)
                 /*
                   Print table header before first job
                 */
-                stdout_buffer.append(_(L"Job\tGroup\t"));
+                streams.stdout_stream.append(_(L"Job\tGroup\t"));
 #ifdef HAVE__PROC_SELF_STAT
-                stdout_buffer.append(_(L"CPU\t"));
+                streams.stdout_stream.append(_(L"CPU\t"));
 #endif
-                stdout_buffer.append(_(L"State\tCommand\n"));
+                streams.stdout_stream.append(_(L"State\tCommand\n"));
             }
 
-            append_format(stdout_buffer, L"%d\t%d\t", j->job_id, j->pgid);
+            streams.stdout_stream.append_format(L"%d\t%d\t", j->job_id, j->pgid);
 
 #ifdef HAVE__PROC_SELF_STAT
-            append_format(stdout_buffer, L"%d%%\t", cpu_use(j));
+            streams.stdout_stream.append_format(L"%d%%\t", cpu_use(j));
 #endif
-            stdout_buffer.append(job_is_stopped(j)?_(L"stopped"):_(L"running"));
-            stdout_buffer.append(L"\t");
-            stdout_buffer.append(j->command_wcstr());
-            stdout_buffer.append(L"\n");
+            streams.stdout_stream.append(job_is_stopped(j)?_(L"stopped"):_(L"running"));
+            streams.stdout_stream.append(L"\t");
+            streams.stdout_stream.append(j->command_wcstr());
+            streams.stdout_stream.append(L"\n");
             break;
         }
 
@@ -110,9 +110,9 @@ static void builtin_jobs_print(const job_t *j, int mode, int header)
                 /*
                   Print table header before first job
                 */
-                stdout_buffer.append(_(L"Group\n"));
+                streams.stdout_stream.append(_(L"Group\n"));
             }
-            append_format(stdout_buffer, L"%d\n", j->pgid);
+            streams.stdout_stream.append_format(L"%d\n", j->pgid);
             break;
         }
 
@@ -123,12 +123,12 @@ static void builtin_jobs_print(const job_t *j, int mode, int header)
                 /*
                   Print table header before first job
                 */
-                stdout_buffer.append(_(L"Process\n"));
+                streams.stdout_stream.append(_(L"Process\n"));
             }
 
             for (p=j->first_process; p; p=p->next)
             {
-                append_format(stdout_buffer, L"%d\n", p->pid);
+                streams.stdout_stream.append_format(L"%d\n", p->pid);
             }
             break;
         }
@@ -140,12 +140,12 @@ static void builtin_jobs_print(const job_t *j, int mode, int header)
                 /*
                   Print table header before first job
                 */
-                stdout_buffer.append(_(L"Command\n"));
+                streams.stdout_stream.append(_(L"Command\n"));
             }
 
             for (p=j->first_process; p; p=p->next)
             {
-                append_format(stdout_buffer, L"%ls\n", p->argv0());
+                streams.stdout_stream.append_format(L"%ls\n", p->argv0());
             }
             break;
         }
@@ -158,7 +158,7 @@ static void builtin_jobs_print(const job_t *j, int mode, int header)
 /**
    The jobs builtin. Used fopr printing running jobs. Defined in builtin_jobs.c.
 */
-static int builtin_jobs(parser_t &parser, wchar_t **argv)
+static int builtin_jobs(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
     int argc=0;
     int found=0;
@@ -214,12 +214,11 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
             case 0:
                 if (long_options[opt_index].flag != 0)
                     break;
-                append_format(stderr_buffer,
-                              BUILTIN_ERR_UNKNOWN,
+                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN,
                               argv[0],
                               long_options[opt_index].name);
 
-                builtin_print_help(parser, argv[0], stderr_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
 
 
                 return 1;
@@ -244,11 +243,11 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
             }
 
             case 'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stdout_stream);
                 return 0;
 
             case '?':
-                builtin_unknown_option(parser, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
                 return 1;
 
         }
@@ -275,7 +274,7 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
 
             if ((j->flags & JOB_CONSTRUCTED) && !job_is_completed(j))
             {
-                builtin_jobs_print(j, mode, !found);
+                builtin_jobs_print(streams, j, mode, !found);
                 return 0;
             }
         }
@@ -297,8 +296,7 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
                 pid=fish_wcstoi(argv[i], &end, 10);
                 if (errno || *end)
                 {
-                    append_format(stderr_buffer,
-                                  _(L"%ls: '%ls' is not a job\n"),
+                    streams.stderr_stream.append_format(    _(L"%ls: '%ls' is not a job\n"),
                                   argv[0],
                                   argv[i]);
                     return 1;
@@ -308,12 +306,11 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
 
                 if (j && !job_is_completed(j))
                 {
-                    builtin_jobs_print(j, mode, !found);
+                    builtin_jobs_print(streams, j, mode, !found);
                 }
                 else
                 {
-                    append_format(stderr_buffer,
-                                  _(L"%ls: No suitable job: %d\n"),
+                    streams.stderr_stream.append_format(    _(L"%ls: No suitable job: %d\n"),
                                   argv[0],
                                   pid);
                     return 1;
@@ -331,7 +328,7 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
                 */
                 if ((j->flags & JOB_CONSTRUCTED) && !job_is_completed(j))
                 {
-                    builtin_jobs_print(j, mode, !found);
+                    builtin_jobs_print(streams, j, mode, !found);
                     found = 1;
                 }
             }
@@ -340,9 +337,7 @@ static int builtin_jobs(parser_t &parser, wchar_t **argv)
 
     if (!found)
     {
-        append_format(stdout_buffer,
-                      _(L"%ls: There are no jobs\n"),
-                      argv[0]);
+        streams.stdout_stream.append_format(_(L"%ls: There are no jobs\n"), argv[0]);
         return 1;
     }
 

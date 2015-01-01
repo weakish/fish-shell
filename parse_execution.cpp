@@ -393,8 +393,9 @@ parse_execution_result_t parse_execution_context_t::run_function_statement(const
         assert(contents_end >= contents_start);
         const wcstring contents_str = wcstring(this->src, contents_start, contents_end - contents_start);
         int definition_line_offset = this->line_offset_of_character_at_offset(contents_start);
+        io_streams_t streams;
         wcstring error_str;
-        int err = define_function(*parser, argument_list, contents_str, definition_line_offset, &error_str);
+        int err = define_function(*parser, streams, argument_list, contents_str, definition_line_offset, &error_str);
         this->parser->set_last_status(err);
 
         if (! error_str.empty())

@@ -139,21 +139,21 @@ static rlim_t get(int resource, int hard)
 /**
    Print the value of the specified resource limit
 */
-static void print(int resource, int hard)
+static void print(io_streams_t &streams, int resource, int hard)
 {
     rlim_t l = get(resource, hard);
 
     if (l == RLIM_INFINITY)
-        stdout_buffer.append(L"unlimited\n");
+        streams.stdout_stream.append(L"unlimited\n");
     else
-        append_format(stdout_buffer, L"%d\n", l / get_multiplier(resource));
+        streams.stdout_stream.append_format(L"%d\n", l / get_multiplier(resource));
 
 }
 
 /**
    Print values of all resource limits
 */
-static void print_all(int hard)
+static void print_all(io_streams_t &streams, int hard)
 {
     int i;
     int w=0;
@@ -172,7 +172,7 @@ static void print_all(int hard)
 
         const wchar_t *unit = ((resource_arr[i].resource==RLIMIT_CPU)?L"(seconds, ":(get_multiplier(resource_arr[i].resource)==1?L"(":L"(kB, "));
 
-        append_format(stdout_buffer,
+        streams.stdout_stream.append_format(
                       L"%-*ls %10ls-%lc) ",
                       w,
                       resource_arr[i].desc,
@@ -181,11 +181,11 @@ static void print_all(int hard)
 
         if (l == RLIM_INFINITY)
         {
-            stdout_buffer.append(L"unlimited\n");
+            streams.stdout_stream.append(L"unlimited\n");
         }
         else
         {
-            append_format(stdout_buffer, L"%d\n", l/get_multiplier(resource_arr[i].resource));
+            streams.stdout_stream.append_format(L"%d\n", l/get_multiplier(resource_arr[i].resource));
         }
     }
 
@@ -213,7 +213,7 @@ static const wchar_t *get_desc(int what)
    does _not_ multiply the limit value by the multiplier constant used
    by the commandline ulimit.
 */
-static int set(int resource, int hard, int soft, rlim_t value)
+static int set(io_streams_t &streams, int resource, int hard, int soft, rlim_t value)
 {
     struct rlimit ls;
     getrlimit(resource, &ls);
@@ -240,9 +240,9 @@ static int set(int resource, int hard, int soft, rlim_t value)
     if (setrlimit(resource, &ls))
     {
         if (errno == EPERM)
-            append_format(stderr_buffer, L"ulimit: Permission denied when changing resource of type '%ls'\n", get_desc(resource));
+            streams.stderr_stream.append_format(L"ulimit: Permission denied when changing resource of type '%ls'\n", get_desc(resource));
         else
-            builtin_wperror(L"ulimit");
+            builtin_wperror(streams, L"ulimit");
         return 1;
     }
     return 0;
@@ -252,7 +252,7 @@ static int set(int resource, int hard, int soft, rlim_t value)
    The ulimit builtin, used for setting resource limits. Defined in
    builtin_ulimit.c.
 */
-static int builtin_ulimit(parser_t &parser, wchar_t ** argv)
+static int builtin_ulimit(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
     int hard=0;
     int soft=0;
@@ -347,11 +347,10 @@ static int builtin_ulimit(parser_t &parser, wchar_t ** argv)
             case 0:
                 if (long_options[opt_index].flag != 0)
                     break;
-                append_format(stderr_buffer,
-                              BUILTIN_ERR_UNKNOWN,
+                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN,
                               argv[0],
                               long_options[opt_index].name);
-                builtin_print_help(parser, argv[0], stderr_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
 
                 return 1;
 
@@ -415,11 +414,11 @@ static int builtin_ulimit(parser_t &parser, wchar_t ** argv)
 #endif
 
             case L'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stdout_stream);
                 return 0;
 
             case L'?':
-                builtin_unknown_option(parser, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
                 return 1;
         }
     }
@@ -428,13 +427,13 @@ static int builtin_ulimit(parser_t &parser, wchar_t ** argv)
     {
         if (argc - woptind == 0)
         {
-            print_all(hard);
+            print_all(streams, hard);
         }
         else
         {
-            stderr_buffer.append(argv[0]);
-            stderr_buffer.append(L": Too many arguments\n");
-            builtin_print_help(parser, argv[0], stderr_buffer);
+            streams.stderr_stream.append(argv[0]);
+            streams.stderr_stream.append(L": Too many arguments\n");
+            builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             return 1;
         }
 
@@ -448,7 +447,7 @@ static int builtin_ulimit(parser_t &parser, wchar_t ** argv)
             /*
               Show current limit value
             */
-            print(what, hard);
+            print(streams, what, hard);
             break;
         }
 
@@ -486,24 +485,23 @@ static int builtin_ulimit(parser_t &parser, wchar_t ** argv)
                 new_limit = wcstol(argv[woptind], &end, 10);
                 if (errno || *end)
                 {
-                    append_format(stderr_buffer,
-                                  L"%ls: Invalid limit '%ls'\n",
+                    streams.stderr_stream.append_format(    L"%ls: Invalid limit '%ls'\n",
                                   argv[0],
                                   argv[woptind]);
-                    builtin_print_help(parser, argv[0], stderr_buffer);
+                    builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                     return 1;
                 }
                 new_limit *= get_multiplier(what);
             }
 
-            return set(what, hard, soft, new_limit);
+            return set(streams, what, hard, soft, new_limit);
         }
 
         default:
         {
-            stderr_buffer.append(argv[0]);
-            stderr_buffer.append(L": Too many arguments\n");
-            builtin_print_help(parser, argv[0], stderr_buffer);
+            streams.stderr_stream.append(argv[0]);
+            streams.stderr_stream.append(L": Too many arguments\n");
+            builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             return 1;
         }
 

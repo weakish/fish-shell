@@ -26,9 +26,6 @@ Functions used for implementing the set builtin.
 #include "proc.h"
 #include "parser.h"
 
-/* We know about these buffers */
-extern wcstring stdout_buffer, stderr_buffer;
-
 /**
    Error message for invalid path operations
 */
@@ -56,7 +53,7 @@ static int is_path_variable(const wchar_t *env)
    Call env_set. If this is a path variable, e.g. PATH, validate the
    elements. On error, print a description of the problem to stderr.
 */
-static int env_set_from_builtin(env_stack_t *vars, const wchar_t *key, const wcstring_list_t &val, int scope)
+static int env_set_from_builtin(io_streams_t &streams, env_stack_t *vars, const wchar_t *key, const wcstring_list_t &val, int scope)
 {
     assert(vars != NULL);
     size_t i;
@@ -105,7 +102,7 @@ static int env_set_from_builtin(env_stack_t *vars, const wchar_t *key, const wcs
             }
             else
             {
-                append_format(stderr_buffer, _(BUILTIN_SET_PATH_ERROR), L"set", dir.c_str(), key);
+                streams.stderr_stream.append_format(_(BUILTIN_SET_PATH_ERROR), L"set", dir.c_str(), key);
                 const wchar_t *colon = wcschr(dir.c_str(), L':');
 
                 if (colon && *(colon+1))
@@ -117,12 +114,12 @@ static int env_set_from_builtin(env_stack_t *vars, const wchar_t *key, const wcs
 
             if (show_perror)
             {
-                builtin_wperror(L"set");
+                builtin_wperror(streams, L"set");
             }
 
             if (show_hint)
             {
-                append_format(stderr_buffer, _(BUILTIN_SET_PATH_HINT), L"set", key, key, wcschr(dir.c_str(), L':')+1);
+                streams.stderr_stream.append_format(_(BUILTIN_SET_PATH_HINT), L"set", key, key, wcschr(dir.c_str(), L':')+1);
             }
 
         }
@@ -153,21 +150,21 @@ static int env_set_from_builtin(env_stack_t *vars, const wchar_t *key, const wcs
     {
         case ENV_PERM:
         {
-            append_format(stderr_buffer, _(L"%ls: Tried to change the read-only variable '%ls'\n"), L"set", key);
+            streams.stderr_stream.append_format(_(L"%ls: Tried to change the read-only variable '%ls'\n"), L"set", key);
             retcode=1;
             break;
         }
 
         case ENV_SCOPE:
         {
-            append_format(stderr_buffer, _(L"%ls: Tried to set the special variable '%ls' with the wrong scope\n"), L"set", key);
+            streams.stderr_stream.append_format(_(L"%ls: Tried to set the special variable '%ls' with the wrong scope\n"), L"set", key);
             retcode=1;
             break;
         }
 
         case ENV_INVALID:
         {
-            append_format(stderr_buffer, _(L"%ls: Tried to set the special variable '%ls' to an invalid value\n"), L"set", key);
+            streams.stderr_stream.append_format(_(L"%ls: Tried to set the special variable '%ls' to an invalid value\n"), L"set", key);
             retcode=1;
             break;
         }
@@ -188,7 +185,8 @@ static int env_set_from_builtin(env_stack_t *vars, const wchar_t *key, const wcs
 
   \return the total number of indexes parsed, or -1 on error
 */
-static int parse_index(std::vector<long> &indexes,
+static int parse_index(io_streams_t &streams,
+                       std::vector<long> &indexes,
                        const wchar_t *src,
                        const wchar_t *name,
                        size_t var_count)
@@ -210,7 +208,7 @@ static int parse_index(std::vector<long> &indexes,
 
     if (*src != L'[')
     {
-        append_format(stderr_buffer, _(BUILTIN_SET_ARG_COUNT), L"set");
+        streams.stderr_stream.append_format(_(BUILTIN_SET_ARG_COUNT), L"set");
         return 0;
     }
 
@@ -218,7 +216,7 @@ static int parse_index(std::vector<long> &indexes,
 
     if ((wcsncmp(src_orig, name, len)!=0) || (wcslen(name) != (len)))
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       _(L"%ls: Multiple variable names specified in single call (%ls and %.*ls)\n"),
                       L"set",
                       name,
@@ -246,7 +244,7 @@ static int parse_index(std::vector<long> &indexes,
 
         if (end==src || errno)
         {
-            append_format(stderr_buffer, _(L"%ls: Invalid index starting at '%ls'\n"), L"set", src);
+            streams.stderr_stream.append_format(_(L"%ls: Invalid index starting at '%ls'\n"), L"set", src);
             return 0;
         }
 
@@ -347,7 +345,7 @@ static void erase_values(wcstring_list_t &list, const std::vector<long> &indexes
    Print the names of all environment variables in the scope, with or without shortening,
    with or without values, with or without escaping
 */
-static void print_variables(const env_stack_t &vars, int include_values, int esc, bool shorten_ok, int scope)
+static void print_variables(io_streams_t &streams, const env_stack_t &vars, int include_values, int esc, bool shorten_ok, int scope)
 {
     wcstring_list_t names = vars.get_names(scope);
     sort(names.begin(), names.end());
@@ -357,7 +355,7 @@ static void print_variables(const env_stack_t &vars, int include_values, int esc
         const wcstring key = names.at(i);
         const wcstring e_key = escape_string(key, 0);
 
-        stdout_buffer.append(e_key);
+        streams.stdout_stream.append(e_key);
 
         if (include_values)
         {
@@ -374,18 +372,18 @@ static void print_variables(const env_stack_t &vars, int include_values, int esc
 
                 wcstring e_value = esc ? expand_escape_variable(value) : value;
 
-                stdout_buffer.append(L" ");
-                stdout_buffer.append(e_value);
+                streams.stdout_stream.append(L" ");
+                streams.stdout_stream.append(e_value);
 
                 if (shorten)
                 {
-                    stdout_buffer.push_back(ellipsis_char);
+                    streams.stdout_stream.push_back(ellipsis_char);
                 }
 
             }
         }
 
-        stdout_buffer.append(L"\n");
+        streams.stdout_stream.append(L"\n");
     }
 }
 
@@ -395,7 +393,7 @@ static void print_variables(const env_stack_t &vars, int include_values, int esc
    The set builtin. Creates, updates and erases environment variables
    and environemnt variable arrays.
 */
-static int builtin_set(parser_t &parser, wchar_t **argv)
+static int builtin_set(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
     env_stack_t * const vars = &parser.vars();
     
@@ -497,11 +495,11 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
                 break;
 
             case 'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stdout_stream);
                 return 0;
 
             case '?':
-                builtin_unknown_option(parser, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
                 return 1;
 
             default:
@@ -520,11 +518,11 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
 
     if (query && (erase || list))
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       BUILTIN_ERR_COMBO,
                       argv[0]);
 
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
@@ -532,11 +530,11 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     /* We can't both list and erase variables */
     if (erase && list)
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       BUILTIN_ERR_COMBO,
                       argv[0]);
 
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
@@ -545,10 +543,10 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     */
     if (local + global + universal > 1)
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       BUILTIN_ERR_GLOCAL,
                       argv[0]);
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
@@ -557,10 +555,10 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     */
     if (exportv && unexport)
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       BUILTIN_ERR_EXPUNEXP,
                       argv[0]);
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
@@ -602,9 +600,9 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
                 if (! dest_str.missing())
                     tokenize_variable_array(dest_str, result);
 
-                if (!parse_index(indexes, arg, dest, result.size()))
+                if (!parse_index(streams, indexes, arg, dest, result.size()))
                 {
-                    builtin_print_help(parser, argv[0], stderr_buffer);
+                    builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                     retcode = 1;
                     break;
                 }
@@ -634,7 +632,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     if (list)
     {
         /* Maybe we should issue an error if there are any other arguments? */
-        print_variables(*vars, 0, 0, shorten_ok, scope);
+        print_variables(streams, *vars, 0, 0, shorten_ok, scope);
         return 0;
     }
 
@@ -646,16 +644,16 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
 
         if (erase)
         {
-            append_format(stderr_buffer,
+            streams.stderr_stream.append_format(
                           _(L"%ls: Erase needs a variable name\n"),
                           argv[0]);
 
-            builtin_print_help(parser, argv[0], stderr_buffer);
+            builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             retcode = 1;
         }
         else
         {
-            print_variables(*vars, 1, 1, shorten_ok, scope);
+            print_variables(streams, *vars, 1, 1, shorten_ok, scope);
         }
 
         return retcode;
@@ -675,15 +673,15 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     if (!wcslen(dest))
     {
         free(dest);
-        append_format(stderr_buffer, BUILTIN_ERR_VARNAME_ZERO, argv[0]);
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        streams.stderr_stream.append_format(BUILTIN_ERR_VARNAME_ZERO, argv[0]);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
     if ((bad_char = wcsvarname(dest)))
     {
-        append_format(stderr_buffer, BUILTIN_ERR_VARCHAR, argv[0], *bad_char);
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        streams.stderr_stream.append_format(BUILTIN_ERR_VARCHAR, argv[0], *bad_char);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         free(dest);
         return 1;
     }
@@ -716,9 +714,9 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
         {
             for (; woptind<argc; woptind++)
             {
-                if (!parse_index(indexes, argv[woptind], dest, result.size()))
+                if (!parse_index(streams, indexes, argv[woptind], dest, result.size()))
                 {
-                    builtin_print_help(parser, argv[0], stderr_buffer);
+                    builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                     retcode = 1;
                     break;
                 }
@@ -730,8 +728,8 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
                 {
                     if (val_count < idx_count)
                     {
-                        append_format(stderr_buffer, _(BUILTIN_SET_ARG_COUNT), argv[0]);
-                        builtin_print_help(parser, argv[0], stderr_buffer);
+                        streams.stderr_stream.append_format(_(BUILTIN_SET_ARG_COUNT), argv[0]);
+                        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                         retcode=1;
                         break;
                     }
@@ -753,7 +751,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
             if (erase)
             {
                 erase_values(result, indexes);
-                env_set_from_builtin(vars, dest, result, scope);
+                env_set_from_builtin(streams, vars, dest, result, scope);
             }
             else
             {
@@ -768,12 +766,12 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
                                   indexes,
                                   value))
                 {
-                    append_format(stderr_buffer, L"%ls: ", argv[0]);
-                    append_format(stderr_buffer, ARRAY_BOUNDS_ERR);
-                    stderr_buffer.push_back(L'\n');
+                    streams.stderr_stream.append_format(L"%ls: ", argv[0]);
+                    streams.stderr_stream.append_format(ARRAY_BOUNDS_ERR);
+                    streams.stderr_stream.push_back(L'\n');
                 }
 
-                env_set_from_builtin(vars, dest, result, scope);
+                env_set_from_builtin(streams, vars, dest, result, scope);
 
 
             }
@@ -790,10 +788,9 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
         {
             if (woptind != argc)
             {
-                append_format(stderr_buffer,
-                              _(L"%ls: Values cannot be specfied with erase\n"),
+                streams.stderr_stream.append_format(_(L"%ls: Values cannot be specfied with erase\n"),
                               argv[0]);
-                builtin_print_help(parser, argv[0], stderr_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                 retcode=1;
             }
             else
@@ -806,7 +803,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
             wcstring_list_t val;
             for (i=woptind; i<argc; i++)
                 val.push_back(argv[i]);
-            retcode = env_set_from_builtin(vars, dest, val, scope);
+            retcode = env_set_from_builtin(streams, vars, dest, val, scope);
         }
     }
 
@@ -817,7 +814,7 @@ static int builtin_set(parser_t &parser, wchar_t **argv)
     env_var_t global_dest = parser.vars().get(dest, ENV_GLOBAL);
     if (universal && ! global_dest.missing())
     {
-        append_format(stderr_buffer, _(L"%ls: Warning: universal scope selected, but a global variable '%ls' exists.\n"), L"set", dest);
+        streams.stderr_stream.append_format(_(L"%ls: Warning: universal scope selected, but a global variable '%ls' exists.\n"), L"set", dest);
     }
 
     free(dest);

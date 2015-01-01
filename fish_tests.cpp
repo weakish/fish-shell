@@ -63,6 +63,7 @@
 #include "parse_util.h"
 #include "pager.h"
 #include "input.h"
+#include "io.h"
 #include "utf8.h"
 #include "env_universal_common.h"
 #include "wcstringutil.h"
@@ -1811,10 +1812,11 @@ static void test_is_potential_path()
 }
 
 /** Test the 'test' builtin */
-int builtin_test(parser_t &parser, wchar_t **argv);
+int builtin_test(parser_t &parser, io_streams_t &streams, wchar_t **argv);
 static bool run_one_test_test(int expected, wcstring_list_t &lst, bool bracket)
 {
     parser_t parser(PARSER_TYPE_GENERAL, true);
+    io_streams_t streams;
     size_t i, count = lst.size();
     wchar_t **argv = new wchar_t *[count+3];
     argv[0] = (wchar_t *)(bracket ? L"[" : L"test");
@@ -1828,7 +1830,7 @@ static bool run_one_test_test(int expected, wcstring_list_t &lst, bool bracket)
         i++;
     }
     argv[i+1] = NULL;
-    int result = builtin_test(parser, argv);
+    int result = builtin_test(parser, streams, argv);
     delete[] argv;
     return expected == result;
 }
@@ -1853,15 +1855,16 @@ static void test_test_brackets()
 {
     // Ensure [ knows it needs a ]
     parser_t parser(PARSER_TYPE_GENERAL, true);
+    io_streams_t streams;
 
     const wchar_t *argv1[] = {L"[", L"foo", NULL};
-    do_test(builtin_test(parser, (wchar_t **)argv1) != 0);
+    do_test(builtin_test(parser, streams, (wchar_t **)argv1) != 0);
 
     const wchar_t *argv2[] = {L"[", L"foo", L"]", NULL};
-    do_test(builtin_test(parser, (wchar_t **)argv2) == 0);
+    do_test(builtin_test(parser, streams, (wchar_t **)argv2) == 0);
 
     const wchar_t *argv3[] = {L"[", L"foo", L"]", L"bar", NULL};
-    do_test(builtin_test(parser, (wchar_t **)argv3) != 0);
+    do_test(builtin_test(parser, streams, (wchar_t **)argv3) != 0);
 
 }
 

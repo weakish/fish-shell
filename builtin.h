@@ -94,12 +94,8 @@ enum
 
 #define BUILTIN_ERR_NOT_NUMBER _( L"%ls: Argument '%ls' is not a number\n" )
 
-/** Get the string used to represent stdout and stderr */
-const wcstring &get_stdout_buffer();
-const wcstring &get_stderr_buffer();
-
 /** Output an error */
-void builtin_show_error(const wcstring &err);
+void builtin_show_error(io_streams_t &streams, const wcstring &err);
 
 /**
    Kludge. Tells builtins if output is to screen
@@ -139,7 +135,7 @@ int builtin_exists(const wcstring &cmd);
 
   \return the exit status of the builtin command
 */
-int builtin_run(parser_t &parser, const wchar_t * const *argv, const io_chain_t &io);
+int builtin_run(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv, const io_chain_t &io);
 
 /** Returns a list of all builtin names */
 wcstring_list_t builtin_get_names(void);
@@ -192,7 +188,7 @@ class builtin_commandline_scoped_transient_t
 wcstring builtin_help_get(parser_t &parser, const wchar_t *cmd);
 
 /** Defines a function, like builtin_function. Returns 0 on success. args should NOT contain 'function' as the first argument. */
-int define_function(parser_t &parser, const wcstring_list_t &args, const wcstring &contents, int definition_line_offset, wcstring *out_err);
+int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list_t &args, const wcstring &contents, int definition_line_offset, wcstring *out_err);
 
 
 #endif

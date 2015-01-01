@@ -850,6 +850,10 @@ void exec_job(parser_t &parser, job_t *j)
 
         // This is the IO buffer we use for storing the output of a block or function when it is in a pipeline
         shared_ptr<io_buffer_t> block_output_io_buffer;
+        
+        // This is the set of streams we use for storing the stdout and stderr output by builtins
+        std::auto_ptr<io_streams_t> builtin_output_streams;
+        
         switch (p->type)
         {
             case INTERNAL_FUNCTION:
@@ -947,7 +951,7 @@ void exec_job(parser_t &parser, job_t *j)
 
             case INTERNAL_BUILTIN:
             {
-                int builtin_stdin=0;
+                int local_builtin_stdin=0;
                 bool close_stdin = false;
 
                 /*
@@ -967,13 +971,13 @@ void exec_job(parser_t &parser, job_t *j)
                             case IO_FD:
                             {
                                 CAST_INIT(const io_fd_t *, in_fd, in.get());
-                                builtin_stdin = in_fd->old_fd;
+                                local_builtin_stdin = in_fd->old_fd;
                                 break;
                             }
                             case IO_PIPE:
                             {
                                 CAST_INIT(const io_pipe_t *, in_pipe, in.get());
-                                builtin_stdin = in_pipe->pipe_fd[0];
+                                local_builtin_stdin = in_pipe->pipe_fd[0];
                                 break;
                             }
 
@@ -981,9 +985,9 @@ void exec_job(parser_t &parser, job_t *j)
                             {
                                 /* Do not set CLO_EXEC because child needs access */
                                 CAST_INIT(const io_file_t *, in_file, in.get());
-                                builtin_stdin=open(in_file->filename_cstr,
+                                local_builtin_stdin=open(in_file->filename_cstr,
                                                    in_file->flags, OPEN_MASK);
-                                if (builtin_stdin == -1)
+                                if (local_builtin_stdin == -1)
                                 {
                                     debug(1,
                                           FILE_ERROR,
@@ -1007,14 +1011,14 @@ void exec_job(parser_t &parser, job_t *j)
                                   really don't do anything. How should this be
                                   handled?
                                  */
-                                builtin_stdin = -1;
+                                local_builtin_stdin = -1;
 
                                 break;
                             }
 
                             default:
                             {
-                                builtin_stdin=-1;
+                                local_builtin_stdin=-1;
                                 debug(1,
                                       _(L"Unknown input redirection type %d"),
                                       in->io_mode);
@@ -1026,10 +1030,10 @@ void exec_job(parser_t &parser, job_t *j)
                 }
                 else
                 {
-                    builtin_stdin = pipe_read->pipe_fd[0];
+                    local_builtin_stdin = pipe_read->pipe_fd[0];
                 }
 
-                if (builtin_stdin == -1)
+                if (local_builtin_stdin == -1)
                 {
                     exec_error = true;
                     break;
@@ -1054,17 +1058,21 @@ void exec_job(parser_t &parser, job_t *j)
                        to make exec handle things.
                     */
 
-                    builtin_push_io(parser, builtin_stdin);
+                    builtin_push_io(parser, local_builtin_stdin);
+                    builtin_output_streams.reset(new io_streams_t());
 
                     builtin_out_redirect = has_fd(process_net_io_chain, STDOUT_FILENO);
                     builtin_err_redirect = has_fd(process_net_io_chain, STDERR_FILENO);
+                    
+                    builtin_output_streams->out_is_redirected = has_fd(process_net_io_chain, STDOUT_FILENO);
+                    builtin_output_streams->err_is_redirected = has_fd(process_net_io_chain, STDERR_FILENO);
 
                     const int fg = job_get_flag(j, JOB_FOREGROUND);
                     job_set_flag(j, JOB_FOREGROUND, 0);
 
                     signal_unblock();
 
-                    p->status = builtin_run(parser, p->get_argv(), process_net_io_chain);
+                    p->status = builtin_run(parser, *builtin_output_streams.get(), p->get_argv(), process_net_io_chain);
 
                     builtin_out_redirect=old_out;
                     builtin_err_redirect=old_err;
@@ -1085,7 +1093,7 @@ void exec_job(parser_t &parser, job_t *j)
                 */
                 if (close_stdin)
                 {
-                    exec_close(builtin_stdin);
+                    exec_close(local_builtin_stdin);
                 }
                 break;
             }
@@ -1196,6 +1204,9 @@ void exec_job(parser_t &parser, job_t *j)
 
                 const shared_ptr<io_data_t> stdout_io = process_net_io_chain.get_io_for_fd(STDOUT_FILENO);
                 const shared_ptr<io_data_t> stderr_io = process_net_io_chain.get_io_for_fd(STDERR_FILENO);
+                
+                /* We expect to have the io streams in this case */
+                assert(builtin_output_streams.get() != NULL);
 
                 /* If we are outputting to a file, we have to actually do it, even if we have no output, so that we can truncate the file. Does not apply to /dev/null. */
                 bool must_fork = redirection_is_to_real_file(stdout_io.get()) || redirection_is_to_real_file(stderr_io.get());
@@ -1204,8 +1215,8 @@ void exec_job(parser_t &parser, job_t *j)
                     if (p->next == NULL)
                     {
                         const bool stdout_is_to_buffer = stdout_io && stdout_io->io_mode == IO_BUFFER;
-                        const bool no_stdout_output =  get_stdout_buffer().empty();
-                        const bool no_stderr_output =  get_stderr_buffer().empty();
+                        const bool no_stdout_output =  builtin_output_streams->stdout_stream.empty();
+                        const bool no_stderr_output =  builtin_output_streams->stderr_stream.empty();
 
                         if (no_stdout_output && no_stderr_output)
                         {
@@ -1226,7 +1237,7 @@ void exec_job(parser_t &parser, job_t *j)
                             }
 
                             CAST_INIT(io_buffer_t *, io_buffer, stdout_io.get());
-                            const std::string res = wcs2string(get_stdout_buffer());
+                            const std::string res = wcs2string(builtin_output_streams->stdout_stream.get_buffer());
                             io_buffer->out_buffer_append(res.data(), res.size());
                             fork_was_skipped = true;
                         }
@@ -1237,7 +1248,8 @@ void exec_job(parser_t &parser, job_t *j)
                             {
                                 printf("fork #-: Skipping fork due to ordinary output for internal builtin for '%ls'\n", p->argv0());
                             }
-                            const wcstring &out = get_stdout_buffer(), &err = get_stderr_buffer();
+                            const wcstring &out = builtin_output_streams->stdout_stream.get_buffer();
+                            const wcstring &err = builtin_output_streams->stderr_stream.get_buffer();
                             const std::string outbuff = wcs2string(out);
                             const std::string errbuff = wcs2string(err);
                             bool builtin_io_done = do_builtin_io(outbuff.data(), outbuff.size(), errbuff.data(), errbuff.size());
@@ -1269,7 +1281,8 @@ void exec_job(parser_t &parser, job_t *j)
                     /* Ok, unfortunately, we have to do a real fork. Bummer. We work hard to make sure we don't have to wait for all our threads to exit, by arranging things so that we don't have to allocate memory or do anything except system calls in the child. */
 
                     /* Get the strings we'll write before we fork (since they call malloc) */
-                    const wcstring &out = get_stdout_buffer(), &err = get_stderr_buffer();
+                    const wcstring &out = builtin_output_streams->stdout_stream.get_buffer();
+                    const wcstring &err = builtin_output_streams->stderr_stream.get_buffer();
 
                     /* These strings may contain embedded nulls, so don't treat them as C strings */
                     const std::string outbuff_str = wcs2string(out);

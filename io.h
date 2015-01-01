@@ -1,6 +1,7 @@
 #ifndef FISH_IO_H
 #define FISH_IO_H
 
+#include "common.h"
 #include <vector>
 
 // Note that we have to include something to get any _LIBCPP_VERSION defined so we can detect libc++
@@ -199,6 +200,81 @@ public:
 shared_ptr<const io_data_t> io_chain_get(const io_chain_t &src, int fd);
 shared_ptr<io_data_t> io_chain_get(io_chain_t &src, int fd);
 
+
+/** Class representing the output that a builtin can generate */
+class output_stream_t
+{
+private:
+    // no copying
+    output_stream_t(const output_stream_t &s);
+    void operator=(const output_stream_t &s);
+    
+    wcstring buffer;
+    
+public:
+    output_stream_t()
+    {
+    }
+    
+    void append(const wcstring &s)
+    {
+        this->buffer.append(s);
+    }
+
+    void append(const wchar_t *s)
+    {
+        this->buffer.append(s);
+    }
+    
+    void append(const wchar_t *s, size_t amt)
+    {
+        this->buffer.append(s, amt);
+    }
+    
+    void push_back(wchar_t c)
+    {
+        this->buffer.push_back(c);
+    }
+    
+    void append_format(const wchar_t *format, ...)
+    {
+        va_list va;
+        va_start(va, format);
+        append_formatv(this->buffer, format, va);
+        va_end(va);
+    }
+    
+    static output_stream_t *new_buffered_stream()
+    {
+        return new output_stream_t();
+    }
+    
+    const wcstring &get_buffer() const
+    {
+        // Temporary
+        return buffer;
+    }
+    
+    bool empty() const
+    {
+        // Temporary
+        return buffer.empty();
+    }
+};
+
+struct io_streams_t
+{
+    output_stream_t stdout_stream;
+    output_stream_t stderr_stream;
+    
+    // Indicates whether stdout and stderr are redirected (e.g. to a file or piped)
+    bool out_is_redirected;
+    bool err_is_redirected;
+    
+    io_streams_t() : out_is_redirected(false), err_is_redirected(false)
+    {
+    }
+};
 
 /** Print debug information about the specified IO redirection chain to stderr. */
 void io_print(const io_chain_t &chain);

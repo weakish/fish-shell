@@ -183,7 +183,8 @@ static void replace_part(const wchar_t *begin,
    \param cut_at_cursor whether printing should stop at the surrent cursor position
    \param tokenize whether the string should be tokenized, printing one string token on every line and skipping non-string tokens
 */
-static void write_part(const wchar_t *begin,
+static void write_part(io_streams_t &streams,
+                       const wchar_t *begin,
                        const wchar_t *end,
                        int cut_at_cursor,
                        int tokenize)
@@ -218,7 +219,7 @@ static void write_part(const wchar_t *begin,
             }
         }
 
-        stdout_buffer.append(out);
+        streams.stdout_stream.append(out);
 
         free(buff);
     }
@@ -231,8 +232,8 @@ static void write_part(const wchar_t *begin,
 
 //    debug( 0, L"woot2 %ls -> %ls", buff, esc );
 
-        stdout_buffer.append(begin, end - begin);
-        stdout_buffer.append(L"\n");
+        streams.stdout_stream.append(begin, end - begin);
+        streams.stdout_stream.append(L"\n");
 
     }
 }
@@ -242,7 +243,7 @@ static void write_part(const wchar_t *begin,
    The commandline builtin. It is used for specifying a new value for
    the commandline.
 */
-static int builtin_commandline(parser_t &parser, wchar_t **argv)
+static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
 
     int buffer_part=0;
@@ -289,9 +290,9 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
             return 1;
         }
 
-        stderr_buffer.append(argv[0]);
-        stderr_buffer.append(L": Can not set commandline in non-interactive mode\n");
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        streams.stderr_stream.append(argv[0]);
+        streams.stderr_stream.append(L": Can not set commandline in non-interactive mode\n");
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
@@ -337,11 +338,10 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
             case 0:
                 if (long_options[opt_index].flag != 0)
                     break;
-                append_format(stderr_buffer,
-                              BUILTIN_ERR_UNKNOWN,
+                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN,
                               argv[0],
                               long_options[opt_index].name);
-                builtin_print_help(parser, argv[0], stderr_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
 
                 return 1;
 
@@ -412,11 +412,11 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
                 break;
 
             case 'h':
-                builtin_print_help(parser, argv[0], stdout_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stdout_stream);
                 return 0;
 
             case L'?':
-                builtin_unknown_option(parser, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
                 return 1;
         }
     }
@@ -430,22 +430,22 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
         */
         if (buffer_part || cut_at_cursor || append_mode || tokenize || cursor_mode || line_mode || search_mode || paging_mode)
         {
-            append_format(stderr_buffer,
+            streams.stderr_stream.append_format(
                           BUILTIN_ERR_COMBO,
                           argv[0]);
 
-            builtin_print_help(parser, argv[0], stderr_buffer);
+            builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             return 1;
         }
 
 
         if (argc == woptind)
         {
-            append_format(stderr_buffer,
+            streams.stderr_stream.append_format(
                           BUILTIN_ERR_MISSING,
                           argv[0]);
 
-            builtin_print_help(parser, argv[0], stderr_buffer);
+            builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             return 1;
         }
         for (i=woptind; i<argc; i++)
@@ -462,11 +462,10 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
             }
             else
             {
-                append_format(stderr_buffer,
-                              _(L"%ls: Unknown input function '%ls'\n"),
+                streams.stderr_stream.append_format(_(L"%ls: Unknown input function '%ls'\n"),
                               argv[0],
                               argv[i]);
-                builtin_print_help(parser, argv[0], stderr_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                 return 1;
             }
         }
@@ -480,7 +479,7 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
         const wchar_t *buffer = reader_get_buffer();
         if (reader_get_selection(&start, &len))
         {
-            stdout_buffer.append(buffer + start, len);
+            streams.stdout_stream.append(buffer + start, len);
         }
         return 0;
     }
@@ -491,45 +490,45 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
     if ((search_mode || line_mode || cursor_mode || paging_mode) && (argc-woptind > 1))
     {
 
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       argv[0],
                       L": Too many arguments\n",
                       NULL);
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
     if ((buffer_part || tokenize || cut_at_cursor) && (cursor_mode || line_mode || search_mode || paging_mode))
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       BUILTIN_ERR_COMBO,
                       argv[0]);
 
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
 
     if ((tokenize || cut_at_cursor) && (argc-woptind))
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       BUILTIN_ERR_COMBO2,
                       argv[0],
                       L"--cut-at-cursor and --tokenize can not be used when setting the commandline");
 
 
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
     if (append_mode && !(argc-woptind))
     {
-        append_format(stderr_buffer,
+        streams.stderr_stream.append_format(
                       BUILTIN_ERR_COMBO2,
                       argv[0],
                       L"insertion mode switches can not be used when not in insertion mode");
 
-        builtin_print_help(parser, argv[0], stderr_buffer);
+        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
         return 1;
     }
 
@@ -557,11 +556,10 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
             new_pos = wcstol(argv[woptind], &endptr, 10);
             if (*endptr || errno)
             {
-                append_format(stderr_buffer,
-                              BUILTIN_ERR_NOT_NUMBER,
+                streams.stderr_stream.append_format(BUILTIN_ERR_NOT_NUMBER,
                               argv[0],
                               argv[woptind]);
-                builtin_print_help(parser, argv[0], stderr_buffer);
+                builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             }
 
             current_buffer = reader_get_buffer();
@@ -571,7 +569,7 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
         }
         else
         {
-            append_format(stdout_buffer, L"%lu\n", (unsigned long)reader_get_cursor_pos());
+            streams.stdout_stream.append_format(L"%lu\n", (unsigned long)reader_get_cursor_pos());
             return 0;
         }
 
@@ -581,7 +579,7 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
     {
         size_t pos = reader_get_cursor_pos();
         const wchar_t *buff = reader_get_buffer();
-        append_format(stdout_buffer, L"%lu\n", (unsigned long)parse_util_lineno(buff, pos));
+        streams.stdout_stream.append_format(L"%lu\n", (unsigned long)parse_util_lineno(buff, pos));
         return 0;
 
     }
@@ -640,7 +638,7 @@ static int builtin_commandline(parser_t &parser, wchar_t **argv)
     {
         case 0:
         {
-            write_part(begin, end, cut_at_cursor, tokenize);
+            write_part(streams, begin, end, cut_at_cursor, tokenize);
             break;
         }
 

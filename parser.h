@@ -380,7 +380,7 @@ public:
     {
         return variable_stack;
     }
-
+    
     /* Hackish. In order to correctly report the origin of code with no associated file, we need to know whether it's run during initialization or not. */
     void set_is_within_fish_initialization(bool flag);
     
