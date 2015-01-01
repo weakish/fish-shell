@@ -213,7 +213,7 @@ void write_ignore(int fd, const void *buff, size_t count);
    return from the function performing this check.
 */
 #define CHECK_BLOCK(retval) 											\
-	if (signal_is_blocked()) 											\
+	if (is_main_thread() && signal_is_blocked()) 											\
 	{																	\
 		debug( 0,														\
 			    "function %s called while blocking signals. ",  		\

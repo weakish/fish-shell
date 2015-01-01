@@ -507,6 +507,7 @@ void signal_reset_handlers()
 */
 void signal_set_handlers()
 {
+    ASSERT_IS_MAIN_THREAD();
     struct sigaction act;
 
     if (get_is_interactive() == -1)
@@ -660,6 +661,11 @@ void get_signals_with_handlers(sigset_t *set)
 
 void signal_block()
 {
+    if (! is_main_thread())
+    {
+        #warning Terrible - need to rationalize signals across threads
+        return;
+    }
     ASSERT_IS_MAIN_THREAD();
     sigset_t chldset;
 
@@ -675,6 +681,12 @@ void signal_block()
 
 void signal_unblock()
 {
+    if (! is_main_thread())
+    {
+        #warning Terrible - need to rationalize signals across threads
+        return;
+    }
+
     ASSERT_IS_MAIN_THREAD();
     sigset_t chldset;
 
@@ -697,6 +709,7 @@ void signal_unblock()
 
 bool signal_is_blocked()
 {
+    ASSERT_IS_MAIN_THREAD();
     return !!block_count;
 }
 
