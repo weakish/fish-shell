@@ -2787,11 +2787,11 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                         *out = *it;
                         out += 2;
                     }
-                    env_set(argv[i], chars.c_str(), place);
+                    parser.vars().set(argv[i], chars.c_str(), place);
                 }
                 else
                 {
-                    env_set(argv[i], NULL, place);
+                    parser.vars().set(argv[i], NULL, place);
                 }
             }
             else
@@ -2802,14 +2802,14 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                     if (j < bufflen)
                     {
                         wchar_t buffer[2] = {buff[j++], 0};
-                        env_set(argv[i], buffer, place);
+                        parser.vars().set(argv[i], buffer, place);
                     }
                     else
                     {
-                        env_set(argv[i], L"", place);
+                        parser.vars().set(argv[i], L"", place);
                     }
                 }
-                if (i < argc) env_set(argv[i], &buff[j], place);
+                if (i < argc) parser.vars().set(argv[i], &buff[j], place);
             }
         }
         else if (array)
@@ -2824,7 +2824,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                 tokens.append(buff, loc.first, loc.second);
                 empty = false;
             }
-            env_set(argv[i], empty ? NULL : tokens.c_str(), place);
+            parser.vars().set(argv[i], empty ? NULL : tokens.c_str(), place);
         }
         else
         {
@@ -2833,7 +2833,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
             while (i<argc)
             {
                 loc = wcstring_tok(buff, (i+1<argc) ? ifs : L"", loc);
-                env_set(argv[i], loc.first == wcstring::npos ? L"" : &buff.c_str()[loc.first], place);
+                parser.vars().set(argv[i], loc.first == wcstring::npos ? L"" : &buff.c_str()[loc.first], place);
 
                 ++i;
             }
@@ -3405,7 +3405,7 @@ static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **arg
     parser.push_block(new source_block_t(fn_intern));
     reader_push_current_filename(fn_intern);
 
-    parse_util_set_argv((argc>2)?(argv+2):(argv+1), wcstring_list_t());
+    parse_util_set_argv(&parser.vars(), (argc>2)?(argv+2):(argv+1), wcstring_list_t());
 
     res = reader_read(fd, streams.io_chain ? *streams.io_chain : io_chain_t());
 
@@ -3578,7 +3578,7 @@ static int builtin_fg(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
         const wcstring ft = tok_first(j->command_wcstr());
         if (! ft.empty())
-            env_set(L"_", ft.c_str(), ENV_EXPORT);
+            parser.vars().set(L"_", ft.c_str(), ENV_EXPORT);
         reader_write_title(parser, j->command());
 
         make_first(&parser, j);

@@ -81,6 +81,8 @@ bool g_use_posix_spawn = false; //will usually be set to true
 // Big global lock that all environment modifications use
 static pthread_mutex_t s_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
+static int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode);
+
 /**
    Struct representing one level in the function variable stack
 */
@@ -875,7 +877,7 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
     return 0;
 }
 
-int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode)
+static int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode)
 {
     return main_stack()->set(key, val, var_mode);
 }

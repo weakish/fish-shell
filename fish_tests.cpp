@@ -1504,7 +1504,7 @@ static void test_abbreviations(void)
     env_stack_t &vars = parser_t::principal_parser().vars();
     vars.push(true);
 
-    int ret = env_set(USER_ABBREVIATIONS_VARIABLE_NAME, abbreviations, ENV_LOCAL);
+    int ret = vars.set(USER_ABBREVIATIONS_VARIABLE_NAME, abbreviations, ENV_LOCAL);
     if (ret != 0) err(L"Unable to set abbreviation variable");
     
     wcstring result;

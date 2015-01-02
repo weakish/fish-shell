@@ -2003,7 +2003,7 @@ static bool check_for_orphaned_process(unsigned long loop_count, pid_t shell_pgi
 /**
    Initialize data for interactive use
 */
-static void reader_interactive_init()
+static void reader_interactive_init(parser_t &parser)
 {
     /* See if we are running interactively.  */
     pid_t shell_pgid;
@@ -2132,7 +2132,7 @@ static void reader_interactive_init()
     */
     original_pid = getpid();
 
-    env_set(L"_", L"fish", ENV_GLOBAL);
+    parser.vars().set(L"_", L"fish", ENV_GLOBAL);
 }
 
 /**
@@ -2512,7 +2512,7 @@ static void set_env_cmd_duration(struct timeval *after, struct timeval *before, 
     }
 
     swprintf(buf, 16, L"%d", (secs * 1000) + (usecs / 1000));
-    env_set(ENV_CMD_DURATION, buf, ENV_EXPORT);
+    parser.vars().set(ENV_CMD_DURATION, buf, ENV_EXPORT);
 }
 
 void reader_run_command(parser_t &parser, const wcstring &cmd)
@@ -2523,7 +2523,7 @@ void reader_run_command(parser_t &parser, const wcstring &cmd)
     wcstring ft = tok_first(cmd.c_str());
 
     if (! ft.empty())
-        env_set(L"_", ft.c_str(), ENV_GLOBAL);
+        parser.vars().set(L"_", ft.c_str(), ENV_GLOBAL);
 
     reader_write_title(parser, cmd);
 
@@ -2539,7 +2539,7 @@ void reader_run_command(parser_t &parser, const wcstring &cmd)
 
     term_steal();
 
-    env_set(L"_", program_name, ENV_GLOBAL);
+    parser.vars().set(L"_", program_name, ENV_GLOBAL);
 
 #ifdef HAVE__PROC_SELF_STAT
     proc_update_jiffies();
@@ -2599,7 +2599,7 @@ void reader_push(const wchar_t *name)
 
     if (data->next == 0)
     {
-        reader_interactive_init();
+        reader_interactive_init(parser_t::principal_parser());
     }
 
     exec_prompt(parser_t::principal_parser());

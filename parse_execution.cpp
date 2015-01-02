@@ -483,7 +483,7 @@ parse_execution_result_t parse_execution_context_t::run_for_statement(const pars
         }
 
         const wcstring &val = argument_sequence.at(i);
-        env_set(for_var_name, val.c_str(),  ENV_LOCAL);
+        parser->vars().set(for_var_name, val.c_str(),  ENV_LOCAL);
         fb->loop_status = LOOP_NORMAL;
         fb->skip = 0;
 

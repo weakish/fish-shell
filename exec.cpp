@@ -649,7 +649,7 @@ void exec_job(parser_t &parser, job_t *j)
                     nshlvl_str = to_string<long>(shlvl_i - 1);
                 }
             }
-            env_set(L"SHLVL", nshlvl_str.c_str(), ENV_GLOBAL | ENV_EXPORT);
+            parser.vars().set(L"SHLVL", nshlvl_str.c_str(), ENV_GLOBAL | ENV_EXPORT);
 
             /*
               launch_process _never_ returns
@@ -888,10 +888,10 @@ void exec_job(parser_t &parser, job_t *j)
                   signals.
                 */
                 signal_unblock();
-                parse_util_set_argv(p->get_argv()+1, named_arguments);
+                parse_util_set_argv(&parser.vars(), p->get_argv()+1, named_arguments);
                 for (std::map<wcstring,env_var_t>::const_iterator it = inherit_vars.begin(), end = inherit_vars.end(); it != end; ++it)
                 {
-                    env_set(it->first, it->second.missing() ? NULL : it->second.c_str(), ENV_LOCAL | ENV_USER);
+                    parser.vars().set(it->first, it->second.missing() ? NULL : it->second.c_str(), ENV_LOCAL | ENV_USER);
                 }
                 signal_block();
 

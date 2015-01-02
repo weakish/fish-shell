@@ -496,7 +496,7 @@ int main(int argc, char **argv)
                         sb.append(str2wcstring(*ptr));
                     }
 
-                    env_set(L"argv", sb.c_str(), 0);
+                    parser.vars().set(L"argv", sb.c_str(), 0);
                 }
 
                 const wcstring rel_filename = str2wcstring(file);

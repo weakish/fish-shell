@@ -303,9 +303,9 @@ wcstring input_get_bind_mode()
 /**
     Set the current bind mode
 */
-void input_set_bind_mode(const wcstring &bm)
+static void input_set_bind_mode(env_stack_t *vars, const wcstring &bm)
 {
-    env_set(FISH_BIND_MODE_VAR, bm.c_str(), ENV_GLOBAL);
+    vars->set(FISH_BIND_MODE_VAR, bm.c_str(), ENV_GLOBAL);
 }
 
 
@@ -473,10 +473,12 @@ int input_init()
         return 1;
 
     is_init = true;
+    
+    env_stack_t *vars = &parser_t::principal_parser().vars();
 
     input_common_init(&interrupt_handler);
 
-    const env_var_t term = env_get_from_principal(L"TERM");
+    const env_var_t term = vars->get(L"TERM");
     int errret;
     if (setupterm(0, STDOUT_FILENO, &errret) == ERR)
     {
@@ -486,7 +488,7 @@ int input_init()
             debug(0, _(L"Check that your terminal type, '%ls', is supported on this system"),
                   term.c_str());
             debug(0, _(L"Attempting to use '%ls' instead"), DEFAULT_TERM);
-            env_set(L"TERM", DEFAULT_TERM, ENV_GLOBAL | ENV_EXPORT);
+            vars->set(L"TERM", DEFAULT_TERM, ENV_GLOBAL | ENV_EXPORT);
             const std::string default_term = wcs2string(DEFAULT_TERM);
             if (setupterm(const_cast<char *>(default_term.c_str()), STDOUT_FILENO, &errret) == ERR)
             {
@@ -560,7 +562,7 @@ void input_function_push_args(int code)
    allow_commands controls whether fish commands should be executed, or should
    be deferred until later.
 */
-static void input_mapping_execute(const input_mapping_t &m, bool allow_commands)
+static void input_mapping_execute(parser_t &parser, const input_mapping_t &m, bool allow_commands)
 {
     /* By default input functions always succeed */
     input_function_status = true;
@@ -591,7 +593,6 @@ static void input_mapping_execute(const input_mapping_t &m, bool allow_commands)
              This key sequence is bound to a command, which
              is sent to the parser for evaluation.
              */
-            parser_t &parser = parser_t::principal_parser();
             int last_status = parser.get_last_status();
             parser.eval(command.c_str(), io_chain_t(), TOP);
             parser.set_last_status(last_status);
@@ -610,7 +611,7 @@ static void input_mapping_execute(const input_mapping_t &m, bool allow_commands)
         }
     }
 
-    input_set_bind_mode(m.sets_mode);
+    input_set_bind_mode(&parser.vars(), m.sets_mode);
 }
 
 
@@ -664,7 +665,7 @@ void input_unreadch(wint_t ch)
     input_common_unreadch(ch);
 }
 
-static void input_mapping_execute_matching_or_generic(bool allow_commands)
+static void input_mapping_execute_matching_or_generic(parser_t &parser, bool allow_commands)
 {
     const input_mapping_t *generic = NULL;
 
@@ -689,14 +690,14 @@ static void input_mapping_execute_matching_or_generic(bool allow_commands)
         }
         else if (input_mapping_is_match(m))
         {
-            input_mapping_execute(m, allow_commands);
+            input_mapping_execute(parser, m, allow_commands);
             return;
         }
     }
 
     if (generic)
     {
-        input_mapping_execute(*generic, allow_commands);
+        input_mapping_execute(parser, *generic, allow_commands);
     }
     else
     {
@@ -758,7 +759,8 @@ wint_t input_readch(bool allow_commands)
         else
         {
             input_unreadch(c);
-            input_mapping_execute_matching_or_generic(allow_commands);
+            parser_t &parser = parser_t::principal_parser();
+            input_mapping_execute_matching_or_generic(parser, allow_commands);
             // regarding allow_commands, we're in a loop, but if a fish command
             // is executed, R_NULL is unread, so the next pass through the loop
             // we'll break out and return it.

@@ -67,12 +67,6 @@ struct config_paths_t
 void env_init(const struct config_paths_t *paths = NULL);
 
 /**
-   Sets a value in the main parser. Working towards removing reliance on this.
-*/
-int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t mode);
-
-
-/**
   Return the value of the variable with the specified name.  Returns 0
   if the key does not exist.  The returned string should not be
   modified or freed. The returned string is only guaranteed to be

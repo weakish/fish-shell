@@ -157,11 +157,6 @@ bool input_mapping_get(const wcstring &sequence, const wcstring &mode, wcstring_
 */
 wcstring input_get_bind_mode();
 
-/**
-    Set the current bind mode
-*/
-void input_set_bind_mode(const wcstring &bind_mode);
-
 
 wchar_t input_function_pop_arg();
 

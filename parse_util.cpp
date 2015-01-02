@@ -573,7 +573,7 @@ void parse_util_token_extent(const wchar_t *buff,
 
 }
 
-void parse_util_set_argv(const wchar_t * const *argv, const wcstring_list_t &named_arguments)
+void parse_util_set_argv(env_stack_t *vars, const wchar_t * const *argv, const wcstring_list_t &named_arguments)
 {
     if (*argv)
     {
@@ -589,11 +589,11 @@ void parse_util_set_argv(const wchar_t * const *argv, const wcstring_list_t &nam
             sb.append(*arg);
         }
 
-        env_set(L"argv", sb.c_str(), ENV_LOCAL);
+        vars->set(L"argv", sb.c_str(), ENV_LOCAL);
     }
     else
     {
-        env_set(L"argv", 0, ENV_LOCAL);
+        vars->set(L"argv", NULL, ENV_LOCAL);
     }
 
     if (! named_arguments.empty())
@@ -602,7 +602,7 @@ void parse_util_set_argv(const wchar_t * const *argv, const wcstring_list_t &nam
         size_t i;
         for (i=0, arg=argv; i < named_arguments.size(); i++)
         {
-            env_set(named_arguments.at(i).c_str(), *arg, ENV_LOCAL | ENV_USER);
+            vars->set(named_arguments.at(i), *arg, ENV_LOCAL | ENV_USER);
 
             if (*arg)
                 arg++;
