@@ -82,6 +82,7 @@ bool g_use_posix_spawn = false; //will usually be set to true
 static pthread_mutex_t s_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode);
+const environment_t *env_get_main_environment();
 
 /**
    Struct representing one level in the function variable stack
@@ -649,7 +650,10 @@ env_node_t *env_stack_t::get_node(const wcstring &key)
 
 int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode)
 {
-    ASSERT_IS_MAIN_THREAD();
+    if (this == env_get_main_environment())
+    {
+        ASSERT_IS_MAIN_THREAD();
+    }
     
     scoped_lock locker(s_env_lock);
     bool has_changed_old = has_changed_exported;
@@ -1241,10 +1245,14 @@ void env_stack_t::pop()
     }
 }
 
+const environment_t *env_get_main_environment()
+{
+    return &parser_t::principal_environment();
+}
+
 env_var_t env_get_from_main(const wcstring &key)
 {
-    const environment_t &vars = parser_t::principal_environment();
-    return vars.get(key);
+    return env_get_main_environment()->get(key);
 }
 
 /**

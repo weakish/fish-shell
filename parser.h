@@ -236,7 +236,7 @@ class parser_t
 {
     friend class parse_execution_context_t;
     friend class child_eval_context_t;
-    friend env_var_t env_get_from_main(const wcstring &key);
+    friend const environment_t *env_get_main_environment();
 private:
     const enum parser_type_t parser_type;
 
