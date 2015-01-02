@@ -152,11 +152,10 @@ static int event_match(const event_t &classv, const event_t &instance)
 /**
    Test if specified event is blocked
 */
-static int event_is_blocked(const event_t &e)
+static int event_is_blocked(const parser_t &parser, const event_t &e)
 {
+    parser.assert_is_this_thread();
     const block_t *block;
-    parser_t &parser = parser_t::principal_parser();
-
     size_t idx = 0;
     while ((block = parser.block_at_index(idx++)))
     {
@@ -455,7 +454,7 @@ static void fire_event_callback(void *arg)
 */
 static void event_fire_internal(const event_t &event)
 {
-
+    ASSERT_IS_MAIN_THREAD();
     event_list_t fire;
 
     /*
@@ -560,6 +559,8 @@ static void event_fire_internal(const event_t &event)
 */
 static void event_fire_delayed()
 {
+    ASSERT_IS_MAIN_THREAD();
+    const parser_t &parser = parser_t::principal_parser();
     /*
       If is_event is one, we are running the event-handler non-recursively.
 
@@ -574,7 +575,7 @@ static void event_fire_delayed()
         for (size_t i=0; i<blocked.size(); i++)
         {
             event_t *e = blocked.at(i);
-            if (event_is_blocked(*e))
+            if (event_is_blocked(parser, *e))
             {
                 new_blocked.push_back(new event_t(*e));
             }
@@ -620,7 +621,7 @@ static void event_fire_delayed()
         {
             e.param1.signal = lst->signal[i];
             e.arguments.at(0) = sig2wcs(e.param1.signal);
-            if (event_is_blocked(e))
+            if (event_is_blocked(parser, e))
             {
                 blocked.push_back(new event_t(e));
             }
@@ -650,13 +651,18 @@ void event_fire_signal(int signal)
 
 void event_fire(const event_t *event)
 {
-
     if (event && event->type == EVENT_SIGNAL)
     {
         event_fire_signal(event->param1.signal);
     }
+    else if (! is_main_thread())
+    {
+        // nothing
+        #warning Need to rationalize how events generated in background threads are handled.
+    }
     else
     {
+        ASSERT_IS_MAIN_THREAD();
         is_event++;
 
         /*
@@ -666,7 +672,7 @@ void event_fire(const event_t *event)
 
         if (event)
         {
-            if (event_is_blocked(*event))
+            if (event_is_blocked(parser_t::principal_parser(), *event))
             {
                 blocked.push_back(new event_t(*event));
             }
@@ -700,7 +706,7 @@ void event_free(event_t *e)
     delete e;
 }
 
-void event_fire_generic(const wchar_t *name, wcstring_list_t *args)
+void event_fire_generic(const wchar_t *name, const wcstring_list_t *args)
 {
     CHECK(name,);
 

@@ -392,6 +392,7 @@ void input_mapping_add(const wchar_t *sequence, const wchar_t *command,
 */
 static int interrupt_handler()
 {
+    ASSERT_IS_MAIN_THREAD();
     /*
       Fire any pending events
     */

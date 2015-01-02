@@ -139,7 +139,7 @@ bool event_is_signal_observed(int signal);
    call to event_fire, instead they will be fired the next time
    event_fire is called with anull argument. This is needed to make
    sure that no code evaluation is ever performed by a signal handler.
-
+ 
    \param event the specific event whose handlers should fire. If
    null, then all delayed events will be fired.
 */
@@ -171,6 +171,6 @@ wcstring event_get_desc(const event_t &e);
 /**
    Fire a generic event with the specified name
 */
-void event_fire_generic(const wchar_t *name, wcstring_list_t *args = NULL);
+void event_fire_generic(const wchar_t *name, const wcstring_list_t *args = NULL);
 
 #endif

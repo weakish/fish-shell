@@ -398,6 +398,7 @@ static void react_to_variable_change(const wcstring &key)
 */
 static void universal_callback(fish_message_type_t type, const wchar_t *name, const wchar_t *val)
 {
+    ASSERT_IS_MAIN_THREAD();
     const wchar_t *str = NULL;
 
     switch (type)
