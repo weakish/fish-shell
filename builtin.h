@@ -98,17 +98,6 @@ enum
 void builtin_show_error(io_streams_t &streams, const wcstring &err);
 
 /**
-   Kludge. Tells builtins if output is to screen
-*/
-extern int builtin_out_redirect;
-
-/**
-   Kludge. Tells builtins if error is to screen
-*/
-extern int builtin_err_redirect;
-
-
-/**
    Initialize builtin data.
 */
 void builtin_init();
@@ -144,17 +133,6 @@ wcstring_list_t builtin_get_names(void);
 void builtin_get_names(std::vector<completion_t> &list);
 
 /**
-   Pushes a new set of input/output to the stack. The new stdin is supplied, a new set of output strings is created.
-*/
-void builtin_push_io(parser_t &parser, int stdin_fd);
-
-/**
-   Pops a set of input/output from the stack. The output strings are destroued, but the input file is not closed.
-*/
-void builtin_pop_io(parser_t &parser);
-
-
-/**
    Return a one-line description of the specified builtin.
 */
 wcstring builtin_get_desc(const wcstring &b);
@@ -185,7 +163,7 @@ class builtin_commandline_scoped_transient_t
    Run the __fish_print_help function to obtain the help information
    for the specified command.
 */
-wcstring builtin_help_get(parser_t &parser, const wchar_t *cmd);
+wcstring builtin_help_get(parser_t &parser, io_streams_t &streams, const wchar_t *cmd);
 
 /** Defines a function, like builtin_function. Returns 0 on success. args should NOT contain 'function' as the first argument. */
 int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list_t &args, const wcstring &contents, int definition_line_offset, wcstring *out_err);

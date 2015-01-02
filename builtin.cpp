@@ -115,9 +115,6 @@ bool builtin_data_t::operator<(const builtin_data_t *other) const
     return wcscmp(this->name, other->name) < 0;
 }
 
-int builtin_out_redirect;
-int builtin_err_redirect;
-
 void builtin_show_error(io_streams_t &streams, const wcstring &err)
 {
     streams.stderr_stream.append(err);
@@ -131,12 +128,6 @@ struct io_stack_elem_t
     int in;
 };
 static std::stack<io_stack_elem_t, std::vector<io_stack_elem_t> > io_stack;
-
-/**
-   The file from which builtin functions should attempt to read, use
-   instead of stdin.
-*/
-static int builtin_stdin;
 
 /**
    The underlying IO redirections behind the current builtin. This
@@ -193,7 +184,7 @@ static int count_char(const wchar_t *str, wchar_t c)
     return res;
 }
 
-wcstring builtin_help_get(parser_t &parser, const wchar_t *name)
+wcstring builtin_help_get(parser_t &parser, io_streams_t &streams, const wchar_t *name)
 {
     /* This won't ever work if no_exec is set */
     if (no_exec)
@@ -203,7 +194,7 @@ wcstring builtin_help_get(parser_t &parser, const wchar_t *name)
     wcstring out;
     const wcstring name_esc = escape_string(name, 1);
     wcstring cmd = format_string(L"__fish_print_help %ls", name_esc.c_str());
-    if (!builtin_out_redirect && isatty(1))
+    if (!streams.out_is_redirected && isatty(STDOUT_FILENO))
     {
         // since we're using a subshell, __fish_print_help can't tell we're in
         // a terminal. Tell it ourselves.
@@ -240,7 +231,7 @@ static void builtin_print_help(parser_t &parser, io_streams_t &streams, const wc
         b.append(parser.current_line());
     }
 
-    const wcstring h = builtin_help_get(parser, cmd);
+    const wcstring h = builtin_help_get(parser, streams, cmd);
 
     if (!h.size())
         return;
@@ -1584,7 +1575,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
     }
     else if (list || (argc==woptind))
     {
-        int is_screen = !builtin_out_redirect && isatty(1);
+        bool is_screen = !streams.out_is_redirected && isatty(STDOUT_FILENO);
         size_t i;
         wcstring_list_t names = function_get_names(show_hidden);
         std::sort(names.begin(), names.end());
@@ -2682,7 +2673,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
       Check if we should read interactively using \c reader_readline()
     */
     #warning This is_principal() check is bogus. Need to rationalize how read behaves in background threads.
-    if (isatty(0) && builtin_stdin == 0 && !split_null && parser.is_principal())
+    if (isatty(0) && streams.stdin_fd == STDIN_FILENO && !split_null && parser.is_principal())
     {
         const wchar_t *line;
 
@@ -2745,7 +2736,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
             while (!finished)
             {
                 char b;
-                if (read_blocked(builtin_stdin, &b, 1) <= 0)
+                if (read_blocked(streams.stdin_fd, &b, 1) <= 0)
                 {
                     eof=1;
                     break;
@@ -3398,7 +3389,7 @@ static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **arg
     {
         fn = L"-";
         fn_intern = fn;
-        fd = dup(builtin_stdin);
+        fd = dup(streams.stdin_fd);
     }
     else
     {
@@ -3582,7 +3573,7 @@ static int builtin_fg(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
     if (j)
     {
-        if (builtin_err_redirect)
+        if (streams.err_is_redirected)
         {
             streams.stderr_stream.append_format(
                           FG_MSG,
@@ -4009,7 +4000,7 @@ int builtin_parse(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     for (;;)
     {
         char buff[256];
-        ssize_t amt = read_loop(builtin_stdin, buff, sizeof buff);
+        ssize_t amt = read_loop(streams.stdin_fd, buff, sizeof buff);
         if (amt <= 0) break;
         txt.insert(txt.end(), buff, buff + amt);
     }
@@ -4223,31 +4214,4 @@ wcstring builtin_get_desc(const wcstring &name)
         result = _(builtin->desc);
     }
     return result;
-}
-
-void builtin_push_io(parser_t &parser, int in)
-{
-    ASSERT_IS_MAIN_THREAD();
-    if (builtin_stdin != -1)
-    {
-        struct io_stack_elem_t elem = {builtin_stdin};
-        io_stack.push(elem);
-    }
-    builtin_stdin = in;
-}
-
-void builtin_pop_io(parser_t &parser)
-{
-    ASSERT_IS_MAIN_THREAD();
-    builtin_stdin = 0;
-    if (! io_stack.empty())
-    {
-        struct io_stack_elem_t &elem = io_stack.top();
-        builtin_stdin = elem.in;
-        io_stack.pop();
-    }
-    else
-    {
-        builtin_stdin = 0;
-    }
 }

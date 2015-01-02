@@ -267,11 +267,14 @@ struct io_streams_t
     output_stream_t stdout_stream;
     output_stream_t stderr_stream;
     
+    // fd representing stdin. This is not closed by the destructor.
+    int stdin_fd;
+    
     // Indicates whether stdout and stderr are redirected (e.g. to a file or piped)
     bool out_is_redirected;
     bool err_is_redirected;
     
-    io_streams_t() : out_is_redirected(false), err_is_redirected(false)
+    io_streams_t() : stdin_fd(-1), out_is_redirected(false), err_is_redirected(false)
     {
     }
 };

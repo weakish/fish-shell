@@ -1040,9 +1040,6 @@ void exec_job(parser_t &parser, job_t *j)
                 }
                 else
                 {
-                    int old_out = builtin_out_redirect;
-                    int old_err = builtin_err_redirect;
-
                     /*
                        Since this may be the foreground job, and since
                        a builtin may execute another foreground job,
@@ -1057,13 +1054,8 @@ void exec_job(parser_t &parser, job_t *j)
                        walking the job list, but it seems more robust
                        to make exec handle things.
                     */
-
-                    builtin_push_io(parser, local_builtin_stdin);
                     builtin_output_streams.reset(new io_streams_t());
-
-                    builtin_out_redirect = has_fd(process_net_io_chain, STDOUT_FILENO);
-                    builtin_err_redirect = has_fd(process_net_io_chain, STDERR_FILENO);
-                    
+                    builtin_output_streams->stdin_fd = local_builtin_stdin;                    
                     builtin_output_streams->out_is_redirected = has_fd(process_net_io_chain, STDOUT_FILENO);
                     builtin_output_streams->err_is_redirected = has_fd(process_net_io_chain, STDERR_FILENO);
 
@@ -1073,9 +1065,6 @@ void exec_job(parser_t &parser, job_t *j)
                     signal_unblock();
 
                     p->status = builtin_run(parser, *builtin_output_streams.get(), p->get_argv(), process_net_io_chain);
-
-                    builtin_out_redirect=old_out;
-                    builtin_err_redirect=old_err;
 
                     signal_block();
 
@@ -1435,9 +1424,6 @@ void exec_job(parser_t &parser, job_t *j)
                 break;
             }
         }
-
-        if (p->type == INTERNAL_BUILTIN)
-            builtin_pop_io(parser);
 
         /*
            Close the pipe the current process uses to read from the

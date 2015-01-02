@@ -257,7 +257,7 @@ static int builtin_jobs(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     /*
       Do not babble if not interactive
     */
-    if (builtin_out_redirect)
+    if (streams.out_is_redirected)
     {
         found=1;
     }
