@@ -1058,13 +1058,14 @@ void exec_job(parser_t &parser, job_t *j)
                     builtin_output_streams->stdin_fd = local_builtin_stdin;                    
                     builtin_output_streams->out_is_redirected = has_fd(process_net_io_chain, STDOUT_FILENO);
                     builtin_output_streams->err_is_redirected = has_fd(process_net_io_chain, STDERR_FILENO);
+                    builtin_output_streams->io_chain = &process_net_io_chain;
 
                     const int fg = job_get_flag(j, JOB_FOREGROUND);
                     job_set_flag(j, JOB_FOREGROUND, 0);
 
                     signal_unblock();
 
-                    p->status = builtin_run(parser, *builtin_output_streams.get(), p->get_argv(), process_net_io_chain);
+                    p->status = builtin_run(parser, *builtin_output_streams.get(), p->get_argv());
 
                     signal_block();
 

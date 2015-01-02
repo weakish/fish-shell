@@ -120,11 +120,11 @@ int builtin_exists(const wcstring &cmd);
   of the builtin.  The list is terminated by a
   null pointer. This syntax resembles the syntax
   for exec.
-  \param io the io redirections to perform on this builtin.
+  \param streams Data about IO redirections
 
   \return the exit status of the builtin command
 */
-int builtin_run(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv, const io_chain_t &io);
+int builtin_run(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv);
 
 /** Returns a list of all builtin names */
 wcstring_list_t builtin_get_names(void);

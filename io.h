@@ -274,7 +274,10 @@ struct io_streams_t
     bool out_is_redirected;
     bool err_is_redirected;
     
-    io_streams_t() : stdin_fd(-1), out_is_redirected(false), err_is_redirected(false)
+    // Actual IO redirections. This is only used by the source builtin. Unowned.
+    const io_chain_t *io_chain;
+    
+    io_streams_t() : stdin_fd(-1), out_is_redirected(false), err_is_redirected(false), io_chain(NULL)
     {
     }
 };

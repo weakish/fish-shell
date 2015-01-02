@@ -120,13 +120,6 @@ void builtin_show_error(io_streams_t &streams, const wcstring &err)
 }
 
 /**
-   The underlying IO redirections behind the current builtin. This
-   should normally not be used - sb_out and friends are already
-   configured to handle everything.
-*/
-static const io_chain_t *real_io;
-
-/**
    Counts the number of non null pointers in the specified array
 */
 static int builtin_count_args(const wchar_t * const * argv)
@@ -3414,7 +3407,7 @@ static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **arg
 
     parse_util_set_argv((argc>2)?(argv+2):(argv+1), wcstring_list_t());
 
-    res = reader_read(fd, real_io ? *real_io : io_chain_t());
+    res = reader_read(fd, streams.io_chain ? *streams.io_chain : io_chain_t());
 
     parser.pop_block();
 
@@ -3763,7 +3756,7 @@ static int builtin_breakpoint(parser_t &parser, io_streams_t &streams, wchar_t *
 {
     parser.push_block(new breakpoint_block_t());
 
-    reader_read(STDIN_FILENO, real_io ? *real_io : io_chain_t());
+    reader_read(STDIN_FILENO, streams.io_chain ? *streams.io_chain : io_chain_t());
 
     parser.pop_block();
 
@@ -4140,10 +4133,9 @@ static int internal_help(const wchar_t *cmd)
 }
 
 
-int builtin_run(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv, const io_chain_t &io)
+int builtin_run(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv)
 {
     int (*cmd)(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv)=NULL;
-    real_io = &io;
 
     CHECK(argv, STATUS_BUILTIN_ERROR);
     CHECK(argv[0], STATUS_BUILTIN_ERROR);
