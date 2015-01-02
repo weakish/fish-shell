@@ -34,7 +34,6 @@
 #include <wctype.h>
 #include <sys/time.h>
 #include <time.h>
-#include <stack>
 
 #include "fallback.h"
 #include "util.h"
@@ -119,15 +118,6 @@ void builtin_show_error(io_streams_t &streams, const wcstring &err)
 {
     streams.stderr_stream.append(err);
 }
-
-/**
-   Stack containing builtin I/O for recursive builtin calls.
-*/
-struct io_stack_elem_t
-{
-    int in;
-};
-static std::stack<io_stack_elem_t, std::vector<io_stack_elem_t> > io_stack;
 
 /**
    The underlying IO redirections behind the current builtin. This
