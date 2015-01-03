@@ -110,15 +110,14 @@ int get_is_interactive(void)
     return is_interactive > 0;
 }
 
+/* We take a relaxed concurrency model for proc_had_barrier. Anyone can get it and set it. There's only one set of universal variables so it doesn't really matter who fetches it. */
 bool get_proc_had_barrier()
 {
-    ASSERT_IS_MAIN_THREAD();
     return proc_had_barrier;
 }
 
 void set_proc_had_barrier(bool flag)
 {
-    ASSERT_IS_MAIN_THREAD();
     proc_had_barrier = flag;
 }
 

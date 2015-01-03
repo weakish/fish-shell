@@ -84,6 +84,9 @@ static pthread_mutex_t s_env_lock = PTHREAD_MUTEX_INITIALIZER;
 static int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode);
 const environment_t *env_get_main_environment();
 
+/* A value that is incremented every time the set of exported universal variables change. */
+static volatile export_generation_t s_uvar_export_generation = 0;
+
 /**
    Struct representing one level in the function variable stack
 */
@@ -149,7 +152,7 @@ class env_node_t
     }
 };
 
-env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global), exit_status(0)
+env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global), exit_status(0), changed_exported_generation(EXPORT_GENERATION_INVALID)
 {
 }
 
@@ -211,21 +214,6 @@ static const_string_set_t env_electric;
 static bool is_electric(const wcstring &key)
 {
     return env_electric.find(key.c_str()) != env_electric.end();
-}
-
-/**
-   Exported variable array used by execv
-*/
-static null_terminated_array_t<char> export_array;
-
-/**
-   Flag for checking if we need to regenerate the exported variable
-   array
-*/
-static bool has_changed_exported = true;
-static void mark_changed_exported()
-{
-    has_changed_exported = true;
 }
 
 /**
@@ -422,8 +410,6 @@ static void universal_callback(fish_message_type_t type, const wchar_t *name, co
 
     if (str)
     {
-        mark_changed_exported();
-
         event_t ev = event_t::variable_event(name);
         ev.arguments.push_back(L"VARIABLE");
         ev.arguments.push_back(str);
@@ -657,7 +643,7 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
     }
     
     scoped_lock locker(s_env_lock);
-    bool has_changed_old = has_changed_exported;
+    bool has_changed_old = this->has_changed_exported();
     bool has_changed_new = false;
     int done=0;
     
@@ -1358,6 +1344,19 @@ void env_stack_t::get_exported(const env_node_t *n, std::map<wcstring, wcstring>
     }
 }
 
+void env_stack_t::mark_changed_exported()
+{
+    changed_exported_generation = EXPORT_GENERATION_INVALID;
+}
+
+bool env_stack_t::has_changed_exported() const
+{
+    // we mark our own exports as dirty by setting the generation to EXPORT_GENERATION_INVALID
+    // this will never equal the uvar generation
+    assert(s_uvar_export_generation != EXPORT_GENERATION_INVALID);
+    return this->changed_exported_generation != s_uvar_export_generation;
+}
+
 /* Given a map from key to value, add values to out of the form key=value */
 static void export_func(const std::map<wcstring, wcstring> &envs, std::vector<std::string> &out)
 {
@@ -1399,7 +1398,7 @@ void env_stack_t::update_export_array_if_necessary(bool recalc)
         env_universal_barrier();
     }
 
-    if (has_changed_exported)
+    if (this->has_changed_exported())
     {
         std::map<wcstring, wcstring> vals;
         size_t i;
@@ -1407,7 +1406,10 @@ void env_stack_t::update_export_array_if_necessary(bool recalc)
         debug(4, L"env_export_arr() recalc");
 
         get_exported(top.get(), vals);
-
+        
+        // Read the gen count before reading uvars
+        const export_generation_t local_export_gen = s_uvar_export_generation;
+        assert(local_export_gen != EXPORT_GENERATION_INVALID);
         if (uvars())
         {
             const wcstring_list_t uni = uvars()->get_names(true, false);
@@ -1428,7 +1430,7 @@ void env_stack_t::update_export_array_if_necessary(bool recalc)
         std::vector<std::string> local_export_buffer;
         export_func(vals, local_export_buffer);
         this->export_array.set(local_export_buffer);
-        has_changed_exported=false;
+        this->changed_exported_generation = local_export_gen;
     }
 }
 
@@ -1437,12 +1439,16 @@ const null_terminated_array_t<char> &env_stack_t::get_export_array() const
     return export_array;
 }
 
-const char * const *env_export_arr(bool recalc)
+const char * const *env_stack_t::env_export_arr(bool recalc)
 {
-    ASSERT_IS_MAIN_THREAD();
-    main_stack()->update_export_array_if_necessary(recalc);
-    return main_stack()->get_export_array().get();
+    if (this == env_get_main_environment())
+    {
+        ASSERT_IS_MAIN_THREAD();
+    }
+    this->update_export_array_if_necessary(recalc);
+    return this->get_export_array().get();
 }
+
 
 env_vars_snapshot_t::env_vars_snapshot_t(const environment_t &env, const wchar_t * const *keys)
 {
@@ -1458,7 +1464,6 @@ env_vars_snapshot_t::env_vars_snapshot_t(const environment_t &env, const wchar_t
         }
     }
 }
-
 
 void env_universal_barrier()
 {
@@ -1478,6 +1483,15 @@ void env_universal_barrier()
             const callback_data_t &data = changes.at(i);
             universal_callback(data.type, data.key.c_str(), data.val.c_str());
         }
+        
+        // Increment s_uvar_export_generation, but ensure it doesn't go to EXPORT_GENERATION_INVALID
+        // Notice we take great care to not store EXPORT_GENERATION_INVALID even transiently
+        export_generation_t next = 1 + s_uvar_export_generation;
+        if (next == EXPORT_GENERATION_INVALID)
+        {
+            next = 0;
+        }
+        s_uvar_export_generation = next;
     }
 }
 

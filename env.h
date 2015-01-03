@@ -165,6 +165,9 @@ class env_node_t;
 /* We use shared pointers to track nodes, because multiple stacks can reference the same node */
 typedef shared_ptr<env_node_t> env_node_ref_t;
 
+typedef unsigned export_generation_t;
+#define EXPORT_GENERATION_INVALID ((export_generation_t)(-1))
+
 class env_stack_t : public environment_t
 {
     friend class parser_t;
@@ -180,6 +183,12 @@ class env_stack_t : public environment_t
     
     /** Hackish: The last exit status. The parser sets this directly. */
     int exit_status;
+
+    /** List of exported variables */
+    null_terminated_array_t<char> export_array;
+    
+    /** Generation count for exported variable changes. A value of EXPORT_GENERATION_INVALID means it's stale. */
+    export_generation_t changed_exported_generation;
     
     /** Child stacks */
     explicit env_stack_t(const env_stack_t &parent);
@@ -193,8 +202,8 @@ class env_stack_t : public environment_t
     bool try_remove(env_node_t *n, const wcstring &key, int var_mode);
     bool local_scope_exports(env_node_t *n) const;
     void get_exported(const env_node_t *n, std::map<wcstring, wcstring> &h) const;
-    
-    null_terminated_array_t<char> export_array;
+    void mark_changed_exported();
+    bool has_changed_exported() const;
     
     public:
     env_stack_t();
@@ -250,6 +259,9 @@ class env_stack_t : public environment_t
     void update_export_array_if_necessary(bool recalc);
     const null_terminated_array_t<char> &get_export_array() const;
     
+    /** Returns an array containing all exported variables in a format suitable for execv. */
+    const char * const * env_export_arr(bool recalc);
+    
     static const env_stack_t &empty();
 };
 
@@ -261,10 +273,6 @@ env_var_t env_get_from_principal(const wcstring &key, env_mode_flags_t mode = EN
 
 /** Synchronizes all universal variable changes: writes everything out, reads stuff in */
 void env_universal_barrier();
-
-/** Returns an array containing all exported variables in a format suitable for execv. */
-const char * const * env_export_arr(bool recalc);
-
 
 /** Update the PWD variable directory */
 int env_set_pwd();

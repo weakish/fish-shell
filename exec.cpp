@@ -353,10 +353,8 @@ static void safe_launch_process(process_t *p, const char *actual_cmd, const char
     exit_without_destructors(STATUS_EXEC_FAIL);
 }
 
-/**
-   This function is similar to launch_process, except it is not called after a fork (i.e. it only calls exec) and therefore it can allocate memory.
-*/
-static void launch_process_nofork(process_t *p)
+/** This function is similar to launch_process, except it is not called after a fork (i.e. it only calls exec) and therefore it can allocate memory. This is only used by exec. */
+static void launch_process_nofork(parser_t &parser, process_t *p)
 {
     ASSERT_IS_MAIN_THREAD();
     ASSERT_IS_NOT_FORKED_CHILD();
@@ -364,7 +362,7 @@ static void launch_process_nofork(process_t *p)
     null_terminated_array_t<char> argv_array;
     convert_wide_array_to_narrow(p->get_argv_array(), &argv_array);
 
-    const char *const *envv = env_export_arr(false);
+    const char *const *envv = parser.vars().env_export_arr(false);
     char *actual_cmd = wcs2str(p->actual_cmd.c_str());
 
     /* Bounce to launch_process. This never returns. */
@@ -654,7 +652,7 @@ void exec_job(parser_t &parser, job_t *j)
             /*
               launch_process _never_ returns
             */
-            launch_process_nofork(j->first_process);
+            launch_process_nofork(parser, j->first_process);
         }
         else
         {
@@ -813,7 +811,7 @@ void exec_job(parser_t &parser, job_t *j)
            uniprocessor systems.
         */
         if (p->type == EXTERNAL)
-            env_export_arr(true);
+            parser.vars().env_export_arr(true);
 
 
         /*
@@ -1330,7 +1328,7 @@ void exec_job(parser_t &parser, job_t *j)
                 make_fd_blocking(STDIN_FILENO);
 
                 const char * const *argv = argv_array.get();
-                const char * const *envv = env_export_arr(false);
+                const char * const *envv = parser.vars().env_export_arr(false);
 
                 std::string actual_cmd_str = wcs2string(p->actual_cmd);
                 const char *actual_cmd = actual_cmd_str.c_str();

@@ -1465,6 +1465,7 @@ class universal_notifier_named_pipe_t : public universal_notifier_t
             }
             
             // Now schedule a read for some time in the future
+#warning Need to make this thread safe
             this->readback_time_usec = get_time() + NAMED_PIPE_FLASH_DURATION_USEC;
             this->readback_amount += sizeof pid_nbo;
         }
