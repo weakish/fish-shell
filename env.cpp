@@ -916,7 +916,11 @@ bool env_stack_t::try_remove(env_node_t *n, const wcstring &key, int var_mode)
 
 int env_stack_t::remove(const wcstring &key, int var_mode)
 {
-    ASSERT_IS_MAIN_THREAD();
+    if (this == env_get_main_environment())
+    {
+        ASSERT_IS_MAIN_THREAD();
+    }
+
     scoped_lock locker(s_env_lock);
     env_node_t *first_node;
     int erased = 0;
@@ -1390,8 +1394,11 @@ static void export_func(const std::map<wcstring, wcstring> &envs, std::vector<st
 void env_stack_t::update_export_array_if_necessary(bool recalc)
 {
     scoped_lock locker(s_env_lock);
-    
-    ASSERT_IS_MAIN_THREAD();
+    if (this == env_get_main_environment())
+    {
+        ASSERT_IS_MAIN_THREAD();
+    }
+
     if (recalc && ! get_proc_had_barrier())
     {
         set_proc_had_barrier(true);

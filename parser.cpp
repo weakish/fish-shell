@@ -192,6 +192,7 @@ wcstring parser_t::user_presentable_path(const wcstring &path) const
 
 parser_t::parser_t(enum parser_type_t type, bool errors) :
     parser_type(type),
+    expected_thread(),
     show_errors(errors),
     cancellation_requested(false),
     is_within_fish_initialization(false)
@@ -200,6 +201,7 @@ parser_t::parser_t(enum parser_type_t type, bool errors) :
 
 parser_t::parser_t(const parser_t &parent) :
     parser_type(parent.parser_type),
+    expected_thread(), // default means none
     show_errors(parent.show_errors),
     cancellation_requested(parent.cancellation_requested),
     is_within_fish_initialization(parent.is_within_fish_initialization),
@@ -217,6 +219,7 @@ parser_t &parser_t::principal_parser(void)
     static parser_t parser(PARSER_TYPE_GENERAL, true);
     if (! s_principal_parser)
     {
+        parser.expected_thread = pthread_self();
         s_principal_parser = &parser;
     }
     return parser;
@@ -229,14 +232,10 @@ bool parser_t::is_principal() const
 
 void parser_t::assert_is_this_thread() const
 {
-    /* Our assertion is pretty lame at this point */
-    if (this->is_principal())
+    pthread_t invalid_thread = pthread_t();
+    if (this->expected_thread != invalid_thread)
     {
-        ASSERT_IS_MAIN_THREAD();
-    }
-    else
-    {
-        ASSERT_IS_BACKGROUND_THREAD();
+        assert(pthread_equal(this->expected_thread, pthread_self()));
     }
 }
 
@@ -1038,6 +1037,7 @@ class child_eval_context_t
     
     int run_in_background()
     {
+        this->parser.expected_thread = pthread_self();
         this->result = parser.eval(src, tree, node_idx, io, block_type);
         this->finished = true;
         return result;

@@ -287,6 +287,7 @@ static struct timespec timespec_make_relative(long long usec_into_futre)
 
 bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid, int *out_status, long long timeout_usec)
 {
+    parser.assert_is_this_thread();
     const job_list_t &jobs = parser.job_list();
 
     bool got_pid = false;

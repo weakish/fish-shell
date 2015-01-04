@@ -242,6 +242,9 @@ private:
 
     /** Black magic */
     explicit parser_t(const parser_t &parent);
+    
+    /** The thread we expect to run on, used for assertions only */
+    pthread_t expected_thread;
 
     /** Whether or not we output errors */
     const bool show_errors;
@@ -272,6 +275,7 @@ private:
 
     /** List of profile items, allocated with new */
     std::vector<profile_item_t *> profile_items;
+    
 
     /* No copying allowed */
     parser_t& operator=(const parser_t&);

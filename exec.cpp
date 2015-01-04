@@ -398,7 +398,7 @@ static void io_cleanup_fds(const std::vector<int> &opened_fds)
 */
 static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, std::vector<int> *out_opened_fds)
 {
-    ASSERT_IS_MAIN_THREAD();
+#warning Need to synchronize opening FDs with exec to avoid leaking FDs into other processes
     assert(out_chain != NULL && out_opened_fds != NULL);
     assert(out_chain->empty());
 
@@ -1482,7 +1482,7 @@ void exec_job(parser_t &parser, job_t *j)
 
 static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstring_list_t *lst, bool apply_exit_status)
 {
-    ASSERT_IS_MAIN_THREAD();
+    parser.assert_is_this_thread();
     int prev_subshell = is_subshell;
     const int prev_status = parser.get_last_status();
     bool split_output=false;
@@ -1563,12 +1563,12 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
 
 int exec_subshell(parser_t &parser, const wcstring &cmd, std::vector<wcstring> &outputs, bool apply_exit_status)
 {
-    ASSERT_IS_MAIN_THREAD();
+    parser.assert_is_this_thread();
     return exec_subshell_internal(parser, cmd, &outputs, apply_exit_status);
 }
 
 int exec_subshell(parser_t &parser, const wcstring &cmd, bool apply_exit_status)
 {
-    ASSERT_IS_MAIN_THREAD();
+    parser.assert_is_this_thread();
     return exec_subshell_internal(parser, cmd, NULL, apply_exit_status);
 }

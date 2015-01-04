@@ -2179,7 +2179,7 @@ void restore_term_foreground_process_group(void)
 bool is_main_thread()
 {
     assert(main_thread_id != 0);
-    return main_thread_id == pthread_self();
+    return pthread_equal(main_thread_id, pthread_self());
 }
 
 void assert_is_main_thread(const char *who)
