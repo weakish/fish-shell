@@ -86,8 +86,6 @@ static void exec_write_and_exit(int fd, const char *buff, size_t count, int stat
 
 void exec_close(int fd)
 {
-    ASSERT_IS_MAIN_THREAD();
-
     /* This may be called in a child of fork(), so don't allocate memory */
     if (fd < 0)
     {
@@ -108,8 +106,6 @@ void exec_close(int fd)
 
 int exec_pipe(int fd[2])
 {
-    ASSERT_IS_MAIN_THREAD();
-
     int res;
     while ((res=pipe(fd)))
     {
