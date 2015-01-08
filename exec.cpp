@@ -71,15 +71,6 @@
 */
 #define OPEN_MASK 0666
 
-/**
-   List of all pipes used by internal pipes. These must be closed in
-   many situations in order to make sure that stray fds aren't lying
-   around.
-
-   Note this is used after fork, so we must not do anything that may allocate memory. Hopefully methods like open_fds.at() don't.
-*/
-static std::vector<bool> open_fds;
-
 // Called in a forked child
 static void exec_write_and_exit(int fd, const char *buff, size_t count, int status)
 {
@@ -113,12 +104,6 @@ void exec_close(int fd)
             break;
         }
     }
-
-    /* Maybe remove this from our set of open fds */
-    if ((size_t)fd < open_fds.size())
-    {
-        open_fds[fd] = false;
-    }
 }
 
 int exec_pipe(int fd[2])
@@ -136,15 +121,11 @@ int exec_pipe(int fd[2])
     }
 
     debug(4, L"Created pipe using fds %d and %d", fd[0], fd[1]);
-
-    int max_fd = std::max(fd[0], fd[1]);
-    if (max_fd >= 0 && open_fds.size() <= (size_t)max_fd)
-    {
-        open_fds.resize(max_fd + 1, false);
-    }
-    open_fds.at(fd[0]) = true;
-    open_fds.at(fd[1]) = true;
-
+    
+    // Pipes ought to be cloexec
+    // Pipes are dup2'd the corresponding fds; the resulting fds are not cloexec
+    set_cloexec(fd[0]);
+    set_cloexec(fd[1]);
     return res;
 }
 
@@ -180,83 +161,6 @@ static bool chain_contains_redirection_to_real_file(const io_chain_t &io_chain)
         }
     }
     return result;
-}
-
-void print_open_fds(void)
-{
-    for (size_t i=0; i < open_fds.size(); ++i)
-    {
-        if (open_fds.at(i))
-        {
-            fprintf(stderr, "fd %lu\n", (unsigned long) i);
-        }
-    }
-}
-
-/**
-   Check if the specified fd is used as a part of a pipeline in the
-   specidied set of IO redirections.
-   This is called after fork().
-
-   \param fd the fd to search for
-   \param io_chain the set of io redirections to search in
-*/
-static bool use_fd_in_pipe(int fd, const io_chain_t &io_chain)
-{
-    for (size_t idx = 0; idx < io_chain.size(); idx++)
-    {
-        const shared_ptr<const io_data_t> &io = io_chain.at(idx);
-        if ((io->io_mode == IO_BUFFER) ||
-                (io->io_mode == IO_PIPE))
-        {
-            CAST_INIT(const io_pipe_t *, io_pipe, io.get());
-            if (io_pipe->pipe_fd[0] == fd || io_pipe->pipe_fd[1] == fd)
-                return true;
-        }
-    }
-    return false;
-}
-
-
-/**
-   Close all fds in open_fds, except for those that are mentioned in
-   the redirection list io. This should make sure that there are no
-   stray opened file descriptors in the child.
-
-   \param io the list of io redirections for this job. Pipes mentioned
-   here should not be closed.
-*/
-void close_unused_internal_pipes(const io_chain_t &io)
-{
-    /* A call to exec_close will modify open_fds, so be careful how we walk */
-    for (size_t i=0; i < open_fds.size(); i++)
-    {
-        if (open_fds[i])
-        {
-            int fd = (int)i;
-            if (!use_fd_in_pipe(fd, io))
-            {
-                debug(4, L"Close fd %d, used in other context", fd);
-                exec_close(fd);
-                i--;
-            }
-        }
-    }
-}
-
-void get_unused_internal_pipes(std::vector<int> &fds, const io_chain_t &io)
-{
-    for (size_t i=0; i < open_fds.size(); i++)
-    {
-        if (open_fds[i])
-        {
-            int fd = (int)i;
-            if (!use_fd_in_pipe(fd, io))
-            {
-                fds.push_back(fd);
-            }
-        }
-    }
 }
 
 /**
@@ -662,6 +566,24 @@ void exec_job(parser_t &parser, job_t *j)
         }
         assert(0 && "This should be unreachable");
     }
+    
+    /* We may have block IOs that conflict with fd redirections. For example, we may have a command with a redireciton like <&3; we may also have chosen 3 as the fd for our pipe. Ensure we have no conflicts. */
+    for (size_t i=0; i < all_ios.size(); i++)
+    {
+        io_data_t *io = all_ios.at(i).get();
+        if (io->io_mode == IO_BUFFER)
+        {
+            CAST_INIT(io_buffer_t *, io_buffer, io);
+            if (! io_buffer->avoid_conflicts_with_io_chain(all_ios))
+            {
+                /* We could not avoid conflicts, probably due to fd exhaustion. Mark an error. */
+                exec_error = true;
+                job_mark_process_as_failed(j, j->first_process);
+                break;
+            }
+        }
+    }
+    
 
     signal_block();
 
@@ -675,7 +597,7 @@ void exec_job(parser_t &parser, job_t *j)
       exit.
     */
 
-    if (job_get_flag(j, JOB_CONTROL))
+    if (job_get_flag(j, JOB_CONTROL) && ! exec_error)
     {
         for (const process_t *p = j->first_process; p; p = p->next)
         {
@@ -740,7 +662,7 @@ void exec_job(parser_t &parser, job_t *j)
     */
 
     int pipe_current_read = -1, pipe_current_write = -1, pipe_next_read = -1;
-    for (process_t *p=j->first_process; p; p = p->next)
+    for (process_t *p=j->first_process; p != NULL && ! exec_error; p = p->next)
     {
         /* The IO chain for this process. It starts with the block IO, then pipes, and then gets any from the process */
         io_chain_t process_net_io_chain = j->block_io_chain();
@@ -773,7 +695,7 @@ void exec_job(parser_t &parser, job_t *j)
 
             However, eval does this:
 
-               echo "begin; $argv "\n" ;end eval2_inner <&3 3<&-" | source 3<&0
+               echo "begin; $argv "\n" ;end <&3 3<&-" | source 3<&0
 
             which depends on the redirection being evaluated before the pipe. So the write end of the pipe comes first, the read pipe of the pipe comes last. See issue #966.
         */
@@ -814,10 +736,7 @@ void exec_job(parser_t &parser, job_t *j)
             parser.vars().env_export_arr(true);
 
 
-        /*
-          Set up fd:s that will be used in the pipe
-        */
-
+        /* Set up fds that will be used in the pipe. */
         if (pipes_to_next_command)
         {
 //      debug( 1, L"%ls|%ls" , p->argv[0], p->next->argv[0]);
@@ -831,7 +750,19 @@ void exec_job(parser_t &parser, job_t *j)
                 break;
             }
 
+            /* Ensure our pipe fds not conflict with any fd redirections. E.g. if the process is like 'cat <&5' then fd 5 must not be used by the pipe. */
+            if (! pipe_avoid_conflicts_with_io_chain(local_pipe, all_ios))
+            {
+                /* We failed. The pipes were closed for us. */
+                wperror(L"dup");
+                exec_error = true;
+                job_mark_process_as_failed(j, p);
+                break;
+            }
+
             // This tells the redirection about the fds, but the redirection does not close them
+            assert(local_pipe[0] >= 0);
+            assert(local_pipe[1] >= 0);
             memcpy(pipe_write->pipe_fd, local_pipe, sizeof(int)*2);
 
             // Record our pipes
@@ -842,9 +773,6 @@ void exec_job(parser_t &parser, job_t *j)
             assert(pipe_next_read == -1);
             pipe_next_read = local_pipe[0];
         }
-
-        //fprintf(stderr, "before IO: ");
-        //io_print(j->io);
 
         // This is the IO buffer we use for storing the output of a block or function when it is in a pipeline
         shared_ptr<io_buffer_t> block_output_io_buffer;
@@ -898,7 +826,7 @@ void exec_job(parser_t &parser, job_t *j)
                 if (p->next)
                 {
                     // Be careful to handle failure, e.g. too many open fds
-                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO));
+                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
                     if (block_output_io_buffer.get() == NULL)
                     {
                         exec_error = true;
@@ -926,7 +854,7 @@ void exec_job(parser_t &parser, job_t *j)
             {
                 if (p->next)
                 {
-                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO));
+                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
                     if (block_output_io_buffer.get() == NULL)
                     {
                         /* We failed (e.g. no more fds could be created). */
@@ -949,7 +877,7 @@ void exec_job(parser_t &parser, job_t *j)
 
             case INTERNAL_BUILTIN:
             {
-                int local_builtin_stdin=0;
+                int local_builtin_stdin = 0;
                 bool close_stdin = false;
 
                 /*
@@ -1286,7 +1214,6 @@ void exec_job(parser_t &parser, job_t *j)
                     if (g_log_forks)
                     {
                         printf("fork #%d: Executing fork for internal builtin for '%ls'\n", g_fork_count, p->argv0());
-                        io_print(process_net_io_chain);
                     }
                     pid = execute_fork(false);
                     if (pid == 0)
@@ -1332,15 +1259,12 @@ void exec_job(parser_t &parser, job_t *j)
 
                 std::string actual_cmd_str = wcs2string(p->actual_cmd);
                 const char *actual_cmd = actual_cmd_str.c_str();
-
+                
                 const wchar_t *reader_current_filename(void);
                 if (g_log_forks)
                 {
                     const wchar_t *file = reader_current_filename();
                     printf("fork #%d: forking for '%s' in '%ls'\n", g_fork_count, actual_cmd, file ? file : L"");
-
-                    fprintf(stderr, "IO chain for %s:\n", actual_cmd);
-                    io_print(process_net_io_chain);
                 }
 
 #if FISH_USE_POSIX_SPAWN
@@ -1503,7 +1427,7 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
     int subcommand_status = -1; //assume the worst
 
     // IO buffer creation may fail (e.g. if we have too many open files to make a pipe), so this may be null
-    const shared_ptr<io_buffer_t> io_buffer(io_buffer_t::create(STDOUT_FILENO));
+    const shared_ptr<io_buffer_t> io_buffer(io_buffer_t::create(STDOUT_FILENO, io_chain_t()));
     if (io_buffer.get() != NULL)
     {
         if (parser.eval(cmd, io_chain_t(io_buffer), SUBST) == 0)

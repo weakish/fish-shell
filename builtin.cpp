@@ -4136,7 +4136,7 @@ static int internal_help(const wchar_t *cmd)
 int builtin_run(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv)
 {
     int (*cmd)(parser_t &parser, io_streams_t &streams, const wchar_t * const *argv)=NULL;
-
+    
     CHECK(argv, STATUS_BUILTIN_ERROR);
     CHECK(argv[0], STATUS_BUILTIN_ERROR);
 
