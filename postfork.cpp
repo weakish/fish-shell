@@ -282,8 +282,6 @@ int g_fork_count = 0;
 */
 pid_t execute_fork(bool wait_for_threads_to_die)
 {
-    ASSERT_IS_MAIN_THREAD();
-
     if (wait_for_threads_to_die || JOIN_THREADS_BEFORE_FORK)
     {
         /* Make sure we have no outstanding threads before we fork. This is a pretty sketchy thing to do here, both because exec.cpp shouldn't have to know about iothreads, and because the completion handlers may do unexpected things. */

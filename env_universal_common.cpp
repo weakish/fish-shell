@@ -419,7 +419,7 @@ void env_universal_t::generate_callbacks(const var_table_t &new_vars, callback_d
         /* If the value is not present in new_vars, it has been erased */
         if (new_vars.find(key) == new_vars.end())
         {
-            callbacks->push_back(callback_data_t(ERASE, key, L""));
+            callbacks->push_back(callback_data_t(ERASE, key));
         }
     }
     
@@ -440,7 +440,7 @@ void env_universal_t::generate_callbacks(const var_table_t &new_vars, callback_d
         if (existing == this->vars.end() || existing->second.exportv != new_entry.exportv || existing->second.val != new_entry.val)
         {
             /* Value has changed */
-            callbacks->push_back(callback_data_t(new_entry.exportv ? SET_EXPORT : SET, key, new_entry.val));
+            callbacks->push_back(callback_data_t(new_entry.exportv ? SET_EXPORT : SET, key));
         }
     }
 }

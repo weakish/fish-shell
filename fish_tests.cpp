@@ -2521,14 +2521,10 @@ static void test_universal_callbacks()
     do_test(callbacks.size() == 3);
     do_test(callbacks.at(0).type == SET);
     do_test(callbacks.at(0).key == L"alpha");
-    do_test(callbacks.at(0).val == L"2");
     do_test(callbacks.at(1).type == SET_EXPORT);
     do_test(callbacks.at(1).key == L"beta");
-    do_test(callbacks.at(1).val == L"1");
     do_test(callbacks.at(2).type == ERASE);
     do_test(callbacks.at(2).key == L"delta");
-    do_test(callbacks.at(2).val == L"");
-
     
     if (system("rm -Rf /tmp/fish_uvars_test")) err(L"rm failed");
 }

@@ -55,6 +55,7 @@
 #include "input.h"
 #include "event.h"
 #include "path.h"
+#include "iothread.h"
 
 #include "complete.h"
 #include "fish_version.h"
@@ -384,7 +385,7 @@ static void react_to_variable_change(const wcstring &key)
    Universal variable callback function. This function makes sure the
    proper events are triggered when an event occurs.
 */
-static void universal_callback(fish_message_type_t type, const wchar_t *name, const wchar_t *val)
+static void universal_callback(fish_message_type_t type, const wchar_t *name)
 {
     ASSERT_IS_MAIN_THREAD();
     const wchar_t *str = NULL;
@@ -1472,23 +1473,33 @@ env_vars_snapshot_t::env_vars_snapshot_t(const environment_t &env, const wchar_t
     }
 }
 
-void env_universal_barrier()
+static void apply_changes_and_delete(callback_data_list_t *changes)
 {
     ASSERT_IS_MAIN_THREAD();
+    assert(changes != NULL);
+    for (size_t i=0; i < changes->size(); i++)
+    {
+        const callback_data_t &data = changes->at(i);
+        universal_callback(data.type, data.key.c_str());
+    }
+    delete changes;
+}
+
+void env_universal_barrier()
+{
     if (uvars())
     {
-        callback_data_list_t changes;
-        bool changed = uvars()->sync(&changes);
-        if (changed)
+        callback_data_list_t incoming_changes;
+        bool has_outgoing_changes = uvars()->sync(&incoming_changes);
+        if (has_outgoing_changes)
         {
             universal_notifier_t::default_notifier().post_notification();
         }
         
-        /* Post callbacks */
-        for (size_t i=0; i < changes.size(); i++)
+        /* Enqueue callbacks */
+        if (! incoming_changes.empty())
         {
-            const callback_data_t &data = changes.at(i);
-            universal_callback(data.type, data.key.c_str(), data.val.c_str());
+            iothread_enqueue_to_main(apply_changes_and_delete, new callback_data_list_t(incoming_changes));
         }
         
         // Increment s_uvar_export_generation, but ensure it doesn't go to EXPORT_GENERATION_INVALID

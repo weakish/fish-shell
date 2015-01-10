@@ -69,6 +69,9 @@ static void iothread_init(void)
     static bool inited = false;
     if (! inited)
     {
+        // Note we insist that all thread creation to go through iothread, so the first time we create an iothread we must be on the main thread.
+        ASSERT_IS_MAIN_THREAD();
+        
         inited = true;
 
         /* Initialize some locks */
@@ -184,7 +187,6 @@ static void iothread_spawn()
 
 int iothread_perform_base(int (*handler)(void *), void (*completionCallback)(void *, int), void *context)
 {
-    ASSERT_IS_MAIN_THREAD();
     ASSERT_IS_NOT_FORKED_CHILD();
     iothread_init();
 
@@ -386,4 +388,33 @@ int iothread_perform_on_main_base(int (*handler)(void *), void *context)
     // Ok, the request must now be done
     assert(req.done);
     return req.handlerResult;
+}
+
+
+/* Hackish support for enqueueing requests onto main. Spawn a new empty thread and leverage its completion callback. */
+struct EnqueueToMainRequest_t
+{
+    void (*handler)(void *);
+    void *context;
+};
+
+static int empty_handler(EnqueueToMainRequest_t *ignored)
+{
+    return 0;
+}
+
+static void enqueued_to_main_completion(EnqueueToMainRequest_t *request, int ignored)
+{
+    assert(request != NULL);
+    request->handler(request->context);
+    delete request;
+}
+
+void iothread_enqueue_to_main_base(void (*handler)(void *), void *context)
+{
+    EnqueueToMainRequest_t *req = new EnqueueToMainRequest_t();
+    req->handler = handler;
+    req->context = context;
+    
+    iothread_perform(empty_handler, enqueued_to_main_completion, req);
 }

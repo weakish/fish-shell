@@ -31,6 +31,9 @@ void iothread_drain_all(void);
 /** Performs a function on the main thread, blocking until it completes */
 int iothread_perform_on_main_base(int (*handler)(void *), void *context);
 
+/** Performs a function on the main thread, without blocking */
+void iothread_enqueue_to_main_base(void (*handler)(void *), void *context);
+
 /** Helper templates */
 template<typename T>
 int iothread_perform(int (*handler)(T *), void (*completionCallback)(T *, int), T *context)
@@ -49,6 +52,12 @@ template<typename T>
 int iothread_perform_on_main(int (*handler)(T *), T *context)
 {
     return iothread_perform_on_main_base((int (*)(void *))handler, (void *)(context));
+}
+
+template<typename T>
+void iothread_enqueue_to_main(void (*handler)(T*), T *context)
+{
+    return iothread_enqueue_to_main_base((void (*)(void *))handler, static_cast<void *>(context));
 }
 
 

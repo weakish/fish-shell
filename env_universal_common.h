@@ -33,9 +33,8 @@ struct callback_data_t
 {
     fish_message_type_t type;
     wcstring key;
-    wcstring val;
     
-    callback_data_t(fish_message_type_t t, const wcstring &k, const wcstring &v) : type(t), key(k), val(v)
+    callback_data_t(fish_message_type_t t, const wcstring &k) : type(t), key(k)
     {
     }
 };

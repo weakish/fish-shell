@@ -1070,7 +1070,7 @@ int parser_t::eval_block_node_in_child(node_offset_t node_idx, const io_chain_t 
     child_eval->io = io;
     child_eval->block_type = block_type;
     
-    iothread_perform(run_child_parser_in_background, (void (*)(child_eval_context_t *, int))NULL, child_eval);
+    iothread_perform(run_child_parser_in_background, child_eval);
     while (! child_eval->finished)
     {
         usleep(1000);
