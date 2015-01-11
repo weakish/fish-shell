@@ -66,29 +66,17 @@ static void invalidate_soft_wrap(screen_t *scr);
    not a pointer as parameter we need a static storage buffer.
 */
 typedef std::vector<char> data_buffer_t;
+
+static void append_captured_output(const scoped_capture_output_t &captured_output, data_buffer_t *buffer)
+{
+    assert(buffer != NULL);
+    const std::string &text = captured_output.get_captured_output();
+    buffer->insert(buffer->end(), text.begin(), text.end());
+}
+
 static data_buffer_t *s_writeb_buffer=0;
 
 static int s_writeb(char c);
-
-/* Class to temporarily set s_writeb_buffer and the writer function in a scoped way */
-class scoped_buffer_t
-{
-    data_buffer_t * const old_buff;
-    int (* const old_writer)(char);
-
-public:
-    scoped_buffer_t(data_buffer_t *buff) : old_buff(s_writeb_buffer), old_writer(output_get_writer())
-    {
-        s_writeb_buffer = buff;
-        output_set_writer(s_writeb);
-    }
-
-    ~scoped_buffer_t()
-    {
-        s_writeb_buffer = old_buff;
-        output_set_writer(old_writer);
-    }
-};
 
 /**
    Tests if the specified narrow character sequence is present at the
@@ -622,7 +610,7 @@ static void s_move(screen_t *s, data_buffer_t *b, int new_x, int new_y)
       s->screen_cursor[0], s->screen_cursor[1],
       new_x, new_y );
     */
-    scoped_buffer_t scoped_buffer(b);
+    scoped_capture_output_t capturer;
 
     y_steps = new_y - s->actual.cursor.y;
 
@@ -693,6 +681,8 @@ static void s_move(screen_t *s, data_buffer_t *b, int new_x, int new_y)
 
     s->actual.cursor.x = new_x;
     s->actual.cursor.y = new_y;
+    
+    append_captured_output(capturer, b);
 }
 
 /**
@@ -700,11 +690,13 @@ static void s_move(screen_t *s, data_buffer_t *b, int new_x, int new_y)
 */
 static void s_set_color(screen_t *s, data_buffer_t *b, highlight_spec_t c)
 {
-    scoped_buffer_t scoped_buffer(b);
+    scoped_capture_output_t capturer;
 
     unsigned int uc = (unsigned int)c;
     set_color(highlight_get_color(uc & 0xffff, false),
               highlight_get_color((uc>>16)&0xffff, true));
+    
+    append_captured_output(capturer, b);
 }
 
 /**
@@ -713,7 +705,7 @@ static void s_set_color(screen_t *s, data_buffer_t *b, highlight_spec_t c)
 */
 static void s_write_char(screen_t *s, data_buffer_t *b, wchar_t c)
 {
-    scoped_buffer_t scoped_buffer(b);
+    scoped_capture_output_t capturer;
     s->actual.cursor.x += fish_wcwidth_min_0(c);
     writech(c);
     if (s->actual.cursor.x == s->actual_width && allow_soft_wrap())
@@ -727,6 +719,7 @@ static void s_write_char(screen_t *s, data_buffer_t *b, wchar_t c)
     {
         invalidate_soft_wrap(s);
     }
+    append_captured_output(capturer, b);
 }
 
 /**
@@ -735,8 +728,9 @@ static void s_write_char(screen_t *s, data_buffer_t *b, wchar_t c)
 */
 static void s_write_mbs(data_buffer_t *b, char *s)
 {
-    scoped_buffer_t scoped_buffer(b);
+    scoped_capture_output_t capturer;
     writembs(s);
+    append_captured_output(capturer, b);
 }
 
 /**
@@ -745,8 +739,9 @@ static void s_write_mbs(data_buffer_t *b, char *s)
 */
 static void s_write_str(data_buffer_t *b, const wchar_t *s)
 {
-    scoped_buffer_t scoped_buffer(b);
+    scoped_capture_output_t capturer;
     writestr(s);
+    append_captured_output(capturer, b);
 }
 
 /** Returns the length of the "shared prefix" of the two lines, which is the run of matching text and colors.

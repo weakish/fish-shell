@@ -546,6 +546,46 @@ static void test_iothread(void)
     delete int_ptr;
 }
 
+class test_scoped_element_t : public scoped_stack_element_t<test_scoped_element_t>
+{
+public:
+    const int val;
+    test_scoped_element_t(int v) : val(v)
+    {
+    }
+};
+
+static int test_thread_local_stack_thread_call(int *val_ptr)
+{
+    for (size_t i=0; i < 500000; i++)
+    {
+        test_scoped_element_t elem(*val_ptr);
+        if (test_scoped_element_t::current()->val != *val_ptr)
+        {
+            err(L"Wrong pointer found in thread local stack in background thread");
+        }
+    }
+    delete val_ptr;
+    return 0;
+}
+
+static void test_thread_local_stack()
+{
+    say(L"Testing thread local stack");
+    int max_achieved_thread_count = 0;
+    int iterations = 25;
+    double start = timef();
+    for (int i=0; i < iterations; i++)
+    {
+        int thread_count = iothread_perform(test_thread_local_stack_thread_call, new int(i));
+        max_achieved_thread_count = std::max(max_achieved_thread_count, thread_count);
+    }
+    iothread_drain_all();
+    double end = timef();
+
+    say(L"    (%.02f msec, with max of %d threads)", (end - start) * 1000.0, max_achieved_thread_count);
+}
+
 static parser_test_error_bits_t detect_argument_errors(const wcstring &src)
 {
     parse_node_tree_t tree;
@@ -3816,6 +3856,7 @@ int main(int argc, char **argv)
     if (should_test_function("convert_nulls")) test_convert_nulls();
     if (should_test_function("tok")) test_tok();
     if (should_test_function("iothread")) test_iothread();
+    if (should_test_function("thread_local_stack")) test_thread_local_stack();
     if (should_test_function("parser")) test_parser();
     if (should_test_function("cancellation")) test_cancellation();
     if (should_test_function("indents")) test_indents();

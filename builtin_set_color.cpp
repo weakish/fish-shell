@@ -49,15 +49,6 @@ static void print_colors(io_streams_t &streams)
     }
 }
 
-/* function we set as the output writer */
-static std::string builtin_set_color_output;
-static int set_color_builtin_outputter(char c)
-{
-    ASSERT_IS_MAIN_THREAD();
-    builtin_set_color_output.push_back(c);
-    return 0;
-}
-
 /**
    set_color builtin
 */
@@ -179,12 +170,9 @@ static int builtin_set_color(parser_t &parser, io_streams_t &streams, wchar_t **
         return STATUS_BUILTIN_ERROR;
     }
 
-    /* Save old output function so we can restore it */
-    int (* const saved_writer_func)(char) = output_get_writer();
-
-    /* Set our output function, which writes to a std::string */
-    builtin_set_color_output.clear();
-    output_set_writer(set_color_builtin_outputter);
+    /* Capture output */
+    scoped_capture_output_t capturer;
+    
 
     if (bold)
     {
@@ -228,12 +216,8 @@ static int builtin_set_color(parser_t &parser, io_streams_t &streams, wchar_t **
         }
     }
 
-    /* Restore saved writer function */
-    output_set_writer(saved_writer_func);
-
     /* Output the collected string */
-    streams.stdout_stream.append(str2wcstring(builtin_set_color_output));
-    builtin_set_color_output.clear();
+    streams.stdout_stream.append(str2wcstring(capturer.get_captured_output()));
 
     return STATUS_BUILTIN_OK;
 }

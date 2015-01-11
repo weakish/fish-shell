@@ -82,10 +82,11 @@ void set_color(rgb_color_t c, rgb_color_t c2);
 void writembs_check(char *mbs, const char *mbs_name, const char *file, long line);
 #define writembs(mbs) writembs_check((mbs), #mbs, __FILE__, __LINE__)
 
-/**
-   Write a wide character using the output method specified using output_set_writer().
-*/
+/** Write a wide character using the current output method (stdout or capturing) */
 int writech(wint_t ch);
+
+/** Writes a narrow string using the current output method (stdout or capturing) */
+void write_narrow_string(const char *s);
 
 /**
    Write a wide character string to FD 1.
@@ -104,18 +105,21 @@ rgb_color_t parse_color(const wcstring &val, bool is_background);
 */
 int writeb(tputs_arg_t b);
 
-/**
-   Set the function used for writing in move_cursor, writespace and
-   set_color and all other output functions in this library. By
-   default, the write call is used to give completely unbuffered
-   output to stdout.
-*/
-void output_set_writer(int (*writer)(char));
-
-/**
-   Return the current output writer
- */
-int (*output_get_writer())(char) ;
+/* Helper class for capturing output */
+class scoped_capture_output_t : public scoped_stack_element_t<scoped_capture_output_t>
+{
+    std::string buffer;
+public:
+    void write(const char *c, size_t len)
+    {
+        this->buffer.append(c, len);
+    }
+    
+    const std::string &get_captured_output() const
+    {
+        return this->buffer;
+    }
+};
 
 /** Set the terminal name */
 void output_set_term(const wcstring &term);

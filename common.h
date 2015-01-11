@@ -658,6 +658,102 @@ public:
     }
 };
 
+/* A thread-local stack */
+template<typename T>
+class thread_local_stack_t
+{
+    pthread_key_t key;
+    
+    // We store pointers to T, because the Ts are expected to be allocated on the stack
+    typedef std::vector<T*> stack_t;
+    
+    // Destructor for the stack when a thread exits
+    static void delete_stack(void *val)
+    {
+        stack_t *stack = static_cast<stack_t*>(val);
+        // a non-empty stack indicates that either the pthread is exiting abruptly (via pthread_exit) or someone messed up the ordering
+        assert(stack == NULL || stack->empty());
+        delete stack;
+    }
+    
+    stack_t *get_stack()
+    {
+        return static_cast<stack_t*>(pthread_getspecific(this->key));
+    }
+    
+    stack_t &get_or_make_stack()
+    {
+        stack_t *stack = this->get_stack();
+        if (stack == NULL)
+        {
+            // no need to lock, it's thread local
+            stack = new stack_t();
+            pthread_setspecific(this->key, stack);
+        }
+        assert(stack != NULL);
+        return *stack;
+    }
+    
+    public:
+    
+    thread_local_stack_t()
+    {
+        VOMIT_ON_FAILURE(pthread_key_create(&this->key, delete_stack));
+    }
+
+    void push(T *val)
+    {
+        assert(val != NULL);
+        this->get_or_make_stack().push_back(val);
+    }
+    
+    void pop(T *val)
+    {
+        assert(val != NULL);
+        stack_t &stack = this->get_or_make_stack();
+        assert(! stack.empty());
+        assert(stack.back() == val);
+        stack.pop_back();
+    }
+    
+    T *top()
+    {
+        T *result = NULL;
+        stack_t *stack = this->get_stack();
+        if (stack != NULL && ! stack->empty())
+        {
+            result = stack->back();
+        }
+        return result;
+    }
+};
+
+// Uses CRTP. This is necessary to get different stack instances.
+template<typename T>
+class scoped_stack_element_t
+{
+    static thread_local_stack_t<T> &stack()
+    {
+        static thread_local_stack_t<T> s;
+        return s;
+    }
+    
+    public:
+    scoped_stack_element_t()
+    {
+        stack().push(static_cast<T *>(this));
+    }
+    
+    ~scoped_stack_element_t()
+    {
+        stack().pop(static_cast<T *>(this));
+    }
+    
+    static T *current()
+    {
+        return stack().top();
+    }
+};
 
 /* Wrapper around wcstok */
 class wcstokenizer

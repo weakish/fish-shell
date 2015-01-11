@@ -157,22 +157,12 @@ static wcstring prettify(const wcstring &src, bool do_indent)
 }
 
 
-// Helper for output_set_writer
-static std::string output_receiver;
-static int write_to_output_receiver(char c)
-{
-    output_receiver.push_back(c);
-    return 0;
-}
-
 /* Given a string and list of colors of the same size, return the string with ANSI escape sequences representing the colors. */
 static std::string ansi_colorize(const wcstring &text, const std::vector<highlight_spec_t> &colors)
 {
     assert(colors.size() == text.size());
-    assert(output_receiver.empty());
 
-    int (*saved)(char) = output_get_writer();
-    output_set_writer(write_to_output_receiver);
+    scoped_capture_output_t capturer;
 
     highlight_spec_t last_color = highlight_spec_normal;
     for (size_t i=0; i < text.size(); i++)
@@ -186,10 +176,7 @@ static std::string ansi_colorize(const wcstring &text, const std::vector<highlig
         writech(text.at(i));
     }
 
-    output_set_writer(saved);
-    std::string result;
-    result.swap(output_receiver);
-    return result;
+    return capturer.get_captured_output();
 }
 
 /* Given a string and list of colors of the same size, return the string with HTML span elements for the various colors. */

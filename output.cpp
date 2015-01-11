@@ -56,15 +56,6 @@
  */
 #define FISH_COLORS (sizeof(col)/sizeof(wchar_t *))
 
-static int writeb_internal(char c);
-
-
-/**
- The function used for output
- */
-
-static int (*out)(char c) = &writeb_internal;
-
 /**
  Name of terminal
  */
@@ -72,18 +63,6 @@ static wcstring current_term;
 
 /* Whether term256 and term24bit are supported */
 static color_support_t color_support = 0;
-
-
-void output_set_writer(int (*writer)(char))
-{
-    CHECK(writer,);
-    out = writer;
-}
-
-int (*output_get_writer())(char)
-{
-    return out;
-}
 
 static bool term256_support_is_native(void)
 {
@@ -100,6 +79,29 @@ void output_set_color_support(color_support_t val)
 {
     color_support = val;
 }
+
+static void out_string(const char *s, size_t len)
+{
+    if (len > 0)
+    {
+        assert(s != NULL);
+        scoped_capture_output_t *capturer = scoped_capture_output_t::current();
+        if (capturer)
+        {
+            capturer->write(s, len);
+        }
+        else
+        {
+            write_loop(STDOUT_FILENO, s, len);
+        }
+    }
+}
+
+static void out(char c)
+{
+    out_string(&c, 1);
+}
+
 
 unsigned char index_for_color(rgb_color_t c)
 {
@@ -132,16 +134,7 @@ static bool write_color_escape(char *todo, unsigned char idx, bool is_fg)
         strcat(buff, is_fg ? "38;5;" : "48;5;");
         strcat(buff, stridx);
         strcat(buff, "m");
-
-        int (*writer)(char) = output_get_writer();
-        if (writer)
-        {
-            for (size_t i=0; buff[i]; i++)
-            {
-                writer(buff[i]);
-            }
-        }
-
+        write_narrow_string(buff);
         result = true;
     }
     return result;
@@ -197,14 +190,7 @@ void write_color(rgb_color_t color, bool is_fg)
         color24_t rgb = color.to_color24();
         char buff[128];
         snprintf(buff, sizeof buff, "\x1b[%u;2;%u;%u;%um", is_fg ? 38 : 48, rgb.rgb[0], rgb.rgb[1], rgb.rgb[2]);
-        int (*writer)(char) = output_get_writer();
-        if (writer)
-        {
-            for (size_t i=0; buff[i]; i++)
-            {
-                writer(buff[i]);
-            }
-        }
+        write_narrow_string(buff);
     }
 }
 
@@ -394,15 +380,6 @@ void set_color(rgb_color_t c, rgb_color_t c2)
 
 }
 
-/**
- Default output method, simply calls write() on stdout
- */
-static int writeb_internal(char c)
-{
-    write_loop(1, &c, 1);
-    return 0;
-}
-
 int writeb(tputs_arg_t b)
 {
     out(b);
@@ -412,7 +389,6 @@ int writeb(tputs_arg_t b)
 int writech(wint_t ch)
 {
     mbstate_t state;
-    size_t i;
     char buff[MB_LEN_MAX+1];
     size_t bytes;
 
@@ -436,17 +412,18 @@ int writech(wint_t ch)
         }
     }
 
-    for (i=0; i<bytes; i++)
-    {
-        out(buff[i]);
-    }
+    out_string(buff, bytes);
     return 0;
+}
+
+void write_narrow_string(const char *s)
+{
+    assert(s != NULL);
+    out_string(s, strlen(s));
 }
 
 void writestr(const wchar_t *str)
 {
-    char *pos;
-
     CHECK(str,);
 
     //  while( *str )
@@ -478,13 +455,8 @@ void writestr(const wchar_t *str)
              str,
              len);
 
-    /*
-       Write
-       */
-    for (pos = buffer; *pos; pos++)
-    {
-        out(*pos);
-    }
+    /* Write */
+    write_narrow_string(buffer);
 
     if (buffer != static_buffer)
         delete[] buffer;
