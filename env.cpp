@@ -355,7 +355,8 @@ static void handle_locale()
 
         fish_dcgettext("fish", "Changing language to English", LC_MESSAGES);
 
-        if (get_is_interactive())
+        // Hackish
+        if (is_main_thread() && parser_t::principal_parser().get_is_interactive())
         {
             debug(2, _(L"Changing language to English"));
         }

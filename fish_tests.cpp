@@ -835,10 +835,12 @@ static void test_cancellation()
         return;
     }
     say(L"Testing Ctrl-C cancellation. If this hangs, that's a bug!");
+    
+    parser_t &parser = parser_t::principal_parser();
 
     /* Enable fish's signal handling here. We need to make this interactive for fish to install its signal handlers */
-    proc_push_interactive(1);
-    signal_set_handlers();
+    parser.push_is_interactive(true);
+    signal_set_handlers(true);
 
     /* This tests that we can correctly ctrl-C out of certain loop constructs, and that nothing gets printed if we do */
 
@@ -860,7 +862,7 @@ static void test_cancellation()
     fprintf(stderr, "\n");
 
     /* Restore signal handling */
-    proc_pop_interactive();
+    parser.pop_is_interactive();
     signal_reset_handlers();
 
     /* Ensure that we don't think we should cancel */
@@ -1402,7 +1404,7 @@ static bool expand_test(const wchar_t *in, expand_flags_t flags, ...)
         }
         else
         {
-            err(L"%ls", errors.at(0).describe(wcstring(in)).c_str());
+            err(L"%ls", errors.at(0).describe(in, true).c_str());
         }
         return false;
     }
@@ -3522,7 +3524,7 @@ static void test_new_parser_errors(void)
             err(L"Source '%ls' was expected to produce error code %lu, but instead produced error code %lu", src.c_str(), expected_code, (unsigned long)errors.at(0).code);
             for (size_t i=0; i < errors.size(); i++)
             {
-                err(L"\t\t%ls", errors.at(i).describe(src).c_str());
+                err(L"\t\t%ls", errors.at(i).describe(src, false).c_str());
             }
         }
 

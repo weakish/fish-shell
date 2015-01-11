@@ -235,7 +235,7 @@ static void builtin_print_help(parser_t &parser, io_streams_t &streams, const wc
 
             screen_height = common_get_height();
             lines = count_char(str, L'\n');
-            if (!get_is_interactive() || (lines > 2*screen_height/3))
+            if (! parser.get_is_interactive() || (lines > 2*screen_height/3))
             {
                 wchar_t *pos;
                 int cut=0;
@@ -2676,11 +2676,11 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
         reader_set_buffer(commandline, wcslen(commandline));
         
-        proc_push_interactive(1);
+        parser.push_is_interactive(true);
 
         event_fire_generic(L"fish_prompt");
         line = reader_readline(nchars);
-        proc_pop_interactive();
+        parser.pop_is_interactive();
         
         if (line)
         {
@@ -3208,7 +3208,7 @@ static int builtin_cd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
         }
 
 
-        if (!get_is_interactive())
+        if (! parser.get_is_interactive())
         {
             streams.stderr_stream.append(parser.current_line());
         }
@@ -3238,7 +3238,7 @@ static int builtin_cd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                           dir.c_str());
         }
 
-        if (!get_is_interactive())
+        if (! parser.get_is_interactive())
         {
             streams.stderr_stream.append(parser.current_line());
         }
@@ -3358,7 +3358,6 @@ static int builtin_contains(parser_t &parser, io_streams_t &streams, wchar_t **a
 */
 static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
-    ASSERT_IS_MAIN_THREAD();
     int fd;
     int res = STATUS_BUILTIN_OK;
     struct stat buf;
@@ -3403,11 +3402,12 @@ static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **arg
     }
 
     parser.push_block(new source_block_t(fn_intern));
-    reader_push_current_filename(fn_intern);
+    
+    scoped_current_filename_t filename(fn_intern);
 
     parse_util_set_argv(&parser.vars(), (argc>2)?(argv+2):(argv+1), wcstring_list_t());
 
-    res = reader_read(fd, streams.io_chain ? *streams.io_chain : io_chain_t());
+    res = reader_read(parser, fd, streams.io_chain ? *streams.io_chain : io_chain_t());
 
     parser.pop_block();
 
@@ -3427,8 +3427,6 @@ static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **arg
       Do not close fd after calling reader_read. reader_read
       automatically closes it before calling eval.
     */
-
-    reader_pop_current_filename();
 
     return res;
 }
@@ -3756,7 +3754,7 @@ static int builtin_breakpoint(parser_t &parser, io_streams_t &streams, wchar_t *
 {
     parser.push_block(new breakpoint_block_t());
 
-    reader_read(STDIN_FILENO, streams.io_chain ? *streams.io_chain : io_chain_t());
+    reader_read(parser, STDIN_FILENO, streams.io_chain ? *streams.io_chain : io_chain_t());
 
     parser.pop_block();
 
@@ -3998,7 +3996,7 @@ int builtin_parse(parser_t &parser, io_streams_t &streams, wchar_t **argv)
             streams.stdout_stream.append(L"Parsing failed:\n");
             for (size_t i=0; i < errors.size(); i++)
             {
-                streams.stdout_stream.append(errors.at(i).describe(src));
+                streams.stdout_stream.append(errors.at(i).describe(src, parser.get_is_interactive()));
                 streams.stdout_stream.push_back(L'\n');
             }
 

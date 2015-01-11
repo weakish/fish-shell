@@ -71,7 +71,7 @@ public:
 /**
   Read commands from \c fd until encountering EOF
 */
-int reader_read(int fd, const io_chain_t &io);
+int reader_read(parser_t &parser, int fd, const io_chain_t &io);
 
 /**
   Tell the shell that it should exit after the currently running command finishes.
@@ -101,16 +101,14 @@ void restore_term_mode();
 */
 const wchar_t *reader_current_filename();
 
-/**
-   Push a new filename on the stack of read files
+/* Class for scoped setting of the current filename */
+class scoped_current_filename_t : public scoped_stack_element_t<scoped_current_filename_t>
+{
+    public:
+    const wchar_t * const name;
+    scoped_current_filename_t(const wchar_t *fn);
+};
 
-   \param fn The fileanme to push
-*/
-void reader_push_current_filename(const wchar_t *fn);
-/**
-   Pop the current filename from the stack of read files
- */
-void reader_pop_current_filename();
 
 /**
    Write the title to the titlebar. This function is called just
@@ -277,7 +275,7 @@ void reader_set_exit_on_interrupt(bool flag);
 /**
    Returns true if the shell is exiting, 0 otherwise.
 */
-bool shell_is_exiting();
+bool shell_is_exiting(const parser_t &parser);
 
 /**
    The readers interrupt signal handler. Cancels all currently running blocks.

@@ -462,7 +462,7 @@ static int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **a
                 for (size_t i=0; i < errors.size(); i++)
                 {
                     streams.stderr_stream.append_format(L"\n%s: ", argv[0]);
-                    streams.stderr_stream.append(errors.at(i).describe(condition_string));
+                    streams.stderr_stream.append(errors.at(i).describe(condition_string, parser.get_is_interactive()));
                 }
                 res = true;
             }

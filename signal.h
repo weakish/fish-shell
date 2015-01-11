@@ -32,7 +32,7 @@ void signal_reset_handlers();
 /**
    Set signal handlers to fish default handlers
 */
-void signal_set_handlers();
+void signal_set_handlers(bool is_interactive);
 
 /**
    Tell fish what to do on the specified signal.

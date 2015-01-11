@@ -467,7 +467,7 @@ int main(int argc, char **argv)
         {
             if (my_optind == argc)
             {
-                res = reader_read(STDIN_FILENO, empty_ios);
+                res = reader_read(parser, STDIN_FILENO, empty_ios);
             }
             else
             {
@@ -507,10 +507,10 @@ int main(int argc, char **argv)
                     abs_filename = wcsdup(rel_filename.c_str());
                 }
 
-                reader_push_current_filename(intern(abs_filename));
+                scoped_current_filename_t scoped_filename(intern(abs_filename));
                 free((void *)abs_filename);
 
-                res = reader_read(fd, empty_ios);
+                res = reader_read(parser, fd, empty_ios);
 
                 if (res)
                 {
@@ -518,7 +518,6 @@ int main(int argc, char **argv)
                           _(L"Error while reading file %ls\n"),
                           reader_current_filename()?reader_current_filename(): _(L"Standard input"));
                 }
-                reader_pop_current_filename();
             }
         }
     }

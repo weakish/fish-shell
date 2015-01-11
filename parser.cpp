@@ -431,6 +431,44 @@ void parser_t::allow_function()
     forbidden_function.pop_back();
 }
 
+bool parser_t::get_is_interactive() const
+{
+    assert_is_this_thread();
+    /* An empty stack means false */
+    bool result = false;
+    if (! this->is_interactive_stack.empty())
+    {
+        result = this->is_interactive_stack.back();
+    }
+    return result;
+}
+
+void parser_t::push_is_interactive(bool new_val)
+{
+    assert_is_this_thread();
+    bool old_val = this->get_is_interactive();
+    this->is_interactive_stack.push_back(new_val);
+    if (old_val != new_val && this->is_principal())
+    {
+        signal_set_handlers(new_val);
+    }
+}
+
+/* Set is_interactive flag to the previous value. If needed, update signal handlers */
+void parser_t::pop_is_interactive()
+{
+    assert_is_this_thread();
+    assert(! this->is_interactive_stack.empty());
+    bool old_val = this->get_is_interactive();
+    this->is_interactive_stack.pop_back();
+    bool new_val = this->get_is_interactive();
+    if (old_val != new_val && this->is_principal())
+    {
+        signal_set_handlers(new_val);
+    }
+}
+
+
 /**
    Print profiling information to the specified stream
 */
@@ -538,12 +576,6 @@ void parser_t::expand_argument_list(const wcstring &arg_list_src, const environm
     if (this->parser_type != PARSER_TYPE_GENERAL)
         eflags |= EXPAND_SKIP_CMDSUBST;
 
-    /* Suppress calling proc_push_interactive off of the main thread. */
-    if (this->parser_type == PARSER_TYPE_GENERAL)
-    {
-        proc_push_interactive(0);
-    }
-
     /* Parse the string as an argument list */
     parse_node_tree_t tree;
     if (! parse_tree_from_string(arg_list_src, parse_flag_none, &tree, NULL /* errors */, symbol_freestanding_argument_list))
@@ -580,11 +612,6 @@ void parser_t::expand_argument_list(const wcstring &arg_list_src, const environm
                 break;
             }
         }
-    }
-
-    if (this->parser_type == PARSER_TYPE_GENERAL)
-    {
-        proc_pop_interactive();
     }
 }
 

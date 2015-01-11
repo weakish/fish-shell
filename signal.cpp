@@ -505,13 +505,10 @@ void signal_reset_handlers()
 /**
    Sets appropriate signal handlers.
 */
-void signal_set_handlers()
+void signal_set_handlers(bool is_interactive)
 {
     ASSERT_IS_MAIN_THREAD();
     struct sigaction act;
-
-    if (get_is_interactive() == -1)
-        return;
 
     sigemptyset(& act.sa_mask);
     act.sa_flags=SA_SIGINFO;
@@ -534,7 +531,7 @@ void signal_set_handlers()
     */
     sigaction(SIGPIPE, &act, 0);
 
-    if (get_is_interactive())
+    if (is_interactive)
     {
         /*
            Interactive mode. Ignore interactive signals.  We are a

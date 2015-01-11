@@ -78,12 +78,6 @@ Some of the code in this file is based on code from the Glibc manual.
 */
 #define BUFFER_SIZE 4096
 
-bool job_list_is_empty(void)
-{
-    ASSERT_IS_MAIN_THREAD();
-    return parser_t::principal_parser().job_list().empty();
-}
-
 int is_interactive_session=0;
 int is_subshell=0;
 int is_block=0;
@@ -126,14 +120,9 @@ void set_proc_had_barrier(bool flag)
 */
 static event_t event(0);
 
-/**
-   A stack containing the values of is_interactive. Used by proc_push_interactive and proc_pop_interactive.
-*/
-static std::vector<int> interactive_stack;
-
 void proc_init()
 {
-    proc_push_interactive(0);
+
 }
 
 
@@ -1209,22 +1198,3 @@ void proc_sanity_check()
     }
 }
 
-void proc_push_interactive(int value)
-{
-    ASSERT_IS_MAIN_THREAD();
-    int old = is_interactive;
-    interactive_stack.push_back(is_interactive);
-    is_interactive = value;
-    if (old != value)
-        signal_set_handlers();
-}
-
-void proc_pop_interactive()
-{
-    ASSERT_IS_MAIN_THREAD();
-    int old = is_interactive;
-    is_interactive= interactive_stack.back();
-    interactive_stack.pop_back();
-    if (is_interactive != old)
-        signal_set_handlers();
-}

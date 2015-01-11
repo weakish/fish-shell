@@ -199,7 +199,7 @@ bool parse_execution_context_t::should_cancel_execution(const block_t *block) co
 
 parse_execution_context_t::execution_cancellation_reason_t parse_execution_context_t::cancellation_reason(const block_t *block) const
 {
-    if (shell_is_exiting())
+    if (shell_is_exiting(*this->parser))
     {
         return execution_cancellation_exit;
     }
@@ -739,7 +739,7 @@ parse_execution_result_t parse_execution_context_t::report_unmatched_wildcard_er
     this->parser->set_last_status(STATUS_UNMATCHED_WILDCARD);
     // unmatched wildcards are only reported in interactive use because scripts have legitimate reasons
     // to want to use wildcards without knowing whether they expand to anything.
-    if (get_is_interactive())
+    if (parser->get_is_interactive())
     {
         // Check if we're running code that was typed at the commandline.
         // We can't just use `is_block` or the eval level, because `begin; echo *.unmatched; end` would not report
@@ -1311,7 +1311,7 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
 
     // Get terminal modes
     struct termios tmodes = {};
-    if (get_is_interactive())
+    if (parser->get_is_interactive())
     {
         if (tcgetattr(STDIN_FILENO, &tmodes))
         {
@@ -1379,7 +1379,7 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
     j->tmodes = tmodes;
     job_set_flag(j, JOB_CONTROL,
                  (job_control_mode==JOB_CONTROL_ALL) ||
-                 ((job_control_mode == JOB_CONTROL_INTERACTIVE) && (get_is_interactive())));
+                 ((job_control_mode == JOB_CONTROL_INTERACTIVE) && (parser->get_is_interactive())));
 
     job_set_flag(j, JOB_FOREGROUND, ! tree.job_should_be_backgrounded(job_node));
 
@@ -1389,7 +1389,7 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
     job_set_flag(j, JOB_SKIP_NOTIFICATION, is_subshell \
                  || is_block \
                  || is_event \
-                 || (!get_is_interactive()));
+                 || (!parser->get_is_interactive()));
 
     /* Tell the current block what its job is. This has to happen before we populate it (#1394) */
     parser->current_block()->job = j;

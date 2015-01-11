@@ -276,7 +276,9 @@ private:
     /** List of profile items, allocated with new */
     std::vector<profile_item_t *> profile_items;
     
-
+    /* Stack of is_interactive values */
+    std::vector<bool> is_interactive_stack;
+    
     /* No copying allowed */
     parser_t& operator=(const parser_t&);
 
@@ -413,6 +415,15 @@ public:
     {
         this->variable_stack.exit_status = val;
     }
+    
+    /* Whether we are reading from the keyboard right now */
+    bool get_is_interactive() const;
+    
+    /* Set new value for is_interactive flag, saving previous value. If needed, update signal handlers */
+    void push_is_interactive(bool val);
+    
+    /* Set is_interactive flag to the previous value. If needed, update signal handlers */
+    void pop_is_interactive();
 
     /** Removes a job */
     bool job_remove(job_t *job);

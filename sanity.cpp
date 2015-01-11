@@ -41,9 +41,6 @@ void sanity_lose()
 int sanity_check()
 {
     if (!insane)
-        if (get_is_interactive())
-            history_sanity_check();
-    if (!insane)
         reader_sanity_check();
     if (!insane)
         kill_sanity_check();

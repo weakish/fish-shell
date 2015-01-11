@@ -271,11 +271,6 @@ extern int is_subshell;
 extern int is_block;
 
 /**
-  Whether we are reading from the keyboard right now
-*/
-int get_is_interactive(void);
-
-/**
   Whether this shell is attached to the keyboard at all
 */
 extern int is_interactive_session;
@@ -348,18 +343,6 @@ void proc_fire_event(const wchar_t *msg, int type, pid_t pid, int status);
    Initializations
 */
 void proc_init();
-
-/**
-   Set new value for is_interactive flag, saving previous value. If
-   needed, update signal handlers.
-*/
-void proc_push_interactive(int value);
-
-/**
-   Set is_interactive flag to the previous value. If needed, update
-   signal handlers.
-*/
-void proc_pop_interactive();
 
 /**
    Format an exit status code as returned by e.g. wait into a fish exit code number as accepted by proc_set_last_status.

@@ -1726,13 +1726,6 @@ void history_destroy()
 }
 
 
-void history_sanity_check()
-{
-    /*
-      No sanity checking implemented yet...
-    */
-}
-
 int file_detection_context_t::perform_file_detection(bool test_all)
 {
     ASSERT_IS_BACKGROUND_THREAD();

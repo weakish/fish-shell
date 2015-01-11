@@ -119,8 +119,6 @@ public:
 typedef std::list<job_t *> job_list_t;
 
 
-bool job_list_is_empty(void);
-
 /** A class to aid iteration over jobs list.
     Note this is used from a signal handler, so it must be careful to not allocate memory.
 */

@@ -694,27 +694,17 @@ void reader_handle_int(int sig)
     }
 
     interrupted = 1;
-
 }
 
 const wchar_t *reader_current_filename()
 {
-    ASSERT_IS_MAIN_THREAD();
-    return current_filename.empty() ? NULL : current_filename.top();
+    const scoped_current_filename_t *fn = scoped_current_filename_t::current();
+    return fn == NULL ? NULL : fn->name;
 }
 
-
-void reader_push_current_filename(const wchar_t *fn)
+scoped_current_filename_t::scoped_current_filename_t(const wchar_t *fn) : name(intern(fn))
 {
-    ASSERT_IS_MAIN_THREAD();
-    current_filename.push(intern(fn));
-}
-
-
-void reader_pop_current_filename()
-{
-    ASSERT_IS_MAIN_THREAD();
-    current_filename.pop();
+#warning This is suspect because the filename may need to be available in subparsers
 }
 
 
@@ -962,7 +952,7 @@ void reader_write_title(parser_t &parser, const wcstring &cmd)
 
     wcstring_list_t lst;
 
-    proc_push_interactive(0);
+    parser.push_is_interactive(false);
     if (exec_subshell(parser, fish_title_command, lst, false /* do not apply exit status */) != -1)
     {
         if (! lst.empty())
@@ -975,7 +965,7 @@ void reader_write_title(parser_t &parser, const wcstring &cmd)
             writestr(L"\7");
         }
     }
-    proc_pop_interactive();
+    parser.pop_is_interactive();
     set_color(rgb_color_t::reset(), rgb_color_t::reset());
 }
 
@@ -994,7 +984,7 @@ static void exec_prompt(parser_t &parser)
     /* If we have any prompts, they must be run non-interactively */
     if (data->left_prompt.size() || data->right_prompt.size())
     {
-        proc_push_interactive(0);
+        parser.push_is_interactive(false);
 
         if (! data->left_prompt.empty())
         {
@@ -1020,7 +1010,7 @@ static void exec_prompt(parser_t &parser)
             }
         }
 
-        proc_pop_interactive();
+        parser.pop_is_interactive();
     }
 
     /* Write the screen title */
@@ -2086,7 +2076,7 @@ static void reader_interactive_init(parser_t &parser)
             }
         }
 
-        signal_set_handlers();
+        signal_set_handlers(parser.get_is_interactive());
 
         for (i=0; i<block_count; i++)
         {
@@ -2150,7 +2140,7 @@ static void reader_interactive_destroy()
 void reader_sanity_check()
 {
     /* Note: 'data' is non-null if we are interactive, except in the testing environment */
-    if (get_is_interactive() && data != NULL)
+    if (data != NULL)
     {
         if (data->command_line.position > data->command_line.size())
             sanity_lose();
@@ -2838,10 +2828,11 @@ static void reader_super_highlight_me_plenty(int match_highlight_pos_adjust, boo
 }
 
 
-bool shell_is_exiting()
+bool shell_is_exiting(const parser_t &parser)
 {
-    if (get_is_interactive())
-        return job_list_is_empty() && data != NULL && data->end_loop;
+#warning Bad use of globals here
+    if (parser.get_is_interactive() && parser.is_principal())
+        return parser.job_list().empty() && data != NULL && data->end_loop;
     else
         return end_loop;
 }
@@ -2929,7 +2920,7 @@ static bool selection_is_at_top()
    Read interactively. Read input from stdin while providing editing
    facilities.
 */
-static int read_i(void)
+static int read_i(parser_t &parser)
 {
     reader_push(L"fish");
     reader_set_complete_function(&complete);
@@ -2938,7 +2929,6 @@ static int read_i(void)
     reader_set_allow_autosuggesting(true);
     reader_set_expand_abbreviations(true);
 
-    parser_t &parser = parser_t::principal_parser();
     reader_import_history_if_necessary(parser.vars());
 
     data->prev_end_loop=0;
@@ -4166,9 +4156,8 @@ int reader_has_pager_contents()
    the prompt, using syntax highlighting. This is used for reading
    scripts and init files.
 */
-static int read_ni(int fd, const io_chain_t &io)
+static int read_ni(parser_t &parser, int fd, const io_chain_t &io)
 {
-    parser_t &parser = parser_t::principal_parser();
     FILE *in_stream;
     wchar_t *buff=0;
     std::vector<char> acc;
@@ -4257,7 +4246,7 @@ static int read_ni(int fd, const io_chain_t &io)
     return res;
 }
 
-int reader_read(int fd, const io_chain_t &io)
+int reader_read(parser_t &parser, int fd, const io_chain_t &io)
 {
     int res;
 
@@ -4267,10 +4256,10 @@ int reader_read(int fd, const io_chain_t &io)
       is handled by proc_push_interactive/proc_pop_interactive.
     */
 
-    int inter = ((fd == STDIN_FILENO) && isatty(STDIN_FILENO));
-    proc_push_interactive(inter);
+    bool inter = ((fd == STDIN_FILENO) && isatty(STDIN_FILENO));
+    parser.push_is_interactive(inter);
 
-    res= get_is_interactive() ? read_i():read_ni(fd, io);
+    res= parser.get_is_interactive() ? read_i(parser) : read_ni(parser, fd, io);
 
     /*
       If the exit command was called in a script, only exit the
@@ -4280,6 +4269,6 @@ int reader_read(int fd, const io_chain_t &io)
         data->end_loop = 0;
     end_loop = 0;
 
-    proc_pop_interactive();
+    parser.pop_is_interactive();
     return res;
 }

@@ -329,11 +329,6 @@ void history_init();
 */
 void history_destroy();
 
-/**
-   Perform sanity checks
-*/
-void history_sanity_check();
-
 /* A helper class for threaded detection of paths */
 struct file_detection_context_t
 {
