@@ -191,11 +191,15 @@ autoload_function_t *autoload_t::get_autoloaded_function_with_creation(const wcs
      really_load: whether to actually parse it as a function, or just check it it exists
      reload: whether to reload it if it's already loaded
      path_list: the set of paths to check
+     parser: The parser to use for loading. Can be NULL iff we are not loading.
 
      Result: if really_load is true, returns whether the function was loaded. Otherwise returns whether the function existed.
 */
-bool autoload_t::locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list, parser_t *out_parser)
+bool autoload_t::locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list, parser_t *parser_or_null)
 {
+    /* If we want to load, we must have a parser */
+    assert(! (really_load && parser_or_null == NULL));
+    
     /* Note that we are NOT locked in this function! */
     bool reloaded = 0;
 
@@ -360,7 +364,8 @@ bool autoload_t::locate_file_and_maybe_load_it(const wcstring &cmd, bool really_
     /* If we have a script, either built-in or a file source, then run it */
     if (really_load && has_script_source)
     {
-        if (exec_subshell(parser_t::principal_parser(), script_source, false /* do not apply exit status */) == -1)
+        assert(parser_or_null != NULL);
+        if (exec_subshell(*parser_or_null, script_source, false /* do not apply exit status */) == -1)
         {
             /* Do nothing on failure */
         }

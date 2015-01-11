@@ -80,7 +80,7 @@ private:
         this->evict_all_nodes();
     }
 
-    bool locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list, parser_t *opt_parser);
+    bool locate_file_and_maybe_load_it(const wcstring &cmd, bool really_load, bool reload, const wcstring_list_t &path_list, parser_t *parser_or_null);
 
     virtual void node_was_evicted(autoload_function_t *node);
 
