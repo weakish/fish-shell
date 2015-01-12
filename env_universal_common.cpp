@@ -1366,9 +1366,10 @@ public:
 class universal_notifier_named_pipe_t : public universal_notifier_t
 {
     int pipe_fd;
+    
+    mutable mutex_lock_t lock; // protects remaining
     long long readback_time_usec;
     size_t readback_amount;
-    
     bool polling_due_to_readable_fd;
     long long drain_if_still_readable_time_usec;
     
@@ -1446,6 +1447,7 @@ class universal_notifier_named_pipe_t : public universal_notifier_t
         // Our fd is readable. We deliberately do not read anything out of it: if we did, other sessions may miss the notification.
         // Instead, we go into "polling mode:" we do not select() on our fd for a while, and sync periodically until the fd is no longer readable.
         // However, if we are the one who posted the notification, we don't sync (until we clean up!)
+        scoped_lock locker(this->lock);
         bool should_sync = false;
         if (readback_time_usec == 0)
         {
@@ -1474,7 +1476,7 @@ class universal_notifier_named_pipe_t : public universal_notifier_t
             }
             
             // Now schedule a read for some time in the future
-#warning Need to make this thread safe
+            scoped_lock locker(this->lock);
             this->readback_time_usec = get_time() + NAMED_PIPE_FLASH_DURATION_USEC;
             this->readback_amount += sizeof pid_nbo;
         }
@@ -1482,6 +1484,7 @@ class universal_notifier_named_pipe_t : public universal_notifier_t
     
     unsigned long usec_delay_between_polls() const
     {
+        scoped_lock locker(this->lock);
         unsigned long readback_delay = ULONG_MAX;
         if (this->readback_time_usec > 0)
         {
@@ -1521,9 +1524,11 @@ class universal_notifier_named_pipe_t : public universal_notifier_t
         bool result = false;
         
         // Check if we are past the readback time
+        scoped_lock locker(this->lock);
         if (this->readback_time_usec > 0 && get_time() >= this->readback_time_usec)
         {
             // Read back what we wrote. We do nothing with the value.
+            // Note that our fd is nonblocking
             while (this->readback_amount > 0)
             {
                 char buff[64];
