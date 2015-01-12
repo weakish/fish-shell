@@ -320,6 +320,8 @@ static wcstring event_desc_compact(const event_t &event)
 
 void event_add_handler(const event_t &event)
 {
+#warning This assertion is bogus
+    ASSERT_IS_MAIN_THREAD();
     event_t *e;
 
     if (debug_level >= 3)

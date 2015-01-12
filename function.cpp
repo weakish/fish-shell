@@ -150,11 +150,9 @@ void function_init()
     VOMIT_ON_FAILURE(pthread_mutexattr_destroy(&a));
 }
 
-static std::map<wcstring,env_var_t> snapshot_vars(const wcstring_list_t &vars)
+static std::map<wcstring,env_var_t> snapshot_vars(const wcstring_list_t &vars, const environment_t &env)
 {
     std::map<wcstring,env_var_t> result;
-    // use of principal_parser here is temporary
-    const environment_t &env = parser_t::principal_parser().vars();
     for (wcstring_list_t::const_iterator it = vars.begin(), end = vars.end(); it != end; ++it)
     {
         result.insert(std::make_pair(*it, env.get(*it)));
@@ -162,13 +160,13 @@ static std::map<wcstring,env_var_t> snapshot_vars(const wcstring_list_t &vars)
     return result;
 }
 
-function_info_t::function_info_t(const function_data_t &data, const wchar_t *filename, int def_offset, bool autoload) :
+function_info_t::function_info_t(const function_data_t &data, const wchar_t *filename, int def_offset, bool autoload, const environment_t &env) :
     definition(data.definition),
     description(data.description),
     definition_file(intern(filename)),
     definition_offset(def_offset),
     named_arguments(data.named_arguments),
-    inherit_vars(snapshot_vars(data.inherit_vars)),
+    inherit_vars(snapshot_vars(data.inherit_vars, env)),
     is_autoload(autoload),
     shadows(data.shadows)
 {
@@ -188,8 +186,6 @@ function_info_t::function_info_t(const function_info_t &data, const wchar_t *fil
 
 void function_add(const function_data_t &data, const parser_t &parser, int definition_line_offset)
 {
-    ASSERT_IS_MAIN_THREAD();
-
     CHECK(! data.name.empty(),);
     CHECK(data.definition,);
     scoped_lock lock(functions_lock);
@@ -200,7 +196,7 @@ void function_add(const function_data_t &data, const parser_t &parser, int defin
     /* Create and store a new function */
     const wchar_t *filename = reader_current_filename();
 
-    const function_map_t::value_type new_pair(data.name, function_info_t(data, filename, definition_line_offset, is_autoload));
+    const function_map_t::value_type new_pair(data.name, function_info_t(data, filename, definition_line_offset, is_autoload, parser.vars()));
     loaded_functions.insert(new_pair);
 
     /* Add event handlers */

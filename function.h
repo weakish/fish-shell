@@ -66,7 +66,7 @@ class function_info_t
 {
 public:
     /** Constructs relevant information from the function_data */
-    function_info_t(const function_data_t &data, const wchar_t *filename, int def_offset, bool autoload);
+    function_info_t(const function_data_t &data, const wchar_t *filename, int def_offset, bool autoload, const environment_t &env);
 
     /** Used by function_copy */
     function_info_t(const function_info_t &data, const wchar_t *filename, int def_offset, bool autoload);
