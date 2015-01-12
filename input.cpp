@@ -87,7 +87,10 @@ struct input_mapping_t
     {
         static unsigned int s_last_input_mapping_specification_order = 0;
         specification_order = ++s_last_input_mapping_specification_order;
-
+    }
+    
+    input_mapping_t()
+    {
     }
 };
 
@@ -263,10 +266,11 @@ static const wchar_t code_arr[] =
 };
 
 /** Mappings for the current input mode */
+static pthread_mutex_t input_mapping_lock = PTHREAD_MUTEX_INITIALIZER;
 static std::vector<input_mapping_t> mapping_list;
 
 /* Terminfo map list */
-static std::vector<terminfo_mapping_t> terminfo_mappings;
+static const std::vector<terminfo_mapping_t> &get_terminfo_mappings();
 
 #define TERMINFO_ADD(key) { (L ## #key) + 4, key }
 
@@ -281,11 +285,6 @@ static std::vector<terminfo_mapping_t> mappings;
    Set to one when the input subsytem has been initialized.
 */
 static bool is_init = false;
-
-/**
-   Initialize terminfo.
- */
-static void input_terminfo_init();
 
 static wchar_t input_function_args[MAX_INPUT_FUNCTION_ARGS];
 static bool input_function_status;
@@ -346,6 +345,7 @@ static bool specification_order_is_less_than(const input_mapping_t &m1, const in
 /* Inserts an input mapping at the correct position. We sort them in descending order by length, so that we test longer sequences first. */
 static void input_mapping_insert_sorted(const input_mapping_t &new_mapping)
 {
+    ASSERT_IS_LOCKED(input_mapping_lock);
     std::vector<input_mapping_t>::iterator loc = std::lower_bound(mapping_list.begin(), mapping_list.end(), new_mapping, length_is_greater_than);
     mapping_list.insert(loc, new_mapping);
 }
@@ -364,6 +364,7 @@ void input_mapping_add(const wchar_t *sequence, const wchar_t **commands, size_t
     // remove existing mappings with this sequence
     const wcstring_list_t commands_vector(commands, commands + commands_len);
 
+    scoped_lock locker(input_mapping_lock);
     for (size_t i=0; i<mapping_list.size(); i++)
     {
         input_mapping_t &m = mapping_list.at(i);
@@ -505,12 +506,15 @@ int input_init()
     assert(! term.missing());
     output_set_term(term);
 
-    input_terminfo_init();
+    get_terminfo_mappings();
 
     update_fish_color_support();
 
     /* If we have no keybindings, add a few simple defaults */
-    if (mapping_list.empty())
+    scoped_lock locker(input_mapping_lock);
+    bool needs_defaults = mapping_list.empty();
+    locker.unlock();
+    if (needs_defaults)
     {
         input_mapping_add(L"", L"self-insert");
         input_mapping_add(L"\n", L"execute");
@@ -668,10 +672,15 @@ void input_unreadch(wint_t ch)
 
 static void input_mapping_execute_matching_or_generic(parser_t &parser, bool allow_commands)
 {
-    const input_mapping_t *generic = NULL;
+    input_mapping_t generic;
+    bool has_generic = false;
+    
+    input_mapping_t match;
+    bool has_match = false;
 
     const wcstring bind_mode = input_get_bind_mode();
 
+    scoped_lock locker(input_mapping_lock);
     for (int i = 0; i < mapping_list.size(); i++)
     {
         const input_mapping_t &m = mapping_list.at(i);
@@ -685,20 +694,27 @@ static void input_mapping_execute_matching_or_generic(parser_t &parser, bool all
             continue;
         }
 
-        if (m.seq.length() == 0)
+        if (! has_generic && m.seq.length() == 0)
         {
-            generic = &m;
+            generic = m;
+            has_generic = true;
         }
-        else if (input_mapping_is_match(m))
+        else if (! has_match && input_mapping_is_match(m))
         {
-            input_mapping_execute(parser, m, allow_commands);
-            return;
+            match = m;
+            has_match = true;
+            break;
         }
     }
-
-    if (generic)
+    locker.unlock();
+    
+    if (has_match)
     {
-        input_mapping_execute(parser, *generic, allow_commands);
+        input_mapping_execute(parser, match, allow_commands);
+    }
+    else if (has_generic)
+    {
+        input_mapping_execute(parser, generic, allow_commands);
     }
     else
     {
@@ -772,7 +788,10 @@ wint_t input_readch(bool allow_commands)
 std::vector<input_mapping_name_t> input_mapping_get_names()
 {
     // Sort the mappings by the user specification order, so we can return them in the same order that the user specified them in
+    scoped_lock locker(input_mapping_lock);
     std::vector<input_mapping_t> local_list = mapping_list;
+    locker.unlock();
+    
     std::sort(local_list.begin(), local_list.end(), specification_order_is_less_than);
     std::vector<input_mapping_name_t> result;
     result.reserve(local_list.size());
@@ -788,9 +807,9 @@ std::vector<input_mapping_name_t> input_mapping_get_names()
 
 bool input_mapping_erase(const wcstring &sequence, const wcstring &mode)
 {
-    ASSERT_IS_MAIN_THREAD();
     bool result = false;
 
+    scoped_lock locker(input_mapping_lock);
     for (std::vector<input_mapping_t>::iterator it = mapping_list.begin(), end = mapping_list.end();
          it != end;
          ++it)
@@ -808,6 +827,7 @@ bool input_mapping_erase(const wcstring &sequence, const wcstring &mode)
 bool input_mapping_get(const wcstring &sequence, const wcstring &mode, wcstring_list_t *out_cmds, wcstring *out_sets_mode)
 {
     bool result = false;
+    scoped_lock locker(input_mapping_lock);
     for (std::vector<input_mapping_t>::const_iterator it = mapping_list.begin(), end = mapping_list.end();
          it != end;
          ++it)
@@ -823,10 +843,8 @@ bool input_mapping_get(const wcstring &sequence, const wcstring &mode, wcstring_
     return result;
 }
 
-/**
-   Add all terminfo mappings
- */
-static void input_terminfo_init()
+/** Helper function to create terminfo mappings. Don't call this - call get_terminfo_mappings() instead */
+static const std::vector<terminfo_mapping_t> create_terminfo_mappings()
 {
     const terminfo_mapping_t tinfos[] =
     {
@@ -988,20 +1006,24 @@ static void input_terminfo_init()
         TERMINFO_ADD(key_up)
     };
     const size_t count = sizeof tinfos / sizeof *tinfos;
-    terminfo_mappings.reserve(terminfo_mappings.size() + count);
-    terminfo_mappings.insert(terminfo_mappings.end(), tinfos, tinfos + count);
+    return std::vector<terminfo_mapping_t>(tinfos, tinfos + count);
+}
+
+static const std::vector<terminfo_mapping_t> &get_terminfo_mappings()
+{
+    static const std::vector<terminfo_mapping_t> mappings = create_terminfo_mappings();
+    return mappings;
 }
 
 bool input_terminfo_get_sequence(const wchar_t *name, wcstring *out_seq)
 {
-    ASSERT_IS_MAIN_THREAD();
-
     const char *res = 0;
     int err = ENOENT;
 
     CHECK(name, 0);
     input_init();
 
+    const std::vector<terminfo_mapping_t> &terminfo_mappings = get_terminfo_mappings();
     for (size_t i=0; i<terminfo_mappings.size(); i++)
     {
         const terminfo_mapping_t &m = terminfo_mappings.at(i);
@@ -1028,9 +1050,10 @@ bool input_terminfo_get_name(const wcstring &seq, wcstring *out_name)
 {
     input_init();
 
+    const std::vector<terminfo_mapping_t> &terminfo_mappings = get_terminfo_mappings();
     for (size_t i=0; i<terminfo_mappings.size(); i++)
     {
-        terminfo_mapping_t &m = terminfo_mappings.at(i);
+        const terminfo_mapping_t &m = terminfo_mappings.at(i);
 
         if (!m.seq)
         {
@@ -1050,14 +1073,14 @@ bool input_terminfo_get_name(const wcstring &seq, wcstring *out_name)
 
 wcstring_list_t input_terminfo_get_names(bool skip_null)
 {
-    wcstring_list_t result;
-    result.reserve(terminfo_mappings.size());
-
     input_init();
 
+    const std::vector<terminfo_mapping_t> &terminfo_mappings = get_terminfo_mappings();
+    wcstring_list_t result;
+    result.reserve(terminfo_mappings.size());
     for (size_t i=0; i<terminfo_mappings.size(); i++)
     {
-        terminfo_mapping_t &m = terminfo_mappings.at(i);
+        const terminfo_mapping_t &m = terminfo_mappings.at(i);
 
         if (skip_null && !m.seq)
         {
