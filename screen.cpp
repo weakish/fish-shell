@@ -561,15 +561,6 @@ static void s_desired_append_char(screen_t *s,
 }
 
 /**
-   The writeb function offered to tputs.
-*/
-static int s_writeb(char c)
-{
-    s_writeb_buffer->push_back(c);
-    return 0;
-}
-
-/**
    Write the bytes needed to move screen cursor to the specified
    position to the specified buffer. The actual_cursor field of the
    specified screen_t will be updated.

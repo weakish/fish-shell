@@ -1410,7 +1410,6 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
     int prev_subshell = is_subshell;
     const int prev_status = parser.get_last_status();
     bool split_output=false;
-    char sep=0;
 
     //fprintf(stderr, "subcmd %ls\n", cmd.c_str());
 
