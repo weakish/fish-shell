@@ -341,7 +341,7 @@ public:
     /**
        When this is true, the reader will exit
     */
-    bool end_loop;
+    bool reader_end_loop;
 
     /**
        If this is true, exit reader even if there are running
@@ -391,7 +391,7 @@ public:
         complete_func(0),
         highlight_function(0),
         test_func(0),
-        end_loop(0),
+        reader_end_loop(0),
         prev_end_loop(0),
         next(0),
         search_mode(0),
@@ -1067,8 +1067,8 @@ void restore_term_mode()
 void reader_exit(int do_exit, int forced)
 {
     if (data)
-        data->end_loop=do_exit;
-    end_loop=do_exit;
+        data->reader_end_loop = do_exit;
+    end_loop = do_exit;
     if (forced)
         exit_forced = 1;
 
@@ -2832,7 +2832,7 @@ bool shell_is_exiting(const parser_t &parser)
 {
 #warning Bad use of globals here
     if (parser.get_is_interactive() && parser.is_principal())
-        return parser.job_list().empty() && data != NULL && data->end_loop;
+        return parser.job_list().empty() && data != NULL && data->reader_end_loop;
     else
         return end_loop;
 }
@@ -2933,7 +2933,7 @@ static int read_i(parser_t &parser)
 
     data->prev_end_loop=0;
 
-    while ((!data->end_loop) && (!sanity_check()))
+    while ((!data->reader_end_loop) && (!sanity_check()))
     {
         event_fire_generic(L"fish_prompt");
         if (function_exists(parser, LEFT_PROMPT_FUNCTION_NAME))
@@ -2955,7 +2955,7 @@ static int read_i(parser_t &parser)
 
         const wchar_t *tmp = reader_readline(0);
 
-        if (data->end_loop)
+        if (data->reader_end_loop)
         {
             handle_end_loop();
         }
@@ -2969,7 +2969,7 @@ static int read_i(parser_t &parser)
             event_fire_generic(L"fish_preexec", &argv);
             reader_run_command(parser, command);
             event_fire_generic(L"fish_postexec", &argv);
-            if (data->end_loop)
+            if (data->reader_end_loop)
             {
                 handle_end_loop();
             }
@@ -3086,7 +3086,7 @@ const wchar_t *reader_readline(int nchars)
         wperror(L"tcsetattr");
     }
 
-    while (!finished && !data->end_loop)
+    while (!finished && !data->reader_end_loop)
     {
         if (0 < nchars && (size_t)nchars <= data->command_line.size())
         {
@@ -3262,7 +3262,7 @@ const wchar_t *reader_readline(int nchars)
             case R_EOF:
             {
                 exit_forced = 1;
-                data->end_loop=1;
+                data->reader_end_loop = 1;
                 break;
             }
 
@@ -4266,7 +4266,7 @@ int reader_read(parser_t &parser, int fd, const io_chain_t &io)
       script, not the program.
     */
     if (data)
-        data->end_loop = 0;
+        data->reader_end_loop = 0;
     end_loop = 0;
 
     parser.pop_is_interactive();
