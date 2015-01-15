@@ -74,10 +74,6 @@ static void append_captured_output(const scoped_capture_output_t &captured_outpu
     buffer->insert(buffer->end(), text.begin(), text.end());
 }
 
-static data_buffer_t *s_writeb_buffer=0;
-
-static int s_writeb(char c);
-
 /**
    Tests if the specified narrow character sequence is present at the
    specified position of the specified wide character string. All of
