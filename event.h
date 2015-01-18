@@ -26,6 +26,12 @@
 */
 #define EVENT_ANY_PID 0
 
+class parser_t;
+struct event_t;
+
+typedef shared_ptr<event_t> event_ref_t;
+typedef std::vector<event_ref_t> event_list_t;
+
 /**
    Enumeration of event types
 */
@@ -119,7 +125,7 @@ void event_remove(const event_t &event);
 
    \return the number of found matches
 */
-int event_get(const event_t &criterion, std::vector<event_t *> *out);
+size_t event_get(const event_t &criterion, event_list_t *out);
 
 /**
     Returns whether an event listener is registered for the given signal.
@@ -143,7 +149,7 @@ bool event_is_signal_observed(int signal);
    \param event the specific event whose handlers should fire. If
    null, then all delayed events will be fired.
 */
-void event_fire(const event_t *event);
+void event_fire(parser_t &parser, const event_t *event);
 
 /** Like event_fire, but takes a signal directly. */
 void event_fire_signal(int signal);
@@ -159,11 +165,6 @@ void event_init();
 void event_destroy();
 
 /**
-   Free all memory used by the specified event
-*/
-void event_free(event_t *e);
-
-/**
    Returns a string describing the specified event.
 */
 wcstring event_get_desc(const event_t &e);
@@ -171,6 +172,6 @@ wcstring event_get_desc(const event_t &e);
 /**
    Fire a generic event with the specified name
 */
-void event_fire_generic(const wchar_t *name, const wcstring_list_t *args = NULL);
+void event_fire_generic(parser_t &parser, const wchar_t *name, const wcstring_list_t *args = NULL);
 
 #endif

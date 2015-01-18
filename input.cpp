@@ -397,7 +397,7 @@ static int interrupt_handler()
     /*
       Fire any pending events
     */
-    event_fire(NULL);
+    event_fire(parser_t::principal_parser(), NULL);
 
     /*
       Reap stray processes, including printing exit status messages

@@ -858,7 +858,7 @@ void parse_execution_context_t::handle_command_not_found(const wcstring &cmd_str
 
         wcstring_list_t event_args;
         event_args.push_back(cmd_str);
-        event_fire_generic(L"fish_command_not_found", &event_args);
+        event_fire_generic(*this->parser, L"fish_command_not_found", &event_args);
 
         /* Here we want to report an error (so it shows a backtrace), but with no text */
         this->report_error(statement_node, L"");

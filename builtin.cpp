@@ -1103,7 +1103,7 @@ static int builtin_emit(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     }
     const wchar_t *eventname = argv[woptind];
     wcstring_list_t args(argv + woptind + 1, argv + argc);
-    event_fire_generic(eventname, &args);
+    event_fire_generic(parser, eventname, &args);
 
     return STATUS_BUILTIN_OK;
 }
@@ -1269,7 +1269,7 @@ static void functions_def(const wcstring &name, output_stream_t &out)
 
     search.function_name = name;
 
-    std::vector<event_t *> ev;
+    std::vector<event_ref_t> ev;
     event_get(search, &ev);
 
     out.append(L"function ");
@@ -1296,7 +1296,7 @@ static void functions_def(const wcstring &name, output_stream_t &out)
 
     for (size_t i=0; i<ev.size(); i++)
     {
-        event_t *next = ev.at(i);
+        const event_ref_t &next = ev.at(i);
         switch (next->type)
         {
             case EVENT_SIGNAL:
@@ -2678,7 +2678,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
         
         parser.push_is_interactive(true);
 
-        event_fire_generic(L"fish_prompt");
+        event_fire_generic(parser, L"fish_prompt");
         line = reader_readline(nchars);
         parser.pop_is_interactive();
         

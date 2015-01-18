@@ -337,7 +337,8 @@ void proc_sanity_check();
    Send a process/job exit event notification. This function is a
    convenience wrapper around event_fire().
 */
-void proc_fire_event(const wchar_t *msg, int type, pid_t pid, int status);
+class parser_t;
+void proc_fire_event(parser_t &parser, const wchar_t *msg, int type, pid_t pid, int status);
 
 /**
    Initializations

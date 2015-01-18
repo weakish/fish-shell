@@ -479,7 +479,7 @@ static void format_job_info(const job_t *j, const wchar_t *status, size_t job_co
     fwprintf(stdout, L"\n");
 }
 
-void proc_fire_event(const wchar_t *msg, int type, pid_t pid, int status)
+void proc_fire_event(parser_t &parser, const wchar_t *msg, int type, pid_t pid, int status)
 {
 
     event.type=type;
@@ -488,7 +488,7 @@ void proc_fire_event(const wchar_t *msg, int type, pid_t pid, int status)
     event.arguments.push_back(msg);
     event.arguments.push_back(to_string<int>(pid));
     event.arguments.push_back(to_string<int>(status));
-    event_fire(&event);
+    event_fire(parser, &event);
     event.arguments.resize(0);
 }
 
@@ -543,7 +543,7 @@ int job_reap(parser_t *parser, bool interactive)
 
             s = p->status;
 
-            proc_fire_event(L"PROCESS_EXIT", EVENT_EXIT, p->pid, (WIFSIGNALED(s)?-1:WEXITSTATUS(s)));
+            proc_fire_event(*parser, L"PROCESS_EXIT", EVENT_EXIT, p->pid, (WIFSIGNALED(s)?-1:WEXITSTATUS(s)));
 
             if (WIFSIGNALED(s))
             {
@@ -612,8 +612,8 @@ int job_reap(parser_t *parser, bool interactive)
                 format_job_info(j, _(L"ended"), job_count);
                 found=1;
             }
-            proc_fire_event(L"JOB_EXIT", EVENT_EXIT, -j->pgid, 0);
-            proc_fire_event(L"JOB_EXIT", EVENT_JOB_ID, j->job_id, 0);
+            proc_fire_event(*parser, L"JOB_EXIT", EVENT_EXIT, -j->pgid, 0);
+            proc_fire_event(*parser, L"JOB_EXIT", EVENT_JOB_ID, j->job_id, 0);
 
             job_free(parser, j);
         }

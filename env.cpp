@@ -416,7 +416,7 @@ static void universal_callback(fish_message_type_t type, const wchar_t *name)
         ev.arguments.push_back(L"VARIABLE");
         ev.arguments.push_back(str);
         ev.arguments.push_back(name);
-        event_fire(&ev);
+        event_fire(parser_t::principal_parser(), &ev);
     }
 
     if (name)
@@ -861,7 +861,11 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
         ev.arguments.push_back(key);
         
         //  debug( 1, L"env_set: fire events on variable %ls", key );
-        event_fire(&ev);
+#warning Totally wrong
+        if (is_main_thread())
+        {
+            event_fire(parser_t::principal_parser(), &ev);
+        }
         //  debug( 1, L"env_set: return from event firing" );
     }
     
@@ -949,7 +953,11 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
             ev.arguments.push_back(L"ERASE");
             ev.arguments.push_back(key);
 
-            event_fire(&ev);
+#warning Totally wrong
+            if (is_main_thread())
+            {
+                event_fire(parser_t::principal_parser(), &ev);
+            }
 
             erased = 1;
         }

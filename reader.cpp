@@ -2935,7 +2935,7 @@ static int read_i(parser_t &parser)
 
     while ((!data->reader_end_loop) && (!sanity_check()))
     {
-        event_fire_generic(L"fish_prompt");
+        event_fire_generic(parser, L"fish_prompt");
         if (function_exists(parser, LEFT_PROMPT_FUNCTION_NAME))
             reader_set_left_prompt(LEFT_PROMPT_FUNCTION_NAME);
         else
@@ -2966,9 +2966,9 @@ static int read_i(parser_t &parser)
             data->command_line.text.clear();
             data->command_line_changed(&data->command_line);
             wcstring_list_t argv(1, command);
-            event_fire_generic(L"fish_preexec", &argv);
+            event_fire_generic(parser, L"fish_preexec", &argv);
             reader_run_command(parser, command);
-            event_fire_generic(L"fish_postexec", &argv);
+            event_fire_generic(parser, L"fish_postexec", &argv);
             if (data->reader_end_loop)
             {
                 handle_end_loop();

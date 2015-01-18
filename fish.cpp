@@ -524,7 +524,7 @@ int main(int argc, char **argv)
 
     int exit_status = res ? STATUS_UNKNOWN_COMMAND : parser.get_last_status();
 
-    proc_fire_event(L"PROCESS_EXIT", EVENT_EXIT, getpid(), exit_status);
+    proc_fire_event(parser, L"PROCESS_EXIT", EVENT_EXIT, getpid(), exit_status);
 
     restore_term_mode();
     restore_term_foreground_process_group();

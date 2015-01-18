@@ -616,6 +616,7 @@ void signal_set_handlers(bool is_interactive)
 
 void signal_handle(int sig, int do_handle)
 {
+#warning Needs to be made thread safe
     struct sigaction act;
 
     /*
