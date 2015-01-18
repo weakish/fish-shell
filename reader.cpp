@@ -2502,7 +2502,7 @@ static void set_env_cmd_duration(struct timeval *after, struct timeval *before, 
     }
 
     swprintf(buf, 16, L"%d", (secs * 1000) + (usecs / 1000));
-    parser.vars().set(ENV_CMD_DURATION, buf, ENV_EXPORT);
+    parser.vars().set(ENV_CMD_DURATION, buf, ENV_UNEXPORT);
 }
 
 void reader_run_command(parser_t &parser, const wcstring &cmd)
