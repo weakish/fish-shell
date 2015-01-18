@@ -296,6 +296,7 @@ process_t::process_t() :
     internal_block_node(NODE_OFFSET_INVALID),
     actual_cmd(),
     pid(0),
+    eproc(NULL),
     pipe_write_fd(0),
     pipe_read_fd(0),
     completed(0),
@@ -312,8 +313,8 @@ process_t::process_t() :
 
 process_t::~process_t()
 {
-    if (this->next != NULL)
-        delete this->next;
+    delete this->next; // may be NULL
+    delete this->eproc; // may be NULL
 }
 
 job_t::job_t(job_id_t jobid, const io_chain_t &bio) :

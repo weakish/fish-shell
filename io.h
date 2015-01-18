@@ -57,14 +57,20 @@ public:
     /** Whether this redirection was supplied by a script. For example, 'cmd <&3' would have user_supplied set to true. But a redirection that comes about through transmogrification would not. */
     const bool user_supplied;
     
+    /** Whether we close this fd on destruction */
+    const bool should_close;
+    
     virtual void print() const;
 
-    io_fd_t(int f, int old, bool us) :
+    io_fd_t(int f, int old, bool us, bool do_close = false) :
         io_data_t(IO_FD, f),
         old_fd(old),
-        user_supplied(us)
+        user_supplied(us),
+        should_close(do_close)
     {
     }
+    
+    ~io_fd_t();
 };
 
 class io_file_t : public io_data_t
@@ -121,6 +127,7 @@ private:
     /** buffer to save output in */
     std::vector<char> out_buffer;
 
+    /* Constructor is private, use io_buffer_t::create() below */
     io_buffer_t(int f):
         io_pipe_t(IO_BUFFER, f, false /* not input */),
         out_buffer()

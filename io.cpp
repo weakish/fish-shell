@@ -59,6 +59,14 @@ void io_fd_t::print() const
     fprintf(stderr, "FD map %d -> %d\n", old_fd, fd);
 }
 
+io_fd_t::~io_fd_t()
+{
+    if (this->old_fd >= 0 && this->should_close)
+    {
+        close(this->old_fd);
+    }
+}
+
 void io_file_t::print() const
 {
     fprintf(stderr, "file (%s)\n", filename_cstr);

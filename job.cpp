@@ -369,14 +369,25 @@ bool job_store_t::wait_for_job_in_parser(const parser_t &parser, pid_t *out_pid,
     return got_pid;
 }
 
-emulated_process_id_t emulated_process_id_t::create()
+static uint64_t next_epid()
 {
-    static uint64_t next;
+    static uint64_t next = (1ULL << 32);
     static pthread_mutex_t epid_lock = PTHREAD_MUTEX_INITIALIZER;
     scoped_lock locker(epid_lock);
-    emulated_process_id_t result;
-    result.epid = ++next;
-    return result;
+    return next++;
+}
+
+emulated_process_t::emulated_process_t() : proc_id(next_epid()), is_finished(false), my_exit_status(-1)
+{
+}
+
+void emulated_process_t::wait_until_finished() const
+{
+    /* Hacktastic */
+    while (! this->finished())
+    {
+        usleep(1000);
+    }
 }
 
 

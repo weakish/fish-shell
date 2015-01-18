@@ -147,18 +147,50 @@ public:
     size_t count() const;
 };
 
-/* Process IDs for emulated processes. These occupy a different namespace than pids. */
-class emulated_process_id_t
+/* Emulated process support */
+class emulated_process_t
 {
-    uint64_t epid;
-    public:
-    emulated_process_id_t() : epid(0)
+    friend class child_eval_context_t;
+    
+    /* No copying */
+    emulated_process_t(const emulated_process_t &);
+    emulated_process_t &operator=(const emulated_process_t &);
+    
+    /* We have a "process id" returned by the epid() function. This occupies a different namespace than pid. */
+    const uint64_t proc_id;
+    
+    /* Whether the process has finished */
+    volatile bool is_finished;
+    
+    /* Exit status */
+    volatile int my_exit_status;
+    
+public:
+    emulated_process_t();
+    
+    uint64_t epid() const
     {
+        return proc_id;
     }
     
-    static emulated_process_id_t create();
+    bool finished() const
+    {
+        return this->is_finished;
+    }
+    
+    void mark_finished()
+    {
+        this->is_finished = true;
+    }
+    
+    void wait_until_finished() const;
+    
+    int exit_status() const
+    {
+        assert(this->is_finished);
+        return this->my_exit_status;
+    }
 };
-
 
 /**
    Add the specified flag to the bitset of flags for the specified job

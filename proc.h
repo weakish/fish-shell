@@ -198,8 +198,8 @@ public:
     /** process ID */
     pid_t pid;
     
-    /** emulated process id */
-    emulated_process_id_t epid;
+    /** Emulated process. Owned pointer or NULL. */
+    emulated_process_t *eproc;
 
     /** File descriptor that pipe output should bind to */
     int pipe_write_fd;

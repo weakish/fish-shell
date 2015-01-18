@@ -327,7 +327,7 @@ public:
     int eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type);
     
     /** Evaluates a block node as a child thread at the given node offset in the topmost execution context */
-    int eval_block_node_in_child(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type);
+    int eval_block_node_in_child(node_offset_t node_idx, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type);
 
 
     /**
@@ -493,5 +493,6 @@ public:
 };
 
 bool parser_use_threads();
+bool parser_concurrent_execution();
 
 #endif

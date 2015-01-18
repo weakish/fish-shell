@@ -92,6 +92,11 @@ void exec_close(int fd)
         debug(0, L"Called close on invalid file descriptor ");
         return;
     }
+    
+    if (fd < 3)
+    {
+        debug(0, L"Called close on standard file descriptor ");
+    }
 
     while (close(fd) == -1)
     {
@@ -280,14 +285,6 @@ static int has_fd(const io_chain_t &d, int fd)
 }
 
 /**
-   Close a list of fds.
-*/
-static void io_cleanup_fds(const std::vector<int> &opened_fds)
-{
-    std::for_each(opened_fds.begin(), opened_fds.end(), close);
-}
-
-/**
    Make a copy of the specified io redirection chain, but change file
    redirection into fd redirection. This makes the redirection chain
    suitable for use as block-level io, since the file won't be
@@ -296,10 +293,10 @@ static void io_cleanup_fds(const std::vector<int> &opened_fds)
 
    \return true on success, false on failure. Returns the output chain and opened_fds by reference
 */
-static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, std::vector<int> *out_opened_fds)
+static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain)
 {
 #warning Need to synchronize opening FDs with exec to avoid leaking FDs into other processes
-    assert(out_chain != NULL && out_opened_fds != NULL);
+    assert(out_chain != NULL);
     assert(out_chain->empty());
 
     /* Just to be clear what we do for an empty chain */
@@ -359,8 +356,7 @@ static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, s
                     break;
                 }
 
-                opened_fds.push_back(fd);
-                out.reset(new io_fd_t(in->fd, fd, false));
+                out.reset(new io_fd_t(in->fd, fd, false /* user_supplied */, true /* should_close */));
 
                 break;
             }
@@ -381,13 +377,11 @@ static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, s
     {
         /* Yay */
         out_chain->swap(result_chain);
-        out_opened_fds->swap(opened_fds);
     }
     else
     {
         /* No dice - clean up */
         result_chain.clear();
-        io_cleanup_fds(opened_fds);
     }
     return success;
 }
@@ -404,6 +398,7 @@ static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, s
 */
 
 static void internal_exec_helper(parser_t &parser,
+                                 emulated_process_t *eproc,
                                  const wcstring &def,
                                  node_offset_t node_offset,
                                  enum block_type_t block_type,
@@ -413,8 +408,7 @@ static void internal_exec_helper(parser_t &parser,
     assert(node_offset == NODE_OFFSET_INVALID || def.empty());
 
     io_chain_t morphed_chain;
-    std::vector<int> opened_fds;
-    bool transmorgrified = io_transmogrify(ios, &morphed_chain, &opened_fds);
+    bool transmorgrified = io_transmogrify(ios, &morphed_chain);
 
     /*
       Did the transmogrification fail - if so, set error status and return
@@ -430,24 +424,29 @@ static void internal_exec_helper(parser_t &parser,
     if (node_offset == NODE_OFFSET_INVALID)
     {
         parser.eval(def, morphed_chain, block_type);
+        if (eproc)
+        {
+            eproc->mark_finished();
+        }
     }
     else
     {
         if (parser_use_threads())
         {
-            parser.eval_block_node_in_child(node_offset, morphed_chain, block_type);
+            parser.eval_block_node_in_child(node_offset, eproc, morphed_chain, block_type);
         }
         else
         {
             parser.eval_block_node(node_offset, morphed_chain, block_type);
+            if (eproc)
+            {
+                eproc->mark_finished();
+            }
         }
     }
 
     signal_block();
-
-    morphed_chain.clear();
-    io_cleanup_fds(opened_fds);
-    job_reap(&parser, 0);
+    job_reap(&parser, false);
 }
 
 /* Returns whether we can use posix spawn for a given process in a given job.
@@ -834,10 +833,14 @@ void exec_job(parser_t &parser, job_t *j)
                         process_net_io_chain.push_back(block_output_io_buffer);
                     }
                 }
+                
+                /* Give the process an emulated process */
+                assert(p->eproc == NULL);
+                p->eproc = new emulated_process_t();
 
                 if (! exec_error)
                 {
-                    internal_exec_helper(parser, def, NODE_OFFSET_INVALID, TOP, process_net_io_chain);
+                    internal_exec_helper(parser, p->eproc, def, NODE_OFFSET_INVALID, TOP, process_net_io_chain);
                 }
 
                 parser.allow_function();
@@ -848,25 +851,32 @@ void exec_job(parser_t &parser, job_t *j)
 
             case INTERNAL_BLOCK_NODE:
             {
-                if (p->next)
+                if (! parser_concurrent_execution())
                 {
-                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
-                    if (block_output_io_buffer.get() == NULL)
+                    if (p->next)
                     {
-                        /* We failed (e.g. no more fds could be created). */
-                        exec_error = true;
-                        job_mark_process_as_failed(j, p);
-                    }
-                    else
-                    {
-                        /* See the comment above about it's OK to add an IO redirection to this local buffer, even though it won't be handled in select_try */
-                        process_net_io_chain.push_back(block_output_io_buffer);
+                        block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
+                        if (block_output_io_buffer.get() == NULL)
+                        {
+                            /* We failed (e.g. no more fds could be created). */
+                            exec_error = true;
+                            job_mark_process_as_failed(j, p);
+                        }
+                        else
+                        {
+                            /* See the comment above about it's OK to add an IO redirection to this local buffer, even though it won't be handled in select_try */
+                            process_net_io_chain.push_back(block_output_io_buffer);
+                        }
                     }
                 }
+                
+                /* Give the process an emulated process */
+                assert(p->eproc == NULL);
+                p->eproc = new emulated_process_t();
 
                 if (! exec_error)
                 {
-                    internal_exec_helper(parser, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
+                    internal_exec_helper(parser, p->eproc, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
                 }
                 break;
             }
@@ -1394,6 +1404,21 @@ void exec_job(parser_t &parser, job_t *j)
     if (! exec_error)
     {
         job_continue(&parser, j, false);
+        
+        /* Wait for all processes to exit */
+        for (process_t *p = j->first_process; p != NULL; p = p->next)
+        {
+            if (p->eproc != NULL)
+            {
+                p->eproc->wait_until_finished();
+                if (p->next == NULL)
+                {
+                    assert(p->eproc->finished());
+                    /* Last process */
+                    parser.set_last_status(p->eproc->exit_status());
+                }
+            }
+        }
     }
     else
     {

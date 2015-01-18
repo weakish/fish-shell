@@ -423,11 +423,13 @@ block_t *parser_t::current_block()
 
 void parser_t::forbid_function(const wcstring &function)
 {
+    this->assert_is_this_thread();
     forbidden_function.push_back(function);
 }
 
 void parser_t::allow_function()
 {
+    this->assert_is_this_thread();
     forbidden_function.pop_back();
 }
 
@@ -1050,23 +1052,27 @@ class child_eval_context_t
 {
     public:
     parser_t parser;
+    emulated_process_t *eproc; //unowned
     parse_node_tree_t tree;
     wcstring src;
     node_offset_t node_idx;
     io_chain_t io;
     enum block_type_t block_type;
-    int result;
-    bool finished;
     
-    child_eval_context_t(const parser_t &parent) : parser(parent), result(0), finished(false)
+    child_eval_context_t(const parser_t &parent) : parser(parent), eproc(NULL)
     {
     }
     
     int run_in_background()
     {
         this->parser.expected_thread = pthread_self();
-        this->result = parser.eval(src, tree, node_idx, io, block_type);
-        this->finished = true;
+        parser.eval(src, tree, node_idx, io, block_type);
+        int result = this->parser.get_last_status();
+        if (this->eproc != NULL)
+        {
+            this->eproc->my_exit_status = result;
+            this->eproc->mark_finished();
+        }
         return result;
     }
     
@@ -1081,8 +1087,10 @@ static int run_child_parser_in_background(child_eval_context_t *ctx)
     return ctx->run_in_background();
 }
 
-int parser_t::eval_block_node_in_child(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type)
+int parser_t::eval_block_node_in_child(node_offset_t node_idx, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type)
 {
+    assert(eproc != NULL);
+    
     /* Paranoia. It's a little frightening that we're given only a node_idx and we interpret this in the topmost execution context's tree. What happens if two trees were to be interleaved? Fortunately that cannot happen (yet); in the future we probably want some sort of reference counted trees.
     */
     parse_execution_context_t *ctx = this->execution_contexts.back();
@@ -1090,7 +1098,9 @@ int parser_t::eval_block_node_in_child(node_offset_t node_idx, const io_chain_t 
 
     CHECK_BLOCK(1);
 
+#warning This may be leaked
     child_eval_context_t *child_eval = new child_eval_context_t(*this);
+    child_eval->eproc = eproc;
     child_eval->tree = ctx->get_tree();
     child_eval->src = ctx->get_source();
     child_eval->node_idx = node_idx;
@@ -1098,14 +1108,19 @@ int parser_t::eval_block_node_in_child(node_offset_t node_idx, const io_chain_t 
     child_eval->block_type = block_type;
     
     iothread_perform(run_child_parser_in_background, child_eval);
-    while (! child_eval->finished)
+    
+    if (! parser_concurrent_execution())
     {
-        usleep(1000);
+        if (eproc)
+        {
+            eproc->wait_until_finished();
+        }
+        int result = child_eval->parser.get_last_status();
+        this->set_last_status(result);
+        delete child_eval;
+        return result;
     }
-    int result = child_eval->result;
-    this->set_last_status(child_eval->parser.get_last_status());
-    delete child_eval;
-    return result;
+    return -1;
 }
 
 bool parser_t::detect_errors_in_argument_list(const wcstring &arg_list_src, wcstring *out, const wchar_t *prefix)
@@ -1355,4 +1370,9 @@ breakpoint_block_t::breakpoint_block_t() : block_t(BREAKPOINT)
 bool parser_use_threads()
 {
     return true;
+}
+
+bool parser_concurrent_execution()
+{
+    return parser_use_threads() && true;
 }
