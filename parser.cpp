@@ -1087,6 +1087,13 @@ static int run_child_parser_in_background(child_eval_context_t *ctx)
     return ctx->run_in_background();
 }
 
+static int run_child_parser_in_background_and_delete(child_eval_context_t *ctx)
+{
+    int ret = ctx->run_in_background();
+    delete ctx;
+    return ret;
+}
+
 int parser_t::eval_block_node_in_child(node_offset_t node_idx, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type)
 {
     assert(eproc != NULL);
@@ -1098,7 +1105,6 @@ int parser_t::eval_block_node_in_child(node_offset_t node_idx, emulated_process_
 
     CHECK_BLOCK(1);
 
-#warning This may be leaked
     child_eval_context_t *child_eval = new child_eval_context_t(*this);
     child_eval->eproc = eproc;
     child_eval->tree = ctx->get_tree();
@@ -1107,9 +1113,11 @@ int parser_t::eval_block_node_in_child(node_offset_t node_idx, emulated_process_
     child_eval->io = io;
     child_eval->block_type = block_type;
     
-    iothread_perform(run_child_parser_in_background, child_eval);
+    bool sync = ! parser_concurrent_execution();
     
-    if (! parser_concurrent_execution())
+    iothread_perform(sync ? run_child_parser_in_background : run_child_parser_in_background_and_delete, child_eval);
+    
+    if (sync)
     {
         if (eproc)
         {

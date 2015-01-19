@@ -633,9 +633,6 @@ void exec_job(parser_t &parser, job_t *j)
         }
     }
     
-    /* Total list of pipes. Keeping these alives keeps their file descriptors open until the execution is complete. */
-    io_chain_t all_pipes;
-
     /*
       This loop loops over every process_t in the job, starting it as
       appropriate. This turns out to be rather complex, since a
@@ -1342,15 +1339,12 @@ void exec_job(parser_t &parser, job_t *j)
             }
         }
 
-        /*
-           Close the pipe the current process uses to read from the
-           previous process_t
-        */
+        /* Clear the pipe the current process uses to read from the previous process_t */
         pipe_current_read.reset();
         pipe_current_write.reset();
     }
 
-    /* Clean up any file descriptors we left open */
+    /* Don't hang onto file descriptors unnecessarily */
     pipe_current_read.reset();
     pipe_current_write.reset();
     pipe_next_read.reset();
