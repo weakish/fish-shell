@@ -35,7 +35,7 @@
 #define FD_ERROR   "An error occurred while redirecting file descriptor %s"
 
 /** pipe error */
-#define LOCAL_PIPE_ERROR "An error occurred while setting up pipe"
+#define LOCAL_PIPE_ERROR "An error occurred while setting up a pipe"
 
 static bool log_redirections = false;
 
@@ -184,17 +184,10 @@ static int handle_child_io(const io_chain_t &io_chain)
             }
 
             case IO_FD:
+            case IO_PIPE:
             {
                 int old_fd = static_cast<const io_fd_t *>(io)->old_fd;
                 if (log_redirections) fprintf(stderr, "%d: fd dup %d to %d\n", getpid(), old_fd, io->fd);
-
-                /*
-                  This call will sometimes fail, but that is ok,
-                  this is just a precausion.
-                */
-                close(io->fd);
-
-
                 if (dup2(old_fd, io->fd) == -1)
                 {
                     debug_safe_int(1, FD_ERROR, io->fd);
@@ -205,11 +198,10 @@ static int handle_child_io(const io_chain_t &io_chain)
             }
 
             case IO_BUFFER:
-            case IO_PIPE:
             {
-                CAST_INIT(const io_pipe_t *, io_pipe, io);
-                /* If write_pipe_idx is 0, it means we're connecting to the read end (first pipe fd). If it's 1, we're connecting to the write end (second pipe fd). */
-                unsigned int write_pipe_idx = (io_pipe->is_input ? 0 : 1);
+                CAST_INIT(const io_buffer_t *, io_buffer, io);
+                /* Buffers are always output. Connect to the write end (second pipe fd). */
+                unsigned int write_pipe_idx = 1;
                 /*
                         debug( 0,
                              L"%ls %ls on fd %d (%d %d)",
@@ -219,18 +211,19 @@ static int handle_child_io(const io_chain_t &io_chain)
                              io->pipe_fd[0],
                              io->pipe_fd[1]);
                 */
-                if (log_redirections) fprintf(stderr, "%d: %s dup %d to %d\n", getpid(), io->io_mode == IO_BUFFER ? "buffer" : "pipe", io_pipe->pipe_fd[write_pipe_idx], io->fd);
-                if (dup2(io_pipe->pipe_fd[write_pipe_idx], io->fd) != io->fd)
+                if (log_redirections) fprintf(stderr, "%d: %s dup %d to %d\n", getpid(), io->io_mode == IO_BUFFER ? "buffer" : "pipe", io_buffer->pipe_fd[write_pipe_idx], io->fd);
+                if (dup2(io_buffer->pipe_fd[write_pipe_idx], io->fd) != io->fd)
                 {
                     debug_safe(1, LOCAL_PIPE_ERROR);
+                    fprintf(stderr, "failed to dup2 %d -> %d\n", io_buffer->pipe_fd[write_pipe_idx], io->fd);
                     safe_perror("dup2");
                     return -1;
                 }
 
-                if (io_pipe->pipe_fd[0] >= 0)
-                    exec_close(io_pipe->pipe_fd[0]);
-                if (io_pipe->pipe_fd[1] >= 0)
-                    exec_close(io_pipe->pipe_fd[1]);
+                if (io_buffer->pipe_fd[0] >= 0)
+                    exec_close(io_buffer->pipe_fd[0]);
+                if (io_buffer->pipe_fd[1] >= 0)
+                    exec_close(io_buffer->pipe_fd[1]);
                 break;
             }
 
@@ -420,6 +413,7 @@ bool fork_actions_make_spawn_properties(posix_spawnattr_t *attr, posix_spawn_fil
             }
 
             case IO_FD:
+            case IO_PIPE:
             {
                 CAST_INIT(const io_fd_t *, io_fd, io.get());
                 if (! err)
@@ -428,11 +422,10 @@ bool fork_actions_make_spawn_properties(posix_spawnattr_t *attr, posix_spawn_fil
             }
 
             case IO_BUFFER:
-            case IO_PIPE:
             {
-                CAST_INIT(const io_pipe_t *, io_pipe, io.get());
-                unsigned int write_pipe_idx = (io_pipe->is_input ? 0 : 1);
-                int from_fd = io_pipe->pipe_fd[write_pipe_idx];
+                CAST_INIT(const io_buffer_t *, io_buffer, io.get());
+                unsigned int write_pipe_idx = 1;
+                int from_fd = io_buffer->pipe_fd[write_pipe_idx];
                 int to_fd = io->fd;
                 if (! err)
                     err = posix_spawn_file_actions_adddup2(actions, from_fd, to_fd);
@@ -441,14 +434,14 @@ bool fork_actions_make_spawn_properties(posix_spawnattr_t *attr, posix_spawn_fil
                 if (write_pipe_idx > 0)
                 {
                     if (! err)
-                        err = posix_spawn_file_actions_addclose(actions, io_pipe->pipe_fd[0]);
+                        err = posix_spawn_file_actions_addclose(actions, io_buffer->pipe_fd[0]);
                     if (! err)
-                        err = posix_spawn_file_actions_addclose(actions, io_pipe->pipe_fd[1]);
+                        err = posix_spawn_file_actions_addclose(actions, io_buffer->pipe_fd[1]);
                 }
                 else
                 {
                     if (! err)
-                        err = posix_spawn_file_actions_addclose(actions, io_pipe->pipe_fd[0]);
+                        err = posix_spawn_file_actions_addclose(actions, io_buffer->pipe_fd[0]);
 
                 }
                 break;

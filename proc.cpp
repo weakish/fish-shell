@@ -298,7 +298,7 @@ process_t::process_t() :
     pid(0),
     eproc(NULL),
     pipe_write_fd(0),
-    pipe_read_fd(0),
+    pipe_read_fd(STDIN_FILENO),
     completed(0),
     stopped(0),
     status(0),
@@ -779,8 +779,8 @@ static int select_try(job_t *j)
         const io_data_t *io = chain.at(idx).get();
         if (io->io_mode == IO_BUFFER)
         {
-            CAST_INIT(const io_pipe_t *, io_pipe, io);
-            int fd = io_pipe->pipe_fd[0];
+            CAST_INIT(const io_buffer_t *, io_buffer, io);
+            int fd = io_buffer->pipe_fd[0];
 //			fwprintf( stderr, L"fd %d on job %ls\n", fd, j->command );
             FD_SET(fd, &fds);
             maxfd = maxi(maxfd, fd);

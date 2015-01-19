@@ -150,8 +150,6 @@ public:
 /* Emulated process support */
 class emulated_process_t
 {
-    friend class child_eval_context_t;
-    
     /* No copying */
     emulated_process_t(const emulated_process_t &);
     emulated_process_t &operator=(const emulated_process_t &);
@@ -189,6 +187,11 @@ public:
     {
         assert(this->is_finished);
         return this->my_exit_status;
+    }
+    
+    void set_exit_status(int val)
+    {
+        this->my_exit_status = val;
     }
 };
 

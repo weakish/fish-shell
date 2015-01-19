@@ -63,7 +63,7 @@ io_fd_t::~io_fd_t()
 {
     if (this->old_fd >= 0 && this->should_close)
     {
-        close(this->old_fd);
+        exec_close(this->old_fd);
     }
 }
 
@@ -74,14 +74,12 @@ void io_file_t::print() const
 
 void io_pipe_t::print() const
 {
-    fprintf(stderr, "pipe {%d, %d} (input: %s)\n", pipe_fd[0], pipe_fd[1],
-            is_input ? "yes" : "no");
+    fprintf(stderr, "pipe %d -> %d (input: %s)\n", this->old_fd, this->fd, this->fd == STDIN_FILENO ? "yes" : "no");
 }
 
 void io_buffer_t::print() const
 {
-    fprintf(stderr, "buffer %p (input: %s, size %lu)\n", out_buffer_ptr(),
-            is_input ? "yes" : "no", (unsigned long) out_buffer_size());
+    fprintf(stderr, "buffer %p (size %lu)\n", out_buffer_ptr(), (unsigned long) out_buffer_size());
 }
 
 void io_buffer_t::read()

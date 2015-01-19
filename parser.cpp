@@ -1070,7 +1070,7 @@ class child_eval_context_t
         int result = this->parser.get_last_status();
         if (this->eproc != NULL)
         {
-            this->eproc->my_exit_status = result;
+            this->eproc->set_exit_status(result);
             this->eproc->mark_finished();
         }
         return result;

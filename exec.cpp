@@ -395,9 +395,11 @@ static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain)
    \param node_offset the offset of the node to evalute, or NODE_OFFSET_INVALID
    \param block_type the type of block to push on evaluation
    \param io the io redirections to be performed on this block
+ 
+   \returns True on success, false on failure (e.g. redirection failure)
 */
 
-static void internal_exec_helper(parser_t &parser,
+static bool internal_exec_helper(parser_t &parser,
                                  emulated_process_t *eproc,
                                  const wcstring &def,
                                  node_offset_t node_offset,
@@ -416,7 +418,7 @@ static void internal_exec_helper(parser_t &parser,
     if (! transmorgrified)
     {
         parser.set_last_status(STATUS_EXEC_FAIL);
-        return;
+        return false;
     }
 
     signal_unblock();
@@ -426,6 +428,7 @@ static void internal_exec_helper(parser_t &parser,
         parser.eval(def, morphed_chain, block_type);
         if (eproc)
         {
+            eproc->set_exit_status(parser.get_last_status());
             eproc->mark_finished();
         }
     }
@@ -440,6 +443,7 @@ static void internal_exec_helper(parser_t &parser,
             parser.eval_block_node(node_offset, morphed_chain, block_type);
             if (eproc)
             {
+                eproc->set_exit_status(parser.get_last_status());
                 eproc->mark_finished();
             }
         }
@@ -447,6 +451,7 @@ static void internal_exec_helper(parser_t &parser,
 
     signal_block();
     job_reap(&parser, false);
+    return true;
 }
 
 /* Returns whether we can use posix spawn for a given process in a given job.
@@ -507,16 +512,6 @@ void exec_job(parser_t &parser, job_t *j)
 
     /* Verify that all IO_BUFFERs are output. We used to support a (single, hacked-in) magical input IO_BUFFER used by fish_pager, but now the claim is that there are no more clients and it is removed. This assertion double-checks that. */
     const io_chain_t all_ios = j->all_io_redirections();
-    for (size_t idx = 0; idx < all_ios.size(); idx++)
-    {
-        const shared_ptr<io_data_t> &io = all_ios.at(idx);
-
-        if ((io->io_mode == IO_BUFFER))
-        {
-            CAST_INIT(io_buffer_t *, io_buffer, io.get());
-            assert(! io_buffer->is_input);
-        }
-    }
 
     if (j->first_process->type==INTERNAL_EXEC)
     {
@@ -637,6 +632,9 @@ void exec_job(parser_t &parser, job_t *j)
             job_store_t::global_store().child_process_spawned(keepalive.pid);
         }
     }
+    
+    /* Total list of pipes. Keeping these alives keeps their file descriptors open until the execution is complete. */
+    io_chain_t all_pipes;
 
     /*
       This loop loops over every process_t in the job, starting it as
@@ -651,28 +649,21 @@ void exec_job(parser_t &parser, job_t *j)
     1. The pipe the current process should read from (courtesy of the previous process)
     2. The pipe that the current process should write to
     3. The pipe that the next process should read from (courtesy of us)
-
-    We are careful to set these to -1 when closed, so if we exit the loop abruptly, we can still close them.
-
     */
-
-    int pipe_current_read = -1, pipe_current_write = -1, pipe_next_read = -1;
+    
+    shared_ptr<io_pipe_t> pipe_current_read, pipe_current_write, pipe_next_read;
     for (process_t *p=j->first_process; p != NULL && ! exec_error; p = p->next)
     {
         /* The IO chain for this process. It starts with the block IO, then pipes, and then gets any from the process */
         io_chain_t process_net_io_chain = j->block_io_chain();
 
-        /* "Consume" any pipe_next_read by making it current */
-        assert(pipe_current_read == -1);
-        pipe_current_read = pipe_next_read;
-        pipe_next_read = -1;
-
-        /* See if we need a pipe */
-        const bool pipes_to_next_command = (p->next != NULL);
+        /* "Consume" any pipe_next_read by making it current. pipe_current_read is then the pipe that we should read from, if non-NULL */
+        assert(pipe_current_write.get() == NULL);
+        assert(pipe_current_read.get() == NULL);
+        pipe_current_read.swap(pipe_next_read);
+        assert(pipe_next_read.get() == NULL);
 
         /* The pipes the current process write to and read from.
-           Unfortunately these can't be just allocated on the stack, since
-           j->io wants shared_ptr.
 
           The write pipe (destined for stdout) needs to occur before redirections. For example, with a redirection like this:
             `foo 2>&1 | bar`, what we want to happen is this:
@@ -694,29 +685,58 @@ void exec_job(parser_t &parser, job_t *j)
 
             which depends on the redirection being evaluated before the pipe. So the write end of the pipe comes first, the read pipe of the pipe comes last. See issue #966.
         */
+        
+        /* Set up fds that will be used in the pipe. */
+        const bool pipes_to_next_command = (p->next != NULL);
+        if (pipes_to_next_command)
+        {
+            //      debug( 1, L"%ls|%ls" , p->argv[0], p->next->argv[0]);
+            int local_pipe[2] = {-1, -1};
+            if (exec_pipe(local_pipe) == -1)
+            {
+                debug(1, PIPE_ERROR);
+                wperror(L"pipe");
+                exec_error = true;
+                job_mark_process_as_failed(j, p);
+                break;
+            }
+            
+            /* Ensure our pipe fds not conflict with any fd redirections. E.g. if the process is like 'cat <&5' then fd 5 must not be used by the pipe. */
+            if (! pipe_avoid_conflicts_with_io_chain(local_pipe, all_ios))
+            {
+                /* We failed. The pipes were closed for us. */
+                wperror(L"dup");
+                exec_error = true;
+                job_mark_process_as_failed(j, p);
+                break;
+            }
+            
+            /* Create redirections for these pipes. The redirections will close them. */
+            assert(local_pipe[0] >= 0);
+            assert(local_pipe[1] >= 0);
+            assert(pipe_next_read.get() == NULL);
+            assert(pipe_current_write.get() == NULL);
+            assert(p->next != NULL);
+            /* Note the pipe_next_read uses the next process's read-from fd, but pipe_current_write uses this processes's pipe_write_fd */
+            pipe_next_read.reset(new io_pipe_t(p->next->pipe_read_fd, local_pipe[0]));
+            pipe_current_write.reset(new io_pipe_t(p->pipe_write_fd, local_pipe[1]));
+        }
 
-        shared_ptr<io_pipe_t> pipe_write;
-        shared_ptr<io_pipe_t> pipe_read;
 
         /* Write pipe goes first */
-        if (p->next)
+        if (pipe_current_write.get() != NULL)
         {
-            pipe_write.reset(new io_pipe_t(p->pipe_write_fd, false));
-            process_net_io_chain.push_back(pipe_write);
+            process_net_io_chain.push_back(pipe_current_write);
         }
 
         /* The explicit IO redirections associated with the process */
         process_net_io_chain.append(p->io_chain());
 
         /* Read pipe goes last */
-        if (p != j->first_process)
+        if (pipe_current_read.get() != NULL)
         {
-            pipe_read.reset(new io_pipe_t(p->pipe_read_fd, true));
-            /* Record the current read in pipe_read */
-            pipe_read->pipe_fd[0] = pipe_current_read;
-            process_net_io_chain.push_back(pipe_read);
+            process_net_io_chain.push_back(pipe_current_read);
         }
-
 
         /*
            This call is used so the global environment variable array
@@ -729,45 +749,6 @@ void exec_job(parser_t &parser, job_t *j)
         */
         if (p->type == EXTERNAL)
             parser.vars().env_export_arr(true);
-
-
-        /* Set up fds that will be used in the pipe. */
-        if (pipes_to_next_command)
-        {
-//      debug( 1, L"%ls|%ls" , p->argv[0], p->next->argv[0]);
-            int local_pipe[2] = {-1, -1};
-            if (exec_pipe(local_pipe) == -1)
-            {
-                debug(1, PIPE_ERROR);
-                wperror(L"pipe");
-                exec_error = true;
-                job_mark_process_as_failed(j, p);
-                break;
-            }
-
-            /* Ensure our pipe fds not conflict with any fd redirections. E.g. if the process is like 'cat <&5' then fd 5 must not be used by the pipe. */
-            if (! pipe_avoid_conflicts_with_io_chain(local_pipe, all_ios))
-            {
-                /* We failed. The pipes were closed for us. */
-                wperror(L"dup");
-                exec_error = true;
-                job_mark_process_as_failed(j, p);
-                break;
-            }
-
-            // This tells the redirection about the fds, but the redirection does not close them
-            assert(local_pipe[0] >= 0);
-            assert(local_pipe[1] >= 0);
-            memcpy(pipe_write->pipe_fd, local_pipe, sizeof(int)*2);
-
-            // Record our pipes
-            // The fds should be negative to indicate that we aren't overwriting an fd we failed to close
-            assert(pipe_current_write == -1);
-            pipe_current_write = local_pipe[1];
-
-            assert(pipe_next_read == -1);
-            pipe_next_read = local_pipe[0];
-        }
 
         // This is the IO buffer we use for storing the output of a block or function when it is in a pipeline
         shared_ptr<io_buffer_t> block_output_io_buffer;
@@ -840,7 +821,7 @@ void exec_job(parser_t &parser, job_t *j)
 
                 if (! exec_error)
                 {
-                    internal_exec_helper(parser, p->eproc, def, NODE_OFFSET_INVALID, TOP, process_net_io_chain);
+                    exec_error = ! internal_exec_helper(parser, p->eproc, def, NODE_OFFSET_INVALID, TOP, process_net_io_chain);
                 }
 
                 parser.allow_function();
@@ -876,7 +857,7 @@ void exec_job(parser_t &parser, job_t *j)
 
                 if (! exec_error)
                 {
-                    internal_exec_helper(parser, p->eproc, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
+                    exec_error = ! internal_exec_helper(parser, p->eproc, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
                 }
                 break;
             }
@@ -912,8 +893,9 @@ void exec_job(parser_t &parser, job_t *j)
                             }
                             case IO_PIPE:
                             {
+                                // May be combined with IO_FD above
                                 CAST_INIT(const io_pipe_t *, in_pipe, in.get());
-                                local_builtin_stdin = in_pipe->pipe_fd[0];
+                                local_builtin_stdin = in_pipe->old_fd;
                                 break;
                             }
 
@@ -966,7 +948,9 @@ void exec_job(parser_t &parser, job_t *j)
                 }
                 else
                 {
-                    local_builtin_stdin = pipe_read->pipe_fd[0];
+                    /* Not the first process. We must have a current read pipe; read from there. */
+                    assert(pipe_current_read.get() != NULL);
+                    local_builtin_stdin = pipe_current_read->old_fd;
                 }
 
                 if (local_builtin_stdin == -1)
@@ -1362,27 +1346,14 @@ void exec_job(parser_t &parser, job_t *j)
            Close the pipe the current process uses to read from the
            previous process_t
         */
-        if (pipe_current_read >= 0)
-        {
-            exec_close(pipe_current_read);
-            pipe_current_read = -1;
-        }
-
-        /* Close the write end too, since the curent child subprocess already has a copy of it. */
-        if (pipe_current_write >= 0)
-        {
-            exec_close(pipe_current_write);
-            pipe_current_write = -1;
-        }
+        pipe_current_read.reset();
+        pipe_current_write.reset();
     }
 
     /* Clean up any file descriptors we left open */
-    if (pipe_current_read >= 0)
-        exec_close(pipe_current_read);
-    if (pipe_current_write >= 0)
-        exec_close(pipe_current_write);
-    if (pipe_next_read >= 0)
-        exec_close(pipe_next_read);
+    pipe_current_read.reset();
+    pipe_current_write.reset();
+    pipe_next_read.reset();
 
     /* The keepalive process is no longer needed, so we terminate it with extreme prejudice */
     if (needs_keepalive)
@@ -1415,7 +1386,8 @@ void exec_job(parser_t &parser, job_t *j)
                 {
                     assert(p->eproc->finished());
                     /* Last process */
-                    parser.set_last_status(p->eproc->exit_status());
+                    int status = p->eproc->exit_status();
+                    parser.set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
                 }
             }
         }
