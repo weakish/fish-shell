@@ -152,9 +152,9 @@ wcstring builtin_get_desc(const wcstring &b);
 */
 class builtin_commandline_scoped_transient_t
 {
-    size_t token;
+    parser_t * const parser;
     public:
-    builtin_commandline_scoped_transient_t(const wcstring &cmd);
+    builtin_commandline_scoped_transient_t(parser_t *p, const wcstring &cmd);
     ~builtin_commandline_scoped_transient_t();
 };
 

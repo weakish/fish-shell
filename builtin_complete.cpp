@@ -502,7 +502,7 @@ static int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **a
             parse_util_token_extent(do_complete_param.c_str(), do_complete_param.size(), &token, 0, 0, 0);
             
             /* Create a scoped transient command line, so that bulitin_commandline will see our argument, not the reader buffer */
-            builtin_commandline_scoped_transient_t temp_buffer(do_complete_param);
+            builtin_commandline_scoped_transient_t temp_buffer(&parser, do_complete_param);
 
             if (recursion_level < 1)
             {

@@ -1803,9 +1803,11 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                             else if (! (flags & COMPLETION_REQUEST_AUTOSUGGESTION))
                             {
                                 assert(cmd_node != NULL);
+                                ASSERT_IS_MAIN_THREAD(); //bogus
+                                parser_t &parser = parser_t::principal_parser();
                                 wcstring faux_cmdline = cmd;
                                 faux_cmdline.replace(cmd_node->source_start, cmd_node->source_length, wrap_chain.at(i));
-                                transient_cmd = new builtin_commandline_scoped_transient_t(faux_cmdline);
+                                transient_cmd = new builtin_commandline_scoped_transient_t(&parser, faux_cmdline);
                             }
                             if (! completer.complete_param(wrap_chain.at(i),
                                                            previous_argument_unescape,

@@ -206,6 +206,7 @@ parser_t::parser_t(const parser_t &parent) :
     cancellation_requested(parent.cancellation_requested),
     is_within_fish_initialization(parent.is_within_fish_initialization),
     interactive_filenames(parent.interactive_filenames),
+    substitution_comamnd_lines(parent.substitution_comamnd_lines),
     forbidden_function(parent.forbidden_function),
     variable_stack(parent.variable_stack)
 {
@@ -490,6 +491,31 @@ void parser_t::pop_is_interactive()
     {
         signal_set_handlers(new_val);
     }
+}
+
+bool parser_t::get_substituted_commandline(wcstring *out)
+{
+    assert_is_this_thread();
+    bool result = false;
+    if (! this->substitution_comamnd_lines.empty())
+    {
+        out->assign(this->substitution_comamnd_lines.back());
+        result = true;
+    }
+    return result;
+}
+
+void parser_t::push_substituted_commandline(const wcstring &s)
+{
+    assert_is_this_thread();
+    this->substitution_comamnd_lines.push_back(s);
+}
+
+void parser_t::pop_substituted_commandline()
+{
+    assert_is_this_thread();
+    assert(! this->substitution_comamnd_lines.empty());
+    this->substitution_comamnd_lines.pop_back();
 }
 
 

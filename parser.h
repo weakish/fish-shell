@@ -262,6 +262,9 @@ private:
     /** Stack of filenames, to support current_filename() */
     wcstring_list_t interactive_filenames;
     
+    /** Stack of substituted "command lines" to support builtin_commandline. Created by builtin_commandline_scoped_transient_t. */
+    wcstring_list_t substitution_comamnd_lines;
+    
     /** List of called functions, used to help prevent infinite recursion */
     wcstring_list_t forbidden_function;
 
@@ -430,6 +433,11 @@ public:
     const wchar_t *current_interactive_filename() const;
     void push_interactive_filename(const wcstring &str);
     void pop_interactive_filename();
+    
+    /* Set and get commandline values */
+    bool get_substituted_commandline(wcstring *out);
+    void push_substituted_commandline(const wcstring &s);
+    void pop_substituted_commandline();
     
     /* Whether we are reading from the keyboard right now */
     bool get_is_interactive() const;
