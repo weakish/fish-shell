@@ -696,18 +696,6 @@ void reader_handle_int(int sig)
     interrupted = 1;
 }
 
-const wchar_t *reader_current_filename()
-{
-    const scoped_current_filename_t *fn = scoped_current_filename_t::current();
-    return fn == NULL ? NULL : fn->name;
-}
-
-scoped_current_filename_t::scoped_current_filename_t(const wchar_t *fn) : name(intern(fn))
-{
-#warning This is suspect because the filename may need to be available in subparsers
-}
-
-
 /** Make sure buffers are large enough to hold the current string length */
 void reader_data_t::command_line_changed(const editable_line_t *el)
 {

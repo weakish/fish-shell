@@ -1640,8 +1640,7 @@ static void expand_home_directory(wcstring &input, const env_var_t &current_user
             }
         }
 
-        wchar_t *realhome;
-        realhome = wrealpath(home, NULL);
+        wchar_t *realhome = wrealpath(home, NULL);
 
         if (! tilde_error && realhome)
         {

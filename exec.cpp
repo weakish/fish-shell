@@ -92,6 +92,11 @@ void exec_close(int fd)
         debug(0, L"Called close on invalid file descriptor ");
         return;
     }
+    
+    if (fd < 3)
+    {
+        debug(0, L"Called close on standard file descriptor ");
+    }
 
     while (close(fd) == -1)
     {
@@ -280,14 +285,6 @@ static int has_fd(const io_chain_t &d, int fd)
 }
 
 /**
-   Close a list of fds.
-*/
-static void io_cleanup_fds(const std::vector<int> &opened_fds)
-{
-    std::for_each(opened_fds.begin(), opened_fds.end(), close);
-}
-
-/**
    Make a copy of the specified io redirection chain, but change file
    redirection into fd redirection. This makes the redirection chain
    suitable for use as block-level io, since the file won't be
@@ -296,10 +293,10 @@ static void io_cleanup_fds(const std::vector<int> &opened_fds)
 
    \return true on success, false on failure. Returns the output chain and opened_fds by reference
 */
-static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, std::vector<int> *out_opened_fds)
+static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain)
 {
 #warning Need to synchronize opening FDs with exec to avoid leaking FDs into other processes
-    assert(out_chain != NULL && out_opened_fds != NULL);
+    assert(out_chain != NULL);
     assert(out_chain->empty());
 
     /* Just to be clear what we do for an empty chain */
@@ -359,8 +356,7 @@ static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, s
                     break;
                 }
 
-                opened_fds.push_back(fd);
-                out.reset(new io_fd_t(in->fd, fd, false));
+                out.reset(new io_fd_t(in->fd, fd, false /* user_supplied */, true /* should_close */));
 
                 break;
             }
@@ -381,13 +377,11 @@ static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, s
     {
         /* Yay */
         out_chain->swap(result_chain);
-        out_opened_fds->swap(opened_fds);
     }
     else
     {
         /* No dice - clean up */
         result_chain.clear();
-        io_cleanup_fds(opened_fds);
     }
     return success;
 }
@@ -401,9 +395,12 @@ static bool io_transmogrify(const io_chain_t &in_chain, io_chain_t *out_chain, s
    \param node_offset the offset of the node to evalute, or NODE_OFFSET_INVALID
    \param block_type the type of block to push on evaluation
    \param io the io redirections to be performed on this block
+ 
+   \returns True on success, false on failure (e.g. redirection failure)
 */
 
-static void internal_exec_helper(parser_t &parser,
+static bool internal_exec_helper(parser_t &parser,
+                                 emulated_process_t *eproc,
                                  const wcstring &def,
                                  node_offset_t node_offset,
                                  enum block_type_t block_type,
@@ -413,8 +410,7 @@ static void internal_exec_helper(parser_t &parser,
     assert(node_offset == NODE_OFFSET_INVALID || def.empty());
 
     io_chain_t morphed_chain;
-    std::vector<int> opened_fds;
-    bool transmorgrified = io_transmogrify(ios, &morphed_chain, &opened_fds);
+    bool transmorgrified = io_transmogrify(ios, &morphed_chain);
 
     /*
       Did the transmogrification fail - if so, set error status and return
@@ -422,32 +418,42 @@ static void internal_exec_helper(parser_t &parser,
     if (! transmorgrified)
     {
         parser.set_last_status(STATUS_EXEC_FAIL);
-        return;
+        return false;
     }
 
     signal_unblock();
 
-    if (node_offset == NODE_OFFSET_INVALID)
+    if (parser_use_threads())
     {
-        parser.eval(def, morphed_chain, block_type);
+        if (node_offset == NODE_OFFSET_INVALID)
+        {
+            parser.eval_in_child(def, eproc, morphed_chain, block_type);
+        }
+        else
+        {
+            parser.eval_block_node_in_child(node_offset, eproc, morphed_chain, block_type);
+        }
     }
     else
     {
-        if (parser_use_threads())
+        if (node_offset == NODE_OFFSET_INVALID)
         {
-            parser.eval_block_node_in_child(node_offset, morphed_chain, block_type);
+            parser.eval(def, morphed_chain, block_type);
         }
         else
         {
             parser.eval_block_node(node_offset, morphed_chain, block_type);
         }
+        if (eproc)
+        {
+            eproc->set_exit_status(parser.get_last_status());
+            eproc->mark_finished();
+        }
     }
 
     signal_block();
-
-    morphed_chain.clear();
-    io_cleanup_fds(opened_fds);
-    job_reap(&parser, 0);
+    job_reap(&parser, false);
+    return true;
 }
 
 /* Returns whether we can use posix spawn for a given process in a given job.
@@ -508,16 +514,6 @@ void exec_job(parser_t &parser, job_t *j)
 
     /* Verify that all IO_BUFFERs are output. We used to support a (single, hacked-in) magical input IO_BUFFER used by fish_pager, but now the claim is that there are no more clients and it is removed. This assertion double-checks that. */
     const io_chain_t all_ios = j->all_io_redirections();
-    for (size_t idx = 0; idx < all_ios.size(); idx++)
-    {
-        const shared_ptr<io_data_t> &io = all_ios.at(idx);
-
-        if ((io->io_mode == IO_BUFFER))
-        {
-            CAST_INIT(io_buffer_t *, io_buffer, io.get());
-            assert(! io_buffer->is_input);
-        }
-    }
 
     if (j->first_process->type==INTERNAL_EXEC)
     {
@@ -638,7 +634,7 @@ void exec_job(parser_t &parser, job_t *j)
             job_store_t::global_store().child_process_spawned(keepalive.pid);
         }
     }
-
+    
     /*
       This loop loops over every process_t in the job, starting it as
       appropriate. This turns out to be rather complex, since a
@@ -652,28 +648,21 @@ void exec_job(parser_t &parser, job_t *j)
     1. The pipe the current process should read from (courtesy of the previous process)
     2. The pipe that the current process should write to
     3. The pipe that the next process should read from (courtesy of us)
-
-    We are careful to set these to -1 when closed, so if we exit the loop abruptly, we can still close them.
-
     */
-
-    int pipe_current_read = -1, pipe_current_write = -1, pipe_next_read = -1;
+    
+    shared_ptr<io_pipe_t> pipe_current_read, pipe_current_write, pipe_next_read;
     for (process_t *p=j->first_process; p != NULL && ! exec_error; p = p->next)
     {
         /* The IO chain for this process. It starts with the block IO, then pipes, and then gets any from the process */
         io_chain_t process_net_io_chain = j->block_io_chain();
 
-        /* "Consume" any pipe_next_read by making it current */
-        assert(pipe_current_read == -1);
-        pipe_current_read = pipe_next_read;
-        pipe_next_read = -1;
-
-        /* See if we need a pipe */
-        const bool pipes_to_next_command = (p->next != NULL);
+        /* "Consume" any pipe_next_read by making it current. pipe_current_read is then the pipe that we should read from, if non-NULL */
+        assert(pipe_current_write.get() == NULL);
+        assert(pipe_current_read.get() == NULL);
+        pipe_current_read.swap(pipe_next_read);
+        assert(pipe_next_read.get() == NULL);
 
         /* The pipes the current process write to and read from.
-           Unfortunately these can't be just allocated on the stack, since
-           j->io wants shared_ptr.
 
           The write pipe (destined for stdout) needs to occur before redirections. For example, with a redirection like this:
             `foo 2>&1 | bar`, what we want to happen is this:
@@ -695,29 +684,58 @@ void exec_job(parser_t &parser, job_t *j)
 
             which depends on the redirection being evaluated before the pipe. So the write end of the pipe comes first, the read pipe of the pipe comes last. See issue #966.
         */
+        
+        /* Set up fds that will be used in the pipe. */
+        const bool pipes_to_next_command = (p->next != NULL);
+        if (pipes_to_next_command)
+        {
+            //      debug( 1, L"%ls|%ls" , p->argv[0], p->next->argv[0]);
+            int local_pipe[2] = {-1, -1};
+            if (exec_pipe(local_pipe) == -1)
+            {
+                debug(1, PIPE_ERROR);
+                wperror(L"pipe");
+                exec_error = true;
+                job_mark_process_as_failed(j, p);
+                break;
+            }
+            
+            /* Ensure our pipe fds not conflict with any fd redirections. E.g. if the process is like 'cat <&5' then fd 5 must not be used by the pipe. */
+            if (! pipe_avoid_conflicts_with_io_chain(local_pipe, all_ios))
+            {
+                /* We failed. The pipes were closed for us. */
+                wperror(L"dup");
+                exec_error = true;
+                job_mark_process_as_failed(j, p);
+                break;
+            }
+            
+            /* Create redirections for these pipes. The redirections will close them. */
+            assert(local_pipe[0] >= 0);
+            assert(local_pipe[1] >= 0);
+            assert(pipe_next_read.get() == NULL);
+            assert(pipe_current_write.get() == NULL);
+            assert(p->next != NULL);
+            /* Note the pipe_next_read uses the next process's read-from fd, but pipe_current_write uses this processes's pipe_write_fd */
+            pipe_next_read.reset(new io_pipe_t(p->next->pipe_read_fd, local_pipe[0]));
+            pipe_current_write.reset(new io_pipe_t(p->pipe_write_fd, local_pipe[1]));
+        }
 
-        shared_ptr<io_pipe_t> pipe_write;
-        shared_ptr<io_pipe_t> pipe_read;
 
         /* Write pipe goes first */
-        if (p->next)
+        if (pipe_current_write.get() != NULL)
         {
-            pipe_write.reset(new io_pipe_t(p->pipe_write_fd, false));
-            process_net_io_chain.push_back(pipe_write);
+            process_net_io_chain.push_back(pipe_current_write);
         }
 
         /* The explicit IO redirections associated with the process */
         process_net_io_chain.append(p->io_chain());
 
         /* Read pipe goes last */
-        if (p != j->first_process)
+        if (pipe_current_read.get() != NULL)
         {
-            pipe_read.reset(new io_pipe_t(p->pipe_read_fd, true));
-            /* Record the current read in pipe_read */
-            pipe_read->pipe_fd[0] = pipe_current_read;
-            process_net_io_chain.push_back(pipe_read);
+            process_net_io_chain.push_back(pipe_current_read);
         }
-
 
         /*
            This call is used so the global environment variable array
@@ -730,45 +748,6 @@ void exec_job(parser_t &parser, job_t *j)
         */
         if (p->type == EXTERNAL)
             parser.vars().env_export_arr(true);
-
-
-        /* Set up fds that will be used in the pipe. */
-        if (pipes_to_next_command)
-        {
-//      debug( 1, L"%ls|%ls" , p->argv[0], p->next->argv[0]);
-            int local_pipe[2] = {-1, -1};
-            if (exec_pipe(local_pipe) == -1)
-            {
-                debug(1, PIPE_ERROR);
-                wperror(L"pipe");
-                exec_error = true;
-                job_mark_process_as_failed(j, p);
-                break;
-            }
-
-            /* Ensure our pipe fds not conflict with any fd redirections. E.g. if the process is like 'cat <&5' then fd 5 must not be used by the pipe. */
-            if (! pipe_avoid_conflicts_with_io_chain(local_pipe, all_ios))
-            {
-                /* We failed. The pipes were closed for us. */
-                wperror(L"dup");
-                exec_error = true;
-                job_mark_process_as_failed(j, p);
-                break;
-            }
-
-            // This tells the redirection about the fds, but the redirection does not close them
-            assert(local_pipe[0] >= 0);
-            assert(local_pipe[1] >= 0);
-            memcpy(pipe_write->pipe_fd, local_pipe, sizeof(int)*2);
-
-            // Record our pipes
-            // The fds should be negative to indicate that we aren't overwriting an fd we failed to close
-            assert(pipe_current_write == -1);
-            pipe_current_write = local_pipe[1];
-
-            assert(pipe_next_read == -1);
-            pipe_next_read = local_pipe[0];
-        }
 
         // This is the IO buffer we use for storing the output of a block or function when it is in a pipeline
         shared_ptr<io_buffer_t> block_output_io_buffer;
@@ -798,17 +777,15 @@ void exec_job(parser_t &parser, job_t *j)
 
                 if (! function_exists)
                 {
+                    exec_error = true;
+                    job_mark_process_as_failed(j, p);
                     debug(0, _(L"Unknown function '%ls'"), p->argv0());
                     break;
                 }
                 function_block_t *newv = new function_block_t(p, p->argv0(), shadows);
                 parser.push_block(newv);
 
-                /*
-                  setting variables might trigger an event
-                  handler, hence we need to unblock
-                  signals.
-                */
+                /* Setting variables might trigger an event handler, hence we need to unblock signals. */
                 signal_unblock();
                 parse_util_set_argv(&parser.vars(), p->get_argv()+1, named_arguments);
                 for (std::map<wcstring,env_var_t>::const_iterator it = inherit_vars.begin(), end = inherit_vars.end(); it != end; ++it)
@@ -819,25 +796,32 @@ void exec_job(parser_t &parser, job_t *j)
 
                 parser.forbid_function(p->argv0());
 
-                if (p->next)
+                if (! parser_concurrent_execution())
                 {
-                    // Be careful to handle failure, e.g. too many open fds
-                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
-                    if (block_output_io_buffer.get() == NULL)
+                    if (p->next)
                     {
-                        exec_error = true;
-                        job_mark_process_as_failed(j, p);
-                    }
-                    else
-                    {
-                        /* This looks sketchy, because we're adding this io buffer locally - they aren't in the process or job redirection list. Therefore select_try won't be able to read them. However we call block_output_io_buffer->read() below, which reads until EOF. So there's no need to select on this. */
-                        process_net_io_chain.push_back(block_output_io_buffer);
+                        // Be careful to handle failure, e.g. too many open fds
+                        block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
+                        if (block_output_io_buffer.get() == NULL)
+                        {
+                            exec_error = true;
+                            job_mark_process_as_failed(j, p);
+                        }
+                        else
+                        {
+                            /* This looks sketchy, because we're adding this io buffer locally - they aren't in the process or job redirection list. Therefore select_try won't be able to read them. However we call block_output_io_buffer->read() below, which reads until EOF. So there's no need to select on this. */
+                            process_net_io_chain.push_back(block_output_io_buffer);
+                        }
                     }
                 }
+                
+                /* Give the process an emulated process */
+                assert(p->eproc == NULL);
+                p->eproc = new emulated_process_t();
 
                 if (! exec_error)
                 {
-                    internal_exec_helper(parser, def, NODE_OFFSET_INVALID, TOP, process_net_io_chain);
+                    exec_error = ! internal_exec_helper(parser, p->eproc, def, NODE_OFFSET_INVALID, TOP, process_net_io_chain);
                 }
 
                 parser.allow_function();
@@ -848,25 +832,32 @@ void exec_job(parser_t &parser, job_t *j)
 
             case INTERNAL_BLOCK_NODE:
             {
-                if (p->next)
+                if (! parser_concurrent_execution())
                 {
-                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
-                    if (block_output_io_buffer.get() == NULL)
+                    if (p->next)
                     {
-                        /* We failed (e.g. no more fds could be created). */
-                        exec_error = true;
-                        job_mark_process_as_failed(j, p);
-                    }
-                    else
-                    {
-                        /* See the comment above about it's OK to add an IO redirection to this local buffer, even though it won't be handled in select_try */
-                        process_net_io_chain.push_back(block_output_io_buffer);
+                        block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
+                        if (block_output_io_buffer.get() == NULL)
+                        {
+                            /* We failed (e.g. no more fds could be created). */
+                            exec_error = true;
+                            job_mark_process_as_failed(j, p);
+                        }
+                        else
+                        {
+                            /* See the comment above about it's OK to add an IO redirection to this local buffer, even though it won't be handled in select_try */
+                            process_net_io_chain.push_back(block_output_io_buffer);
+                        }
                     }
                 }
+                
+                /* Give the process an emulated process */
+                assert(p->eproc == NULL);
+                p->eproc = new emulated_process_t();
 
                 if (! exec_error)
                 {
-                    internal_exec_helper(parser, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
+                    exec_error = ! internal_exec_helper(parser, p->eproc, wcstring(), p->internal_block_node, TOP, process_net_io_chain);
                 }
                 break;
             }
@@ -902,8 +893,9 @@ void exec_job(parser_t &parser, job_t *j)
                             }
                             case IO_PIPE:
                             {
+                                // May be combined with IO_FD above
                                 CAST_INIT(const io_pipe_t *, in_pipe, in.get());
-                                local_builtin_stdin = in_pipe->pipe_fd[0];
+                                local_builtin_stdin = in_pipe->old_fd;
                                 break;
                             }
 
@@ -956,7 +948,9 @@ void exec_job(parser_t &parser, job_t *j)
                 }
                 else
                 {
-                    local_builtin_stdin = pipe_read->pipe_fd[0];
+                    /* Not the first process. We must have a current read pipe; read from there. */
+                    assert(pipe_current_read.get() != NULL);
+                    local_builtin_stdin = pipe_current_read->old_fd;
                 }
 
                 if (local_builtin_stdin == -1)
@@ -1260,10 +1254,9 @@ void exec_job(parser_t &parser, job_t *j)
                 std::string actual_cmd_str = wcs2string(p->actual_cmd);
                 const char *actual_cmd = actual_cmd_str.c_str();
                 
-                const wchar_t *reader_current_filename(void);
                 if (g_log_forks)
                 {
-                    const wchar_t *file = reader_current_filename();
+                    const wchar_t *file = parser.current_filename();
                     printf("fork #%d: forking for '%s' in '%ls'\n", g_fork_count, actual_cmd, file ? file : L"");
                 }
 
@@ -1348,31 +1341,15 @@ void exec_job(parser_t &parser, job_t *j)
             }
         }
 
-        /*
-           Close the pipe the current process uses to read from the
-           previous process_t
-        */
-        if (pipe_current_read >= 0)
-        {
-            exec_close(pipe_current_read);
-            pipe_current_read = -1;
-        }
-
-        /* Close the write end too, since the curent child subprocess already has a copy of it. */
-        if (pipe_current_write >= 0)
-        {
-            exec_close(pipe_current_write);
-            pipe_current_write = -1;
-        }
+        /* Clear the pipe the current process uses to read from the previous process_t */
+        pipe_current_read.reset();
+        pipe_current_write.reset();
     }
 
-    /* Clean up any file descriptors we left open */
-    if (pipe_current_read >= 0)
-        exec_close(pipe_current_read);
-    if (pipe_current_write >= 0)
-        exec_close(pipe_current_write);
-    if (pipe_next_read >= 0)
-        exec_close(pipe_next_read);
+    /* Don't hang onto file descriptors unnecessarily */
+    pipe_current_read.reset();
+    pipe_current_write.reset();
+    pipe_next_read.reset();
 
     /* The keepalive process is no longer needed, so we terminate it with extreme prejudice */
     if (needs_keepalive)
@@ -1394,6 +1371,22 @@ void exec_job(parser_t &parser, job_t *j)
     if (! exec_error)
     {
         job_continue(&parser, j, false);
+        
+        /* Wait for all processes to exit */
+        for (process_t *p = j->first_process; p != NULL; p = p->next)
+        {
+            if (p->eproc != NULL)
+            {
+                p->eproc->wait_until_finished();
+                if (p->next == NULL)
+                {
+                    assert(p->eproc->finished());
+                    /* Last process */
+                    int status = p->eproc->exit_status();
+                    parser.set_last_status(job_get_flag(j, JOB_NEGATE)?(!status):status);
+                }
+            }
+        }
     }
     else
     {

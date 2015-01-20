@@ -97,20 +97,6 @@ void reader_destroy();
 void restore_term_mode();
 
 /**
-   Returns the filename of the file currently read
-*/
-const wchar_t *reader_current_filename();
-
-/* Class for scoped setting of the current filename */
-class scoped_current_filename_t : public scoped_stack_element_t<scoped_current_filename_t>
-{
-    public:
-    const wchar_t * const name;
-    scoped_current_filename_t(const wchar_t *fn);
-};
-
-
-/**
    Write the title to the titlebar. This function is called just
    before a new application starts executing and just after it
    finishes.

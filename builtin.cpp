@@ -3402,13 +3402,13 @@ static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **arg
     }
 
     parser.push_block(new source_block_t(fn_intern));
+    parser.push_interactive_filename(fn_intern);
     
-    scoped_current_filename_t filename(fn_intern);
-
     parse_util_set_argv(&parser.vars(), (argc>2)?(argv+2):(argv+1), wcstring_list_t());
 
     res = reader_read(parser, fd, streams.io_chain ? *streams.io_chain : io_chain_t());
 
+    parser.pop_interactive_filename();
     parser.pop_block();
 
     if (res)

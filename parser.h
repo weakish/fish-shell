@@ -231,6 +231,7 @@ struct profile_item_t
 
 struct tokenizer_t;
 class parse_execution_context_t;
+class child_eval_context_t;
 
 class parser_t
 {
@@ -258,6 +259,9 @@ private:
     /** Stack of execution contexts. We own these pointers and must delete them */
     std::vector<parse_execution_context_t *> execution_contexts;
 
+    /** Stack of filenames, to support current_filename() */
+    wcstring_list_t interactive_filenames;
+    
     /** List of called functions, used to help prevent infinite recursion */
     wcstring_list_t forbidden_function;
 
@@ -284,6 +288,9 @@ private:
 
     /** Adds a job to the beginning of the job list. */
     void job_add(job_t *job);
+    
+    /** Runs something in a child parser */
+    int evaluate_in_context_then_delete(child_eval_context_t *ctx);
 
     /**
        Returns true if we are evaluating a function, false if not. Also optionally returns the function name by reference. */
@@ -327,7 +334,10 @@ public:
     int eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type);
     
     /** Evaluates a block node as a child thread at the given node offset in the topmost execution context */
-    int eval_block_node_in_child(node_offset_t node_idx, const io_chain_t &io, enum block_type_t block_type);
+    int eval_block_node_in_child(node_offset_t node_idx, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type);
+
+    /** Evaluates source in the given execution context */
+    int eval_in_child(const wcstring &src, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type);
 
 
     /**
@@ -416,6 +426,11 @@ public:
         this->variable_stack.exit_status = val;
     }
     
+    /* Set and get the current 'interactive' filename, what used to be called the reader filename. */
+    const wchar_t *current_interactive_filename() const;
+    void push_interactive_filename(const wcstring &str);
+    void pop_interactive_filename();
+    
     /* Whether we are reading from the keyboard right now */
     bool get_is_interactive() const;
     
@@ -478,7 +493,7 @@ public:
 
     /**
        Returns the file currently evaluated by the parser. This can be
-       different than reader_current_filename, e.g. if we are evaulating a
+       different than current_interactive_filename, e.g. if we are evaulating a
        function defined in a different file than the one curently read.
     */
     const wchar_t *current_filename() const;
@@ -493,5 +508,6 @@ public:
 };
 
 bool parser_use_threads();
+bool parser_concurrent_execution();
 
 #endif

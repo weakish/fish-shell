@@ -50,6 +50,11 @@ public:
 
 class io_fd_t : public io_data_t
 {
+protected:
+    io_fd_t(enum io_mode_t mode, int f, int old, bool do_close) : io_data_t(mode, f), old_fd(old), user_supplied(false), should_close(do_close)
+    {
+    }
+    
 public:
     /** fd to redirect specified fd to. For example, in 2>&1, old_fd is 1, and io_data_t::fd is 2 */
     const int old_fd;
@@ -57,14 +62,21 @@ public:
     /** Whether this redirection was supplied by a script. For example, 'cmd <&3' would have user_supplied set to true. But a redirection that comes about through transmogrification would not. */
     const bool user_supplied;
     
+    /** Whether we close this fd on destruction */
+    const bool should_close;
+    
     virtual void print() const;
 
-    io_fd_t(int f, int old, bool us) :
+    io_fd_t(int f, int old, bool us, bool do_close = false) :
         io_data_t(IO_FD, f),
         old_fd(old),
-        user_supplied(us)
+        user_supplied(us),
+        should_close(do_close)
     {
     }
+    
+    
+    ~io_fd_t();
 };
 
 class io_file_t : public io_data_t
@@ -90,41 +102,35 @@ public:
     }
 };
 
-class io_pipe_t : public io_data_t
+/* An io_pipe always closes its fd */
+class io_pipe_t : public io_fd_t
 {
-protected:
-    io_pipe_t(io_mode_t m, int f, bool i):
-        io_data_t(m, f),
-        is_input(i)
-    {
-        pipe_fd[0] = pipe_fd[1] = -1;
-    }
-
 public:
-    int pipe_fd[2];
-    const bool is_input;
-
-    virtual void print() const;
-
-    io_pipe_t(int f, bool i):
-        io_data_t(IO_PIPE, f),
-        is_input(i)
+    /* In process b for `a | b`, target_fd is STDIN_FILENO and pipe_fd is the pipe */
+    io_pipe_t(int target_fd, int pipe_fd) : io_fd_t(IO_PIPE, target_fd, pipe_fd, true /* should_close */)
     {
-        pipe_fd[0] = pipe_fd[1] = -1;
+        assert(target_fd >= 0);
+        assert(pipe_fd >= 0);
     }
+    
+    virtual void print() const;
 };
 
 class io_chain_t;
-class io_buffer_t : public io_pipe_t
+class io_buffer_t : public io_data_t
 {
 private:
     /** buffer to save output in */
     std::vector<char> out_buffer;
+    
+public:
+    int pipe_fd[2];
 
-    io_buffer_t(int f):
-        io_pipe_t(IO_BUFFER, f, false /* not input */),
-        out_buffer()
+    /* Constructor is private, use io_buffer_t::create() below */
+    io_buffer_t(int f): io_data_t(IO_BUFFER, f)
     {
+        pipe_fd[0] = -1;
+        pipe_fd[1] = -1;
     }
 
 public:

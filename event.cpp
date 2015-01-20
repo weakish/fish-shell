@@ -319,9 +319,6 @@ static wcstring event_desc_compact(const event_t &event)
 
 void event_add_handler(const event_t &event)
 {
-#warning This assertion is bogus
-    ASSERT_IS_MAIN_THREAD();
-
     if (debug_level >= 3)
     {
         wcstring desc = event_desc_compact(event);
@@ -330,13 +327,12 @@ void event_add_handler(const event_t &event)
 
     event_ref_t e = event_ref_t(new event_t(event));
 
+    scoped_lock locker(s_event_handlers_lock);
     if (e->type == EVENT_SIGNAL)
     {
         signal_handle(e->param1.signal, 1);
         set_signal_observed(e->param1.signal, true);
     }
-
-    scoped_lock locker(s_event_handlers_lock);
     s_event_handlers.push_back(e);
 }
 

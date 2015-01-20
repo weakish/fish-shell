@@ -194,7 +194,8 @@ void function_add(const function_data_t &data, const parser_t &parser, int defin
     function_remove(data.name);
 
     /* Create and store a new function */
-    const wchar_t *filename = reader_current_filename();
+    parser.assert_is_this_thread();
+    const wchar_t *filename = parser.current_interactive_filename();
 
     const function_map_t::value_type new_pair(data.name, function_info_t(data, filename, definition_line_offset, is_autoload, parser.vars()));
     loaded_functions.insert(new_pair);

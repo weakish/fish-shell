@@ -507,17 +507,21 @@ int main(int argc, char **argv)
                     abs_filename = wcsdup(rel_filename.c_str());
                 }
 
-                scoped_current_filename_t scoped_filename(intern(abs_filename));
+                parser.push_interactive_filename(abs_filename);
                 free((void *)abs_filename);
 
                 res = reader_read(parser, fd, empty_ios);
 
                 if (res)
                 {
-                    debug(1,
-                          _(L"Error while reading file %ls\n"),
-                          reader_current_filename()?reader_current_filename(): _(L"Standard input"));
+                    const wchar_t *filename = parser.current_interactive_filename();
+                    if (filename == NULL)
+                    {
+                        filename = _(L"Standard input");
+                    }
+                    debug(1, _(L"Error while reading file %ls\n"), filename);
                 }
+                parser.pop_interactive_filename();
             }
         }
     }
