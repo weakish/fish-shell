@@ -1066,7 +1066,14 @@ class child_eval_context_t
     int run_in_background()
     {
         this->parser.expected_thread = pthread_self();
-        parser.eval(src, tree, node_idx, io, block_type);
+        if (node_idx == NODE_OFFSET_INVALID)
+        {
+            parser.eval(src, io, block_type);
+        }
+        else
+        {
+            parser.eval(src, tree, node_idx, io, block_type);
+        }
         int result = this->parser.get_last_status();
         if (this->eproc != NULL)
         {
@@ -1094,6 +1101,24 @@ static int run_child_parser_in_background_and_delete(child_eval_context_t *ctx)
     return ret;
 }
 
+int parser_t::evaluate_in_context_then_delete(child_eval_context_t *child_eval)
+{
+    bool sync = ! parser_concurrent_execution();
+    iothread_perform(sync ? run_child_parser_in_background : run_child_parser_in_background_and_delete, child_eval);
+    if (sync)
+    {
+        if (child_eval->eproc)
+        {
+            child_eval->eproc->wait_until_finished();
+        }
+        int result = child_eval->parser.get_last_status();
+        this->set_last_status(result);
+        delete child_eval;
+        return result;
+    }
+    return -1;
+}
+
 int parser_t::eval_block_node_in_child(node_offset_t node_idx, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type)
 {
     assert(eproc != NULL);
@@ -1112,23 +1137,19 @@ int parser_t::eval_block_node_in_child(node_offset_t node_idx, emulated_process_
     child_eval->node_idx = node_idx;
     child_eval->io = io;
     child_eval->block_type = block_type;
-    
-    bool sync = ! parser_concurrent_execution();
-    
-    iothread_perform(sync ? run_child_parser_in_background : run_child_parser_in_background_and_delete, child_eval);
-    
-    if (sync)
-    {
-        if (eproc)
-        {
-            eproc->wait_until_finished();
-        }
-        int result = child_eval->parser.get_last_status();
-        this->set_last_status(result);
-        delete child_eval;
-        return result;
-    }
-    return -1;
+    return this->evaluate_in_context_then_delete(child_eval);
+}
+
+int parser_t::eval_in_child(const wcstring &src, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type)
+{
+    CHECK_BLOCK(1);
+    child_eval_context_t *child_eval = new child_eval_context_t(*this);
+    child_eval->eproc = eproc;
+    child_eval->src = src;
+    child_eval->node_idx = NODE_OFFSET_INVALID;
+    child_eval->io = io;
+    child_eval->block_type = block_type;
+    return this->evaluate_in_context_then_delete(child_eval);
 }
 
 bool parser_t::detect_errors_in_argument_list(const wcstring &arg_list_src, wcstring *out, const wchar_t *prefix)

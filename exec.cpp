@@ -423,29 +423,31 @@ static bool internal_exec_helper(parser_t &parser,
 
     signal_unblock();
 
-    if (node_offset == NODE_OFFSET_INVALID)
+    if (parser_use_threads())
     {
-        parser.eval(def, morphed_chain, block_type);
-        if (eproc)
+        if (node_offset == NODE_OFFSET_INVALID)
         {
-            eproc->set_exit_status(parser.get_last_status());
-            eproc->mark_finished();
+            parser.eval_in_child(def, eproc, morphed_chain, block_type);
+        }
+        else
+        {
+            parser.eval_block_node_in_child(node_offset, eproc, morphed_chain, block_type);
         }
     }
     else
     {
-        if (parser_use_threads())
+        if (node_offset == NODE_OFFSET_INVALID)
         {
-            parser.eval_block_node_in_child(node_offset, eproc, morphed_chain, block_type);
+            parser.eval(def, morphed_chain, block_type);
         }
         else
         {
             parser.eval_block_node(node_offset, morphed_chain, block_type);
-            if (eproc)
-            {
-                eproc->set_exit_status(parser.get_last_status());
-                eproc->mark_finished();
-            }
+        }
+        if (eproc)
+        {
+            eproc->set_exit_status(parser.get_last_status());
+            eproc->mark_finished();
         }
     }
 
@@ -775,17 +777,15 @@ void exec_job(parser_t &parser, job_t *j)
 
                 if (! function_exists)
                 {
+                    exec_error = true;
+                    job_mark_process_as_failed(j, p);
                     debug(0, _(L"Unknown function '%ls'"), p->argv0());
                     break;
                 }
                 function_block_t *newv = new function_block_t(p, p->argv0(), shadows);
                 parser.push_block(newv);
 
-                /*
-                  setting variables might trigger an event
-                  handler, hence we need to unblock
-                  signals.
-                */
+                /* Setting variables might trigger an event handler, hence we need to unblock signals. */
                 signal_unblock();
                 parse_util_set_argv(&parser.vars(), p->get_argv()+1, named_arguments);
                 for (std::map<wcstring,env_var_t>::const_iterator it = inherit_vars.begin(), end = inherit_vars.end(); it != end; ++it)
@@ -796,19 +796,22 @@ void exec_job(parser_t &parser, job_t *j)
 
                 parser.forbid_function(p->argv0());
 
-                if (p->next)
+                if (! parser_concurrent_execution())
                 {
-                    // Be careful to handle failure, e.g. too many open fds
-                    block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
-                    if (block_output_io_buffer.get() == NULL)
+                    if (p->next)
                     {
-                        exec_error = true;
-                        job_mark_process_as_failed(j, p);
-                    }
-                    else
-                    {
-                        /* This looks sketchy, because we're adding this io buffer locally - they aren't in the process or job redirection list. Therefore select_try won't be able to read them. However we call block_output_io_buffer->read() below, which reads until EOF. So there's no need to select on this. */
-                        process_net_io_chain.push_back(block_output_io_buffer);
+                        // Be careful to handle failure, e.g. too many open fds
+                        block_output_io_buffer.reset(io_buffer_t::create(STDOUT_FILENO, all_ios));
+                        if (block_output_io_buffer.get() == NULL)
+                        {
+                            exec_error = true;
+                            job_mark_process_as_failed(j, p);
+                        }
+                        else
+                        {
+                            /* This looks sketchy, because we're adding this io buffer locally - they aren't in the process or job redirection list. Therefore select_try won't be able to read them. However we call block_output_io_buffer->read() below, which reads until EOF. So there's no need to select on this. */
+                            process_net_io_chain.push_back(block_output_io_buffer);
+                        }
                     }
                 }
                 

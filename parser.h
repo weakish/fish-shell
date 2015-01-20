@@ -231,6 +231,7 @@ struct profile_item_t
 
 struct tokenizer_t;
 class parse_execution_context_t;
+class child_eval_context_t;
 
 class parser_t
 {
@@ -284,6 +285,9 @@ private:
 
     /** Adds a job to the beginning of the job list. */
     void job_add(job_t *job);
+    
+    /** Runs something in a child parser */
+    int evaluate_in_context_then_delete(child_eval_context_t *ctx);
 
     /**
        Returns true if we are evaluating a function, false if not. Also optionally returns the function name by reference. */
@@ -328,6 +332,9 @@ public:
     
     /** Evaluates a block node as a child thread at the given node offset in the topmost execution context */
     int eval_block_node_in_child(node_offset_t node_idx, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type);
+
+    /** Evaluates source in the given execution context */
+    int eval_in_child(const wcstring &src, emulated_process_t *eproc, const io_chain_t &io, enum block_type_t block_type);
 
 
     /**
