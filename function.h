@@ -148,7 +148,7 @@ int function_exists_no_autoload(const wcstring &name);
 wcstring_list_t function_get_names(int get_hidden);
 
 /**
-   Returns tha absolute path of the file where the specified function
+   Returns the absolute path of the file where the specified function
    was defined. Returns 0 if the file was defined on the commandline.
 
    This function does not autoload functions, it will only work on

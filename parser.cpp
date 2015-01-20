@@ -205,8 +205,11 @@ parser_t::parser_t(const parser_t &parent) :
     show_errors(parent.show_errors),
     cancellation_requested(parent.cancellation_requested),
     is_within_fish_initialization(parent.is_within_fish_initialization),
+    interactive_filenames(parent.interactive_filenames),
+    forbidden_function(parent.forbidden_function),
     variable_stack(parent.variable_stack)
 {
+    parent.assert_is_this_thread();
 }
 
 /* A pointer to the principal parser (which is a static local) */
@@ -431,6 +434,25 @@ void parser_t::allow_function()
 {
     this->assert_is_this_thread();
     forbidden_function.pop_back();
+}
+
+const wchar_t *parser_t::current_interactive_filename() const
+{
+    assert_is_this_thread();
+    return this->interactive_filenames.empty() ? NULL : this->interactive_filenames.back().c_str();
+}
+
+void parser_t::push_interactive_filename(const wcstring &str)
+{
+    assert_is_this_thread();
+    this->interactive_filenames.push_back(str);
+}
+
+void parser_t::pop_interactive_filename()
+{
+    assert_is_this_thread();
+    assert(! this->interactive_filenames.empty());
+    this->interactive_filenames.pop_back();
 }
 
 bool parser_t::get_is_interactive() const
@@ -795,13 +817,8 @@ const wchar_t *parser_t::current_filename() const
             return sb->source_file;
         }
     }
-
-    /* We query a global array for the current file name, but only do that if we are the principal parser */
-    if (this->is_principal())
-    {
-        return reader_current_filename();
-    }
-    return NULL;
+    
+    return this->current_interactive_filename();
 }
 
 wcstring parser_t::current_line()

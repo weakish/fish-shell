@@ -1254,10 +1254,9 @@ void exec_job(parser_t &parser, job_t *j)
                 std::string actual_cmd_str = wcs2string(p->actual_cmd);
                 const char *actual_cmd = actual_cmd_str.c_str();
                 
-                const wchar_t *reader_current_filename(void);
                 if (g_log_forks)
                 {
-                    const wchar_t *file = reader_current_filename();
+                    const wchar_t *file = parser.current_filename();
                     printf("fork #%d: forking for '%s' in '%ls'\n", g_fork_count, actual_cmd, file ? file : L"");
                 }
 
