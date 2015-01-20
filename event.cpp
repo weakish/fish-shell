@@ -83,7 +83,7 @@ static size_t event_get_locked(const event_t &criterion, event_list_t *out);
 static volatile bool s_observed_signals[NSIG] = {};
 static void set_signal_observed(int sig, bool val)
 {
-    ASSERT_IS_MAIN_THREAD();
+    ASSERT_IS_LOCKED(s_event_handlers_lock);
     if (sig >= 0 && (size_t)sig < sizeof s_observed_signals / sizeof *s_observed_signals)
     {
         s_observed_signals[sig] = val;
