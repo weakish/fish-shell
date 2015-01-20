@@ -326,6 +326,9 @@ class completer_t
     /** Table of completions conditions that have already been tested and the corresponding test results */
     typedef std::map<wcstring, bool> condition_cache_t;
     condition_cache_t condition_cache;
+    
+    /* The parser in which we execute completion code */
+    parser_t completion_parser;
 
     enum complete_type_t
     {
@@ -359,7 +362,8 @@ public:
     completer_t(const wcstring &c, completion_request_flags_t f, const environment_t *v) :
         flags(f),
         initial_cmd(c),
-        vars(v)
+        vars(v),
+        completion_parser(PARSER_TYPE_GENERAL, true /* show errors */)
     {
     }
 
@@ -417,6 +421,16 @@ public:
             result |= EXPAND_FUZZY_MATCH;
 
         return result;
+    }
+    
+    parser_t &parser()
+    {
+        return completion_parser;
+    }
+    
+    const parser_t &parser() const
+    {
+        return completion_parser;
     }
 };
 
@@ -476,15 +490,12 @@ bool completer_t::condition_test(const wcstring &condition)
         return 0;
     }
 
-    ASSERT_IS_MAIN_THREAD();
-
     bool test_res;
     condition_cache_t::iterator cached_entry = condition_cache.find(condition);
     if (cached_entry == condition_cache.end())
     {
-        /* Compute new value and reinsert it. This can only be done on the principal parser. */
-        parser_t &parser = parser_t::principal_parser();
-        test_res = (0 == exec_subshell(parser, condition, false /* don't apply exit status */));
+        /* Compute new value and reinsert it. */
+        test_res = (0 == exec_subshell(this->parser(), condition, false /* don't apply exit status */));
         condition_cache[condition] = test_res;
     }
     else
@@ -746,8 +757,6 @@ void completer_t::complete_strings(const wcstring &wc_escaped,
 */
 void completer_t::complete_cmd_desc(const wcstring &str)
 {
-    ASSERT_IS_MAIN_THREAD();
-
     const wchar_t *cmd_start;
     int skip;
 
@@ -805,8 +814,7 @@ void completer_t::complete_cmd_desc(const wcstring &str)
       since apropos is only called once.
     */
     wcstring_list_t list;
-    parser_t &parser = parser_t::principal_parser();
-    if (exec_subshell(parser, lookup_cmd, list, false /* don't apply exit status */) != -1)
+    if (exec_subshell(this->parser(), lookup_cmd, list, false /* don't apply exit status */) != -1)
     {
 
         /*
@@ -1144,8 +1152,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
 
     if (this->type() == COMPLETE_DEFAULT)
     {
-        ASSERT_IS_MAIN_THREAD();
-        complete_load(parser_t::principal_parser(), cmd, true);
+        complete_load(this->parser(), cmd, true);
     }
     else if (this->type() == COMPLETE_AUTOSUGGEST)
     {
@@ -1792,6 +1799,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                         // If any command disables do_file, then they all do
                         do_file = true;
                         const wcstring_list_t wrap_chain = complete_get_wrap_chain(current_command_unescape);
+                        
                         for (size_t i=0; i < wrap_chain.size(); i++)
                         {
                             // Hackish, this. The first command in the chain is always the given command. For every command past the first, we need to create a transient commandline for builtin_commandline. But not for COMPLETION_REQUEST_AUTOSUGGESTION, which may occur on background threads.
@@ -1804,10 +1812,9 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                             {
                                 assert(cmd_node != NULL);
                                 ASSERT_IS_MAIN_THREAD(); //bogus
-                                parser_t &parser = parser_t::principal_parser();
                                 wcstring faux_cmdline = cmd;
                                 faux_cmdline.replace(cmd_node->source_start, cmd_node->source_length, wrap_chain.at(i));
-                                transient_cmd = new builtin_commandline_scoped_transient_t(&parser, faux_cmdline);
+                                transient_cmd = new builtin_commandline_scoped_transient_t(&completer.parser(), faux_cmdline);
                             }
                             if (! completer.complete_param(wrap_chain.at(i),
                                                            previous_argument_unescape,

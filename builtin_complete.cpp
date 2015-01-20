@@ -286,7 +286,6 @@ static void  builtin_complete_remove(const wcstring_list_t &cmd,
 */
 static int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
-    ASSERT_IS_MAIN_THREAD();
     bool res=false;
     int argc=0;
     int result_mode=SHARED;
