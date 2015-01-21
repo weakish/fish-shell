@@ -54,6 +54,7 @@ static void print_colors(io_streams_t &streams)
 */
 static int builtin_set_color(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     /** Variables used for parsing the argument list */
     const struct woption long_options[] =
     {
@@ -81,10 +82,10 @@ static int builtin_set_color(parser_t &parser, io_streams_t &streams, wchar_t **
     int errret;
 
     /* Parse options to obtain the requested operation and the modifiers */
-    woptind = 0;
+    w.woptind = 0;
     while (1)
     {
-        int c = wgetopt_long(argc, argv, short_options, long_options, 0);
+        int c = w.wgetopt_long(argc, argv, short_options, long_options, 0);
 
         if (c == -1)
         {
@@ -97,7 +98,7 @@ static int builtin_set_color(parser_t &parser, io_streams_t &streams, wchar_t **
                 break;
 
             case 'b':
-                bgcolor = woptarg;
+                bgcolor = w.woptarg;
                 break;
 
             case 'h':
@@ -123,12 +124,12 @@ static int builtin_set_color(parser_t &parser, io_streams_t &streams, wchar_t **
 
     /* Remaining arguments are foreground color */
     std::vector<rgb_color_t> fgcolors;
-    for (; woptind < argc; woptind++)
+    for (; w.woptind < argc; w.woptind++)
     {
-        rgb_color_t fg = rgb_color_t(argv[woptind]);
+        rgb_color_t fg = rgb_color_t(argv[w.woptind]);
         if (fg.is_none() || fg.is_ignore())
         {
-            streams.stderr_stream.append_format(_(L"%ls: Unknown color '%ls'\n"), argv[0], argv[woptind]);
+            streams.stderr_stream.append_format(_(L"%ls: Unknown color '%ls'\n"), argv[0], argv[w.woptind]);
             return STATUS_BUILTIN_ERROR;
         }
         fgcolors.push_back(fg);

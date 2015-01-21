@@ -594,6 +594,7 @@ static int builtin_bind_erase(io_streams_t &streams, wchar_t **seq, int all, con
 */
 static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
 
     enum
     {
@@ -615,7 +616,7 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
     int use_terminfo = 0;
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption long_options[] =
     {
@@ -633,7 +634,7 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     while (1)
     {
         int opt_index = 0;
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"aehkKfM:m:",
                                long_options,
@@ -680,17 +681,17 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                 break;
 
             case 'M':
-                bind_mode = woptarg;
+                bind_mode = w.woptarg;
                 bind_mode_given = true;
                 break;
 
             case 'm':
-                sets_bind_mode = woptarg;
+                sets_bind_mode = w.woptarg;
                 sets_bind_mode_given = true;
                 break;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
 
@@ -710,7 +711,7 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
         case BIND_ERASE:
         {
-            if (builtin_bind_erase(streams, &argv[woptind], all, bind_mode_given ? bind_mode : NULL, use_terminfo))
+            if (builtin_bind_erase(streams, &argv[w.woptind], all, bind_mode_given ? bind_mode : NULL, use_terminfo))
             {
                 res = STATUS_BUILTIN_ERROR;
             }
@@ -719,7 +720,7 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
         case BIND_INSERT:
         {
-            switch (argc-woptind)
+            switch (argc-w.woptind)
             {
                 case 0:
                 {
@@ -732,7 +733,7 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                     wcstring seq;
                     if (use_terminfo)
                     {
-                        if (!get_terminfo_sequence(streams, argv[woptind], &seq))
+                        if (!get_terminfo_sequence(streams, argv[w.woptind], &seq))
                         {
                             res = STATUS_BUILTIN_ERROR;
                             // get_terminfo_sequence already printed the error
@@ -741,12 +742,12 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                     }
                     else
                     {
-                        seq = argv[woptind];
+                        seq = argv[w.woptind];
                     }
                     if (!builtin_bind_list_one(streams, seq, bind_mode))
                     {
                         res = STATUS_BUILTIN_ERROR;
-                        wcstring eseq = escape_string(argv[woptind], 0);
+                        wcstring eseq = escape_string(argv[w.woptind], 0);
                         if (use_terminfo)
                         {
                             streams.stderr_stream.append_format(_(L"%ls: No binding found for key '%ls'\n"), argv[0], eseq.c_str());
@@ -761,7 +762,7 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
                 default:
                 {
-                    if (builtin_bind_add(streams, argv[woptind], (const wchar_t **)argv + (woptind + 1), argc - (woptind + 1), bind_mode, sets_bind_mode, use_terminfo))
+                    if (builtin_bind_add(streams, argv[w.woptind], (const wchar_t **)argv + (w.woptind + 1), argc - (w.woptind + 1), bind_mode, sets_bind_mode, use_terminfo))
                     {
                         res = STATUS_BUILTIN_ERROR;
                     }
@@ -803,6 +804,7 @@ static int builtin_bind(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 */
 static int builtin_block(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     enum
     {
         UNSET,
@@ -815,7 +817,7 @@ static int builtin_block(parser_t &parser, io_streams_t &streams, wchar_t **argv
     int erase = 0;
     int argc=builtin_count_args(argv);
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption
             long_options[] =
@@ -846,7 +848,7 @@ static int builtin_block(parser_t &parser, io_streams_t &streams, wchar_t **argv
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"elgh",
                                long_options,
@@ -883,7 +885,7 @@ static int builtin_block(parser_t &parser, io_streams_t &streams, wchar_t **argv
                 break;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
@@ -959,10 +961,11 @@ static int builtin_block(parser_t &parser, io_streams_t &streams, wchar_t **argv
 */
 static int builtin_builtin(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     int argc=builtin_count_args(argv);
     int list=0;
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption
             long_options[] =
@@ -985,7 +988,7 @@ static int builtin_builtin(parser_t &parser, io_streams_t &streams, wchar_t **ar
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"nh",
                                long_options,
@@ -1015,7 +1018,7 @@ static int builtin_builtin(parser_t &parser, io_streams_t &streams, wchar_t **ar
                 break;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
@@ -1043,9 +1046,11 @@ static int builtin_builtin(parser_t &parser, io_streams_t &streams, wchar_t **ar
  */
 static int builtin_emit(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
+
     int argc=builtin_count_args(argv);
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption
             long_options[] =
@@ -1064,7 +1069,7 @@ static int builtin_emit(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"h",
                                long_options,
@@ -1089,20 +1094,20 @@ static int builtin_emit(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                 return STATUS_BUILTIN_OK;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
 
     }
 
-    if (!argv[woptind])
+    if (!argv[w.woptind])
     {
         streams.stderr_stream.append_format(L"%ls: expected event name\n", argv[0]);
         return STATUS_BUILTIN_ERROR;
     }
-    const wchar_t *eventname = argv[woptind];
-    wcstring_list_t args(argv + woptind + 1, argv + argc);
+    const wchar_t *eventname = argv[w.woptind];
+    wcstring_list_t args(argv + w.woptind + 1, argv + argc);
     event_fire_generic(parser, eventname, &args);
 
     return STATUS_BUILTIN_OK;
@@ -1115,10 +1120,12 @@ static int builtin_emit(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 */
 static int builtin_command(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
+
     int argc=builtin_count_args(argv);
     int print_path=0;
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption
             long_options[] =
@@ -1132,7 +1139,7 @@ static int builtin_command(parser_t &parser, io_streams_t &streams, wchar_t **ar
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"svh",
                                long_options,
@@ -1162,7 +1169,7 @@ static int builtin_command(parser_t &parser, io_streams_t &streams, wchar_t **ar
                 break;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
@@ -1177,7 +1184,7 @@ static int builtin_command(parser_t &parser, io_streams_t &streams, wchar_t **ar
 
     int found=0;
 
-    for (int idx = woptind; argv[idx]; ++idx)
+    for (int idx = w.woptind; argv[idx]; ++idx)
     {
         const wchar_t *command_name = argv[idx];
         wcstring path;
@@ -1197,6 +1204,8 @@ static int builtin_command(parser_t &parser, io_streams_t &streams, wchar_t **ar
 */
 static int builtin_generic(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
+
     int argc=builtin_count_args(argv);
 
     /* Hackish - if we have no arguments other than the command, we are a "naked invocation" and we just print help */
@@ -1206,7 +1215,7 @@ static int builtin_generic(parser_t &parser, io_streams_t &streams, wchar_t **ar
         return STATUS_BUILTIN_ERROR;
     }
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption
             long_options[] =
@@ -1219,7 +1228,7 @@ static int builtin_generic(parser_t &parser, io_streams_t &streams, wchar_t **ar
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"h",
                                long_options,
@@ -1244,7 +1253,7 @@ static int builtin_generic(parser_t &parser, io_streams_t &streams, wchar_t **ar
                 return STATUS_BUILTIN_OK;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
@@ -1393,6 +1402,8 @@ static void functions_def(const wcstring &name, output_stream_t &out)
 */
 static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
+
     int i;
     int erase=0;
     wchar_t *desc=0;
@@ -1404,7 +1415,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
     int query = 0;
     int copy = 0;
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption
             long_options[] =
@@ -1447,7 +1458,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"ed:nahqc",
                                long_options,
@@ -1474,7 +1485,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
                 break;
 
             case 'd':
-                desc=woptarg;
+                desc=w.woptarg;
                 break;
 
             case 'n':
@@ -1498,7 +1509,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
                 break;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
@@ -1522,7 +1533,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
     if (erase)
     {
         int i;
-        for (i=woptind; i<argc; i++)
+        for (i=w.woptind; i<argc; i++)
             function_remove_ignore_autoload(argv[i]);
         return STATUS_BUILTIN_OK;
     }
@@ -1530,7 +1541,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
     {
         wchar_t *func;
 
-        if (argc-woptind != 1)
+        if (argc-w.woptind != 1)
         {
             streams.stderr_stream.append_format(
                           _(L"%ls: Expected exactly one function name\n"),
@@ -1539,7 +1550,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
 
             return STATUS_BUILTIN_ERROR;
         }
-        func = argv[woptind];
+        func = argv[w.woptind];
         if (!function_exists(parser, func))
         {
             streams.stderr_stream.append_format(
@@ -1556,7 +1567,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
 
         return STATUS_BUILTIN_OK;
     }
-    else if (list || (argc==woptind))
+    else if (list || (argc==w.woptind))
     {
         bool is_screen = !streams.out_is_redirected && isatty(STDOUT_FILENO);
         size_t i;
@@ -1592,7 +1603,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
         wcstring current_func;
         wcstring new_func;
 
-        if (argc-woptind != 2)
+        if (argc-w.woptind != 2)
         {
             streams.stderr_stream.append_format(
                           _(L"%ls: Expected exactly two names (current function name, and new function name)\n"),
@@ -1601,8 +1612,8 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
 
             return STATUS_BUILTIN_ERROR;
         }
-        current_func = argv[woptind];
-        new_func = argv[woptind+1];
+        current_func = argv[w.woptind];
+        new_func = argv[w.woptind+1];
 
         if (!function_exists(parser, current_func))
         {
@@ -1643,7 +1654,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
         return STATUS_BUILTIN_ERROR;
     }
 
-    for (i=woptind; i<argc; i++)
+    for (i=w.woptind; i<argc; i++)
     {
         if (!function_exists(parser, argv[i]))
             res++;
@@ -1651,7 +1662,7 @@ static int builtin_functions(parser_t &parser, io_streams_t &streams, wchar_t **
         {
             if (!query)
             {
-                if (i != woptind)
+                if (i != w.woptind)
                     streams.stdout_stream.append(L"\n");
 
                 functions_def(argv[i], streams.stdout_stream);
@@ -1776,6 +1787,8 @@ static bool builtin_echo_parse_numeric_sequence(const wchar_t *str, size_t *cons
 
 static int builtin_echo(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
+
     /* Skip first arg */
     if (! *argv++)
         return STATUS_BUILTIN_ERROR;
@@ -1930,6 +1943,7 @@ static int builtin_echo(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 /** The pwd builtin. We don't respect -P to resolve symbolic links because we try to always resolve them. */
 static int builtin_pwd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     wchar_t dir_path[4096];
     wchar_t *res = wgetcwd(dir_path, 4096);
     if (res == NULL)
@@ -1947,6 +1961,7 @@ static int builtin_pwd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 /** Adds a function to the function set. It calls into function.cpp to perform any heavy lifting. */
 int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list_t &c_args, const wcstring &contents, int definition_line_offset, wcstring *out_err)
 {
+    wgetopter_t w;
     assert(out_err != NULL);
 
     /* wgetopt expects 'function' as the first argument. Make a new wcstring_list with that property. */
@@ -1968,7 +1983,7 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
     wchar_t *name = 0;
     bool shadows = true;
 
-    woptind=0;
+    w.woptind=0;
     
     wcstring_list_t wrap_targets;
 
@@ -1992,7 +2007,7 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"d:s:j:p:v:e:haSV:",
                                long_options,
@@ -2017,19 +2032,19 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
                 break;
 
             case 'd':
-                desc=woptarg;
+                desc=w.woptarg;
                 break;
 
             case 's':
             {
-                int sig = wcs2sig(woptarg);
+                int sig = wcs2sig(w.woptarg);
 
                 if (sig < 0)
                 {
                     append_format(*out_err,
                                   _(L"%ls: Unknown signal '%ls'\n"),
                                   argv[0],
-                                  woptarg);
+                                  w.woptarg);
                     res=1;
                     break;
                 }
@@ -2039,24 +2054,24 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
 
             case 'v':
             {
-                if (wcsvarname(woptarg))
+                if (wcsvarname(w.woptarg))
                 {
                     append_format(*out_err,
                                   _(L"%ls: Invalid variable name '%ls'\n"),
                                   argv[0],
-                                  woptarg);
+                                  w.woptarg);
                     res=STATUS_BUILTIN_ERROR;
                     break;
                 }
 
-                events.push_back(event_t::variable_event(woptarg));
+                events.push_back(event_t::variable_event(w.woptarg));
                 break;
             }
 
 
             case 'e':
             {
-                events.push_back(event_t::generic_event(woptarg));
+                events.push_back(event_t::generic_event(w.woptarg));
                 break;
             }
 
@@ -2068,7 +2083,7 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
                 event_t e(EVENT_ANY);
 
                 if ((opt == 'j') &&
-                        (wcscasecmp(woptarg, L"caller") == 0))
+                        (wcscasecmp(w.woptarg, L"caller") == 0))
                 {
                     int job_id = -1;
 
@@ -2109,13 +2124,13 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
                 else
                 {
                     errno = 0;
-                    pid = fish_wcstoi(woptarg, &end, 10);
+                    pid = fish_wcstoi(w.woptarg, &end, 10);
                     if (errno || !end || *end)
                     {
                         append_format(*out_err,
                                       _(L"%ls: Invalid process id %ls\n"),
                                       argv[0],
-                                      woptarg);
+                                      w.woptarg);
                         res=1;
                         break;
                     }
@@ -2145,19 +2160,19 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
                 break;
 
             case 'w':
-                wrap_targets.push_back(woptarg);
+                wrap_targets.push_back(w.woptarg);
                 break;
 
             case 'V':
             {
-                if (wcsvarname(woptarg))
+                if (wcsvarname(w.woptarg))
                 {
-                    append_format(*out_err, _(L"%ls: Invalid variable name '%ls'\n"), argv[0], woptarg);
+                    append_format(*out_err, _(L"%ls: Invalid variable name '%ls'\n"), argv[0], w.woptarg);
                     res = STATUS_BUILTIN_ERROR;
                     break;
                 }
 
-                inherit_vars.push_back(woptarg);
+                inherit_vars.push_back(w.woptarg);
                 break;
             }
 
@@ -2166,7 +2181,7 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
                 return STATUS_BUILTIN_OK;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 res = 1;
                 break;
 
@@ -2177,33 +2192,33 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
     if (!res)
     {
 
-        if (argc == woptind)
+        if (argc == w.woptind)
         {
             append_format(*out_err,
                           _(L"%ls: Expected function name\n"),
                           argv[0]);
             res=1;
         }
-        else if (wcsfuncname(argv[woptind]))
+        else if (wcsfuncname(argv[w.woptind]))
         {
             append_format(*out_err,
                           _(L"%ls: Illegal function name '%ls'\n"),
                           argv[0],
-                          argv[woptind]);
+                          argv[w.woptind]);
 
             res=1;
         }
-        else if (parser_keywords_is_reserved(argv[woptind]))
+        else if (parser_keywords_is_reserved(argv[w.woptind]))
         {
 
             append_format(*out_err,
                           _(L"%ls: The name '%ls' is reserved,\nand can not be used as a function name\n"),
                           argv[0],
-                          argv[woptind]);
+                          argv[w.woptind]);
 
             res=1;
         }
-        else if (! wcslen(argv[woptind]))
+        else if (! wcslen(argv[w.woptind]))
         {
             append_format(*out_err, _(L"%ls: No function name given\n"), argv[0]);
             res=1;
@@ -2211,26 +2226,26 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
         else
         {
 
-            name = argv[woptind++];
+            name = argv[w.woptind++];
 
             if (named_arguments.get())
             {
-                while (woptind < argc)
+                while (w.woptind < argc)
                 {
-                    if (wcsvarname(argv[woptind]))
+                    if (wcsvarname(argv[w.woptind]))
                     {
                         append_format(*out_err,
                                       _(L"%ls: Invalid variable name '%ls'\n"),
                                       argv[0],
-                                      argv[woptind]);
+                                      argv[w.woptind]);
                         res = STATUS_BUILTIN_ERROR;
                         break;
                     }
 
-                    named_arguments->push_back(argv[woptind++]);
+                    named_arguments->push_back(argv[w.woptind++]);
                 }
             }
-            else if (woptind != argc)
+            else if (w.woptind != argc)
             {
                 append_format(*out_err,
                               _(L"%ls: Expected one argument, got %d\n"),
@@ -2287,12 +2302,13 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
 */
 static int builtin_random(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     static int seeded=0;
     static struct drand48_data seed_buffer;
 
     int argc = builtin_count_args(argv);
 
-    woptind=0;
+    w.woptind=0;
 
     static const struct woption
             long_options[] =
@@ -2311,7 +2327,7 @@ static int builtin_random(parser_t &parser, io_streams_t &streams, wchar_t **arg
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"h",
                                long_options,
@@ -2337,14 +2353,14 @@ static int builtin_random(parser_t &parser, io_streams_t &streams, wchar_t **arg
                 break;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
 
     }
 
-    switch (argc-woptind)
+    switch (argc-w.woptind)
     {
 
         case 0:
@@ -2368,13 +2384,13 @@ static int builtin_random(parser_t &parser, io_streams_t &streams, wchar_t **arg
             wchar_t *end=0;
 
             errno=0;
-            foo = wcstol(argv[woptind], &end, 10);
+            foo = wcstol(argv[w.woptind], &end, 10);
             if (errno || *end)
             {
                 streams.stderr_stream.append_format(
                               _(L"%ls: Seed value '%ls' is not a valid number\n"),
                               argv[0],
-                              argv[woptind]);
+                              argv[w.woptind]);
 
                 return STATUS_BUILTIN_ERROR;
             }
@@ -2388,7 +2404,7 @@ static int builtin_random(parser_t &parser, io_streams_t &streams, wchar_t **arg
             streams.stderr_stream.append_format(
                           _(L"%ls: Expected zero or one argument, got %d\n"),
                           argv[0],
-                          argc-woptind);
+                          argc-w.woptind);
             builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             return STATUS_BUILTIN_ERROR;
         }
@@ -2402,6 +2418,7 @@ static int builtin_random(parser_t &parser, io_streams_t &streams, wchar_t **arg
 */
 static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     wcstring buff;
     int i, argc = builtin_count_args(argv);
     int place = ENV_USER;
@@ -2416,7 +2433,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     int array = 0;
     bool split_null = false;
 
-    woptind=0;
+    w.woptind=0;
 
     while (1)
     {
@@ -2487,7 +2504,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"xglUup:R:c:hm:n:saz",
                                long_options,
@@ -2529,24 +2546,24 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                 break;
 
             case L'p':
-                prompt = woptarg;
+                prompt = w.woptarg;
                 break;
 
             case L'R':
-                right_prompt = woptarg;
+                right_prompt = w.woptarg;
                 break;
 
             case L'c':
-                commandline = woptarg;
+                commandline = w.woptarg;
                 break;
 
             case L'm':
-                mode_name = woptarg;
+                mode_name = w.woptarg;
                 break;
 
             case L'n':
                 errno = 0;
-                nchars = fish_wcstoi(woptarg, &end, 10);
+                nchars = fish_wcstoi(w.woptarg, &end, 10);
                 if (errno || *end != 0)
                 {
                     switch (errno)
@@ -2555,7 +2572,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                             streams.stderr_stream.append_format(
                                     _(L"%ls: Argument '%ls' is out of range\n"),
                                     argv[0],
-                                    woptarg);
+                                    w.woptarg);
                             builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                             return STATUS_BUILTIN_ERROR;
 
@@ -2563,7 +2580,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                             streams.stderr_stream.append_format(
                                     _(L"%ls: Argument '%ls' must be an integer\n"),
                                     argv[0],
-                                    woptarg);
+                                    w.woptarg);
                             builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
                             return STATUS_BUILTIN_ERROR;
                     }
@@ -2587,7 +2604,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
                 return STATUS_BUILTIN_OK;
 
             case L'?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
         }
 
@@ -2614,7 +2631,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
         return STATUS_BUILTIN_ERROR;
     }
 
-    if (array && woptind+1 != argc)
+    if (array && w.woptind+1 != argc)
     {
         streams.stderr_stream.append_format(_(L"%ls: --array option requires a single variable name.\n"), argv[0]);
         builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
@@ -2625,7 +2642,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     /*
       Verify all variable names
     */
-    for (i=woptind; i<argc; i++)
+    for (i=w.woptind; i<argc; i++)
     {
         wchar_t *src;
 
@@ -2648,9 +2665,9 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     }
 
     /*
-      The call to reader_readline may change woptind, so we save it away here
+      The call to reader_readline may change w.woptind, so we save it away here
     */
-    i=woptind;
+    i=w.woptind;
 
     /*
       Check if we should read interactively using \c reader_readline()
@@ -2849,6 +2866,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 */
 static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
 
     enum
     {
@@ -2872,7 +2890,7 @@ static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **arg
     int argc = builtin_count_args(argv);
     int res=STATUS_BUILTIN_OK;
 
-    woptind=0;
+    w.woptind=0;
 
 
     const struct woption
@@ -2936,7 +2954,7 @@ static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **arg
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L":cbilfnhj:t",
                                long_options,
@@ -2985,17 +3003,17 @@ static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **arg
                 return STATUS_BUILTIN_OK;
 
             case 'j':
-                if (wcscmp(woptarg, L"full") == 0)
+                if (wcscmp(w.woptarg, L"full") == 0)
                     job_control_mode = JOB_CONTROL_ALL;
-                else if (wcscmp(woptarg, L"interactive") == 0)
+                else if (wcscmp(w.woptarg, L"interactive") == 0)
                     job_control_mode = JOB_CONTROL_INTERACTIVE;
-                else if (wcscmp(woptarg, L"none") == 0)
+                else if (wcscmp(w.woptarg, L"none") == 0)
                     job_control_mode = JOB_CONTROL_NONE;
                 else
                 {
                     streams.stderr_stream.append_format(
                                   L"%ls: Invalid job control mode '%ls'\n",
-                                  L"status", woptarg);
+                                  L"status", w.woptarg);
                     res = 1;
                 }
                 mode = DONE;
@@ -3007,11 +3025,11 @@ static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **arg
 
 
             case ':':
-                builtin_missing_argument(parser, streams, argv[0], argv[woptind-1]);
+                builtin_missing_argument(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
         }
@@ -3098,6 +3116,7 @@ static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **arg
 */
 static int builtin_exit(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     int argc = builtin_count_args(argv);
 
     long ec=0;
@@ -3272,12 +3291,13 @@ static int builtin_count(parser_t &parser, io_streams_t &streams, wchar_t **argv
  */
 static int builtin_contains(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     int argc;
     argc = builtin_count_args(argv);
     wchar_t *needle;
     bool should_output_index = false;
 
-    woptind=0;
+    w.woptind=0;
 
     const struct woption long_options[] =
     {
@@ -3290,7 +3310,7 @@ static int builtin_contains(parser_t &parser, io_streams_t &streams, wchar_t **a
     {
         int opt_index = 0;
 
-        int opt = wgetopt_long(argc,
+        int opt = w.wgetopt_long(argc,
                                argv,
                                L"+hi",
                                long_options,
@@ -3318,11 +3338,11 @@ static int builtin_contains(parser_t &parser, io_streams_t &streams, wchar_t **a
 
 
             case ':':
-                builtin_missing_argument(parser, streams, argv[0], argv[woptind-1]);
+                builtin_missing_argument(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
             case '?':
-                builtin_unknown_option(parser, streams, argv[0], argv[woptind-1]);
+                builtin_unknown_option(parser, streams, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
 
             case 'i':
@@ -3332,19 +3352,19 @@ static int builtin_contains(parser_t &parser, io_streams_t &streams, wchar_t **a
 
     }
 
-    needle = argv[woptind];
+    needle = argv[w.woptind];
     if (!needle)
     {
         streams.stderr_stream.append_format(_(L"%ls: Key not specified\n"), argv[0]);
     }
 
 
-    for (int i=woptind+1; i<argc; i++)
+    for (int i=w.woptind+1; i<argc; i++)
     {
 
         if (!wcscmp(needle, argv[i]))
         {
-            if (should_output_index) streams.stdout_stream.append_format(L"%d\n", i-woptind);
+            if (should_output_index) streams.stdout_stream.append_format(L"%d\n", i-w.woptind);
             return 0;
         }
     }
@@ -3831,6 +3851,7 @@ static int builtin_return(parser_t &parser, io_streams_t &streams, wchar_t **arg
 */
 static int builtin_history(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    wgetopter_t w;
     int argc = builtin_count_args(argv);
 
     bool search_history = false;
@@ -3855,14 +3876,14 @@ static int builtin_history(parser_t &parser, io_streams_t &streams, wchar_t **ar
 
     int opt = 0;
     int opt_index = 0;
-    woptind = 0;
+    w.woptind = 0;
     history_t *history = reader_get_history();
 
     /* Use the default history if we have none (which happens if invoked non-interactively, e.g. from webconfig.py */
     if (! history)
         history = &history_t::history_with_name(L"fish");
 
-    while ((opt = wgetopt_long_only(argc, argv, L"pdscvl", long_options, &opt_index)) != EOF)
+    while ((opt = w.wgetopt_long_only(argc, argv, L"pdscvl", long_options, &opt_index)) != EOF)
     {
         switch (opt)
         {
@@ -3891,17 +3912,17 @@ static int builtin_history(parser_t &parser, io_streams_t &streams, wchar_t **ar
                 return STATUS_BUILTIN_OK;
                 break;
             case '?':
-                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN, argv[0], argv[woptind-1]);
+                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
                 break;
             default:
-                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN, argv[0], argv[woptind-1]);
+                streams.stderr_stream.append_format(BUILTIN_ERR_UNKNOWN, argv[0], argv[w.woptind-1]);
                 return STATUS_BUILTIN_ERROR;
         }
     }
 
     /* Everything after is an argument */
-    const wcstring_list_t args(argv + woptind, argv + argc);
+    const wcstring_list_t args(argv + w.woptind, argv + argc);
 
     if (argc == 1)
     {
@@ -4102,8 +4123,6 @@ static const builtin_data_t *builtin_lookup(const wcstring &name)
 
 void builtin_init()
 {
-
-    wopterr = 0;
     for (size_t i=0; i < BUILTIN_COUNT; i++)
     {
         intern_static(builtin_datas[i].name);

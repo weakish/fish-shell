@@ -1441,7 +1441,7 @@ breakpoint_block_t::breakpoint_block_t() : block_t(BREAKPOINT)
 
 bool parser_use_threads()
 {
-    return true;
+    return false;
 }
 
 bool parser_concurrent_execution()
