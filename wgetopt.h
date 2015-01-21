@@ -104,15 +104,13 @@ public:
     /* Describe how to deal with options that follow non-option ARGV-elements.
      
      If the caller did not specify anything,
-     the default is REQUIRE_ORDER if the environment variable
-     POSIXLY_CORRECT is defined, PERMUTE otherwise.
+     the default is PERMUTE.
      
      REQUIRE_ORDER means don't recognize them as options;
      stop option processing when the first non-option is seen.
      This is what Unix does.
-     This mode of operation is selected by either setting the environment
-     variable POSIXLY_CORRECT, or using `+' as the first character
-     of the list of option characters.
+     This mode of operation is selected by using `+' as the first
+     character of the list of option characters.
      
      PERMUTE is the default.  We permute the contents of ARGV as we scan,
      so that eventually all the non-options are at the end.  This allows options
@@ -134,10 +132,7 @@ public:
     {
         REQUIRE_ORDER, PERMUTE, RETURN_IN_ORDER
     } ordering;
-    
-    /* Value of POSIXLY_CORRECT environment variable.  */
-    static const char *posixly_correct;
-    
+        
     /* Handle permutation of arguments.  */
     
     /* Describe the part of ARGV that contains non-options that have

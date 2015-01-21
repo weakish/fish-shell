@@ -92,9 +92,6 @@
 #include "fallback.h"
 
 
-const char *wgetopter_t::posixly_correct;
-
-
 /**
    Use translation functions if available
 */
@@ -228,8 +225,6 @@ const wchar_t * wgetopter_t::_wgetopt_initialize(const wchar_t *optstring)
 
     nextchar = NULL;
 
-    posixly_correct = getenv("POSIXLY_CORRECT");
-
     /* Determine how to handle the ordering of options and nonoptions.  */
 
     if (optstring[0] == '-')
@@ -242,8 +237,6 @@ const wchar_t * wgetopter_t::_wgetopt_initialize(const wchar_t *optstring)
         ordering = REQUIRE_ORDER;
         ++optstring;
     }
-    else if (posixly_correct != NULL)
-        ordering = REQUIRE_ORDER;
     else
         ordering = PERMUTE;
 
@@ -539,11 +532,7 @@ int wgetopter_t::_wgetopt_internal(int argc, wchar_t *const *argv, const wchar_t
         {
             if (wopterr)
             {
-                if (posixly_correct)
-                    /* 1003.2 specifies the format of this message.  */
-                    fwprintf(stderr, _(L"%ls: Illegal option -- %lc\n"), argv[0], c);
-                else
-                    fwprintf(stderr, _(L"%ls: Invalid option -- %lc\n"), argv[0], c);
+                fwprintf(stderr, _(L"%ls: Invalid option -- %lc\n"), argv[0], c);
             }
             woptopt = c;
 
