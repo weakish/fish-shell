@@ -405,6 +405,7 @@ public:
 /* Sets the command line contents, without clearing the pager */
 static void reader_set_buffer_maintaining_pager(const wcstring &b, size_t pos);
 
+
 /* Clears the pager */
 static void clear_pager();
 
@@ -412,6 +413,9 @@ static void clear_pager();
    The current interactive reading context
 */
 static reader_data_t *data=0;
+
+/* Sets the last commandline, used by the commandline builtin */
+static void reader_save_last_commandline(const reader_data_t *);
 
 /**
    This flag is set to true when fish is interactively reading from
@@ -506,6 +510,7 @@ static void update_buff_pos(editable_line_t *el, size_t buff_pos)
             data->sel_start_pos = buff_pos;
             data->sel_stop_pos = data->sel_begin_pos;
         }
+        reader_save_last_commandline(data);
     }
 }
 
@@ -712,6 +717,9 @@ void reader_data_t::command_line_changed(const editable_line_t *el)
 
         /* Update the gen count */
         s_generation_count++;
+        
+        /* Store the last commandline so this can be fetched from background threads */
+        reader_save_last_commandline(this);
     }
     else if (el == &this->pager.search_field_line)
     {
@@ -2405,13 +2413,40 @@ static void move_word(editable_line_t *el, bool move_right, bool erase, enum mov
         update_buff_pos(el, buff_pos);
         reader_repaint();
     }
-
 }
 
-const wchar_t *reader_get_buffer(void)
+static pthread_mutex_t s_last_commandline_lock = PTHREAD_MUTEX_INITIALIZER;
+static editable_line_t s_last_commandline;
+static size_t s_last_sel_start, s_last_sel_stop;
+static bool s_last_sel_active;
+
+static void reader_save_last_commandline(const reader_data_t *data)
 {
-    ASSERT_IS_MAIN_THREAD();
-    return data ? data->command_line.text.c_str() : NULL;
+    scoped_lock locker(s_last_commandline_lock);
+    s_last_commandline = data->command_line;
+    s_last_sel_start = data->sel_start_pos;
+    s_last_sel_stop = data->sel_stop_pos;
+    s_last_sel_active = data->sel_active;
+}
+
+editable_line_t reader_get_last_commandline()
+{
+    scoped_lock locker(s_last_commandline_lock);
+    return s_last_commandline;
+}
+
+bool reader_get_last_selection(size_t *start, size_t *len)
+{
+    scoped_lock locker(s_last_commandline_lock);
+    if (start)
+    {
+        *start = s_last_sel_start;
+    }
+    if (len)
+    {
+        *len = std::min(s_last_sel_stop - s_last_sel_start + 1, s_last_commandline.size());
+    }
+    return s_last_sel_active;
 }
 
 history_t *reader_get_history(void)
@@ -2454,16 +2489,9 @@ void reader_set_buffer(const wcstring &b, size_t pos)
 }
 
 
-size_t reader_get_cursor_pos()
-{
-    if (!data)
-        return (size_t)(-1);
-
-    return data->command_line.position;
-}
-
 bool reader_get_selection(size_t *start, size_t *len)
 {
+    ASSERT_IS_MAIN_THREAD();
     bool result = false;
     if (data != NULL && data->sel_active)
     {
@@ -3975,6 +4003,7 @@ const wchar_t *reader_readline(int nchars)
                 data->sel_begin_pos = data->command_line.position;
                 data->sel_start_pos = data->command_line.position;
                 data->sel_stop_pos = data->command_line.position;
+                reader_save_last_commandline(data);
                 break;
             }
 
@@ -3983,6 +4012,7 @@ const wchar_t *reader_readline(int nchars)
                 data->sel_active = false;
                 data->sel_start_pos = data->command_line.position;
                 data->sel_stop_pos = data->command_line.position;
+                reader_save_last_commandline(data);
                 break;
             }
 

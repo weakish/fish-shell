@@ -26,6 +26,7 @@ Functions used for implementing the commandline builtin.
 #include "tokenizer.h"
 #include "input_common.h"
 #include "input.h"
+#include "iothread.h"
 
 #include "parse_util.h"
 
@@ -52,33 +53,6 @@ enum
 }
 ;
 
-/**
-   Pointer to what the commandline builtin considers to be the current
-   contents of the command line buffer.
- */
-static const wchar_t *current_buffer=0;
-/**
-   What the commandline builtin considers to be the current cursor
-   position.
- */
-static size_t current_cursor_pos = (size_t)(-1);
-
-/**
-   Returns the current commandline buffer.
-*/
-static const wchar_t *get_buffer()
-{
-    return current_buffer;
-}
-
-/**
-   Returns the position of the cursor
-*/
-static size_t get_cursor_pos()
-{
-    return current_cursor_pos;
-}
-
 builtin_commandline_scoped_transient_t::builtin_commandline_scoped_transient_t(parser_t *p, const wcstring &cmd) : parser(p)
 {
     assert(p != NULL);
@@ -92,6 +66,27 @@ builtin_commandline_scoped_transient_t::~builtin_commandline_scoped_transient_t(
     parser->pop_substituted_commandline();
 }
 
+static void apply_new_commandline_and_delete(editable_line_t *buffer)
+{
+    ASSERT_IS_MAIN_THREAD();
+    assert(buffer != NULL);
+    reader_set_buffer(buffer->text, buffer->position);
+    delete buffer;
+}
+
+static void apply_new_commandline(const editable_line_t &buffer)
+{
+    // Hackish
+    if (is_main_thread())
+    {
+        reader_set_buffer(buffer.text, buffer.position);
+    }
+    else
+    {
+        iothread_enqueue_to_main(apply_new_commandline_and_delete, new editable_line_t(buffer));
+    }
+}
+
 /**
    Replace/append/insert the selection with/at/after the specified string.
 
@@ -100,13 +95,14 @@ builtin_commandline_scoped_transient_t::~builtin_commandline_scoped_transient_t(
    \param insert the string to insert
    \param append_mode can be one of REPLACE_MODE, INSERT_MODE or APPEND_MODE, affects the way the test update is performed
 */
-static void replace_part(const wchar_t *begin,
+static void replace_part(const editable_line_t &buffer,
+                         const wchar_t *begin,
                          const wchar_t *end,
                          const wchar_t *insert,
                          int append_mode)
 {
-    const wchar_t *buff = get_buffer();
-    size_t out_pos = get_cursor_pos();
+    const wchar_t *buff = buffer.text.c_str();
+    size_t out_pos = buffer.position;
 
     wcstring out;
 
@@ -130,7 +126,7 @@ static void replace_part(const wchar_t *begin,
         }
         case INSERT_MODE:
         {
-            long cursor = get_cursor_pos() -(begin-buff);
+            long cursor = buffer.position - (begin - buff);
             out.append(begin, cursor);
             out.append(insert);
             out.append(begin+cursor, end-begin-cursor);
@@ -139,24 +135,33 @@ static void replace_part(const wchar_t *begin,
         }
     }
     out.append(end);
-    reader_set_buffer(out, out_pos);
+    
+    editable_line_t tmp;
+    tmp.text = out;
+    tmp.position = out_pos;
+    apply_new_commandline(tmp);
 }
 
 /**
    Output the specified selection.
 
+   \param buffer the buffer containing the text to output
+   \param cursor_position the position of the cursor
    \param begin start of selection
    \param end  end of selection
    \param cut_at_cursor whether printing should stop at the surrent cursor position
    \param tokenize whether the string should be tokenized, printing one string token on every line and skipping non-string tokens
 */
-static void write_part(io_streams_t &streams,
+static void write_part(const wchar_t *buffer,
+                       size_t cursor_pos,
+                       io_streams_t &streams,
                        const wchar_t *begin,
                        const wchar_t *end,
                        int cut_at_cursor,
                        int tokenize)
 {
-    size_t pos = get_cursor_pos()-(begin-get_buffer());
+    assert(buffer != NULL);
+    size_t pos = cursor_pos - (begin - buffer);
 
     if (tokenize)
     {
@@ -212,6 +217,7 @@ static void write_part(io_streams_t &streams,
 */
 static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
+    ASSERT_IS_MAIN_THREAD();
     wgetopter_t w;
     int buffer_part=0;
     int cut_at_cursor=0;
@@ -230,37 +236,18 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
     int paging_mode = 0;
     const wchar_t *begin = NULL, *end = NULL;
     
-    scoped_push<const wchar_t *> saved_current_buffer(&current_buffer);
-    scoped_push<size_t> saved_current_cursor_pos(&current_cursor_pos);
+    editable_line_t current_buffer;
     
     wcstring transient_commandline;
     if (parser.get_substituted_commandline(&transient_commandline))
     {
-        current_buffer = transient_commandline.c_str();
-        current_cursor_pos = transient_commandline.size();
+        current_buffer.text = transient_commandline;
+        current_buffer.position = transient_commandline.size();
     }
     else
     {
-        current_buffer = reader_get_buffer();
-        current_cursor_pos = reader_get_cursor_pos();
-    }
-
-    if (!get_buffer())
-    {
-        if (is_interactive_session)
-        {
-            /*
-              Prompt change requested while we don't have
-              a prompt, most probably while reading the
-              init files. Just ignore it.
-            */
-            return 1;
-        }
-
-        streams.stderr_stream.append(argv[0]);
-        streams.stderr_stream.append(L": Can not set commandline in non-interactive mode\n");
-        builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
-        return 1;
+        /* TODO: if we aren't interactive we ought to print an error here */
+        current_buffer = reader_get_last_commandline();
     }
 
     w.woptind=0;
@@ -354,8 +341,8 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
                 break;
 
             case 'I':
-                current_buffer = w.woptarg;
-                current_cursor_pos = wcslen(w.woptarg);
+                current_buffer.text = w.woptarg;
+                current_buffer.position = wcslen(w.woptarg);
                 break;
 
             case 'C':
@@ -443,10 +430,12 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
     if (selection_mode)
     {
         size_t start, len;
-        const wchar_t *buffer = reader_get_buffer();
-        if (reader_get_selection(&start, &len))
+        // Note: this is a little sketchy because the selection and commandline may not be in sync here, since we take the lock twice
+        // But the wcstring constructor below ensures that we won't get something like a buffer overrun
+        const editable_line_t line = reader_get_last_commandline();
+        if (reader_get_last_selection(&start, &len))
         {
-            streams.stdout_stream.append(buffer + start, len);
+            streams.stdout_stream.append(wcstring(line.text, start, len));
         }
         return 0;
     }
@@ -529,14 +518,14 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
                 builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             }
 
-            current_buffer = reader_get_buffer();
-            new_pos = maxi(0L, mini(new_pos, (long)wcslen(current_buffer)));
-            reader_set_buffer(current_buffer, (size_t)new_pos);
+            current_buffer = reader_get_last_commandline();
+            current_buffer.position = (size_t)maxi(0L, mini(new_pos, (long)current_buffer.text.size()));
+            apply_new_commandline(current_buffer);
             return 0;
         }
         else
         {
-            streams.stdout_stream.append_format(L"%lu\n", (unsigned long)reader_get_cursor_pos());
+            streams.stdout_stream.append_format(L"%lu\n", current_buffer.position);
             return 0;
         }
 
@@ -544,8 +533,9 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
 
     if (line_mode)
     {
-        size_t pos = reader_get_cursor_pos();
-        const wchar_t *buff = reader_get_buffer();
+        const editable_line_t line = reader_get_last_commandline();
+        size_t pos = line.position;
+        const wchar_t *buff = line.text.c_str();
         streams.stdout_stream.append_format(L"%lu\n", (unsigned long)parse_util_lineno(buff, pos));
         return 0;
 
@@ -566,15 +556,15 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
     {
         case STRING_MODE:
         {
-            begin = get_buffer();
+            begin = current_buffer.text.c_str();
             end = begin+wcslen(begin);
             break;
         }
 
         case PROCESS_MODE:
         {
-            parse_util_process_extent(get_buffer(),
-                                      get_cursor_pos(),
+            parse_util_process_extent(current_buffer.text.c_str(),
+                                      current_buffer.position,
                                       &begin,
                                       &end);
             break;
@@ -582,8 +572,8 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
 
         case JOB_MODE:
         {
-            parse_util_job_extent(get_buffer(),
-                                  get_cursor_pos(),
+            parse_util_job_extent(current_buffer.text.c_str(),
+                                  current_buffer.position,
                                   &begin,
                                   &end);
             break;
@@ -591,8 +581,8 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
 
         case TOKEN_MODE:
         {
-            parse_util_token_extent(get_buffer(),
-                                    get_cursor_pos(),
+            parse_util_token_extent(current_buffer.text.c_str(),
+                                    current_buffer.position,
                                     &begin,
                                     &end,
                                     0, 0);
@@ -605,13 +595,13 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
     {
         case 0:
         {
-            write_part(streams, begin, end, cut_at_cursor, tokenize);
+            write_part(current_buffer.text.c_str(), current_buffer.position, streams, begin, end, cut_at_cursor, tokenize);
             break;
         }
 
         case 1:
         {
-            replace_part(begin, end, argv[w.woptind], append_mode);
+            replace_part(current_buffer, begin, end, argv[w.woptind], append_mode);
             break;
         }
 
@@ -626,7 +616,7 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
                 sb.append(argv[i]);
             }
 
-            replace_part(begin, end, sb.c_str(), append_mode);
+            replace_part(current_buffer, begin, end, sb.c_str(), append_mode);
 
             break;
         }

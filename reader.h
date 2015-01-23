@@ -125,11 +125,11 @@ void reader_repaint_if_needed();
 */
 void reader_run_command(const wcstring &buff);
 
-/**
-   Get the string of character currently entered into the command
-   buffer, or 0 if interactive mode is uninitialized.
-*/
-const wchar_t *reader_get_buffer();
+/** Returns the last set commandline. This is thread safe. */
+editable_line_t reader_get_last_commandline();
+
+/** Returns the last set selection. The bool return indicates if it is active, the size_ts are the selection range. This is thread safe. */
+bool reader_get_last_selection(size_t *start, size_t *len);
 
 /** Returns the current reader's history */
 history_t *reader_get_history(void);
@@ -143,16 +143,11 @@ history_t *reader_get_history(void);
 */
 void reader_set_buffer(const wcstring &b, size_t p);
 
-/**
-   Get the current cursor position in the command line. If interactive
-   mode is uninitialized, return (size_t)(-1).
-*/
-size_t reader_get_cursor_pos();
-
 
 /**
    Get the current selection range in the command line.
    Returns false if there is no active selection, true otherwise.
+   Not thread safe, main thread only.
 */
 bool reader_get_selection(size_t *start, size_t *len);
 
