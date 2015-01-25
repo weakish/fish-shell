@@ -217,7 +217,6 @@ static void write_part(const wchar_t *buffer,
 */
 static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 {
-    ASSERT_IS_MAIN_THREAD();
     wgetopter_t w;
     int buffer_part=0;
     int cut_at_cursor=0;
