@@ -415,7 +415,7 @@ static void clear_pager();
 static reader_data_t *data=0;
 
 /* Sets the last commandline, used by the commandline builtin */
-static void reader_save_last_commandline(const reader_data_t *);
+static void reader_save_last_snapshot(const reader_data_t *);
 
 /**
    This flag is set to true when fish is interactively reading from
@@ -510,7 +510,6 @@ static void update_buff_pos(editable_line_t *el, size_t buff_pos)
             data->sel_start_pos = buff_pos;
             data->sel_stop_pos = data->sel_begin_pos;
         }
-        reader_save_last_commandline(data);
     }
 }
 
@@ -717,9 +716,6 @@ void reader_data_t::command_line_changed(const editable_line_t *el)
 
         /* Update the gen count */
         s_generation_count++;
-        
-        /* Store the last commandline so this can be fetched from background threads */
-        reader_save_last_commandline(this);
     }
     else if (el == &this->pager.search_field_line)
     {
@@ -2415,39 +2411,29 @@ static void move_word(editable_line_t *el, bool move_right, bool erase, enum mov
     }
 }
 
-static pthread_mutex_t s_last_commandline_lock = PTHREAD_MUTEX_INITIALIZER;
-static editable_line_t s_last_commandline;
-static size_t s_last_sel_start, s_last_sel_stop;
-static bool s_last_sel_active;
+static pthread_mutex_t s_last_snapshot_lock = PTHREAD_MUTEX_INITIALIZER;
+static reader_snapshot_t s_last_snapshot;
 
-static void reader_save_last_commandline(const reader_data_t *data)
+static void reader_save_last_snapshot(const reader_data_t *data)
 {
-    scoped_lock locker(s_last_commandline_lock);
-    s_last_commandline = data->command_line;
-    s_last_sel_start = data->sel_start_pos;
-    s_last_sel_stop = data->sel_stop_pos;
-    s_last_sel_active = data->sel_active;
+    ASSERT_IS_MAIN_THREAD();
+    const size_t sel_length = std::min(data->sel_stop_pos - data->sel_start_pos + 1, data->command_line.size());
+
+    scoped_lock locker(s_last_snapshot_lock);
+    s_last_snapshot.command_line = data->command_line;
+    s_last_snapshot.selection_is_active = data->sel_active;
+    s_last_snapshot.selection_start = data->sel_start_pos;
+    s_last_snapshot.selection_length = sel_length;
+    s_last_snapshot.search_mode = data->search_mode;
+    s_last_snapshot.has_pager_contents = ! data->current_page_rendering.screen_data.empty();
 }
 
-editable_line_t reader_get_last_commandline()
+reader_snapshot_t reader_get_last_snapshot()
 {
-    scoped_lock locker(s_last_commandline_lock);
-    return s_last_commandline;
+    scoped_lock locker(s_last_snapshot_lock);
+    return s_last_snapshot;
 }
 
-bool reader_get_last_selection(size_t *start, size_t *len)
-{
-    scoped_lock locker(s_last_commandline_lock);
-    if (start)
-    {
-        *start = s_last_sel_start;
-    }
-    if (len)
-    {
-        *len = std::min(s_last_sel_stop - s_last_sel_start + 1, s_last_commandline.size());
-    }
-    return s_last_sel_active;
-}
 
 history_t *reader_get_history(void)
 {
@@ -3160,6 +3146,7 @@ const wchar_t *reader_readline(int nchars)
                     }
 
                     insert_string(&data->command_line, arr, true);
+                    reader_save_last_snapshot(data);
 
                 }
             }
@@ -4003,7 +3990,6 @@ const wchar_t *reader_readline(int nchars)
                 data->sel_begin_pos = data->command_line.position;
                 data->sel_start_pos = data->command_line.position;
                 data->sel_stop_pos = data->command_line.position;
-                reader_save_last_commandline(data);
                 break;
             }
 
@@ -4012,7 +3998,6 @@ const wchar_t *reader_readline(int nchars)
                 data->sel_active = false;
                 data->sel_start_pos = data->command_line.position;
                 data->sel_stop_pos = data->command_line.position;
-                reader_save_last_commandline(data);
                 break;
             }
 
@@ -4124,6 +4109,7 @@ const wchar_t *reader_readline(int nchars)
         last_char = c;
 
         reader_repaint_if_needed();
+        reader_save_last_snapshot(data);
     }
 
     writestr(L"\n");
@@ -4146,6 +4132,7 @@ const wchar_t *reader_readline(int nchars)
         set_color(rgb_color_t::reset(), rgb_color_t::reset());
     }
 
+    reader_save_last_snapshot(data);
     return finished ? data->command_line.text.c_str() : NULL;
 }
 

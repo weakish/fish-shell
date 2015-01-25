@@ -432,7 +432,7 @@ static int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **a
 
             case 'C':
                 do_complete = true;
-                do_complete_param = w.woptarg ? w.woptarg : reader_get_last_commandline().text;
+                do_complete_param = w.woptarg ? w.woptarg : reader_get_last_snapshot().command_line.text;
                 break;
 
             case 'h':

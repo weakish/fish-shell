@@ -236,6 +236,8 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
     int paging_mode = 0;
     const wchar_t *begin = NULL, *end = NULL;
     
+    const reader_snapshot_t snapshot = reader_get_last_snapshot();
+    
     editable_line_t current_buffer;
     
     wcstring transient_commandline;
@@ -247,7 +249,7 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
     else
     {
         /* TODO: if we aren't interactive we ought to print an error here */
-        current_buffer = reader_get_last_commandline();
+        current_buffer = snapshot.command_line;
     }
 
     w.woptind=0;
@@ -429,13 +431,12 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
 
     if (selection_mode)
     {
-        size_t start, len;
         // Note: this is a little sketchy because the selection and commandline may not be in sync here, since we take the lock twice
         // But the wcstring constructor below ensures that we won't get something like a buffer overrun
-        const editable_line_t line = reader_get_last_commandline();
-        if (reader_get_last_selection(&start, &len))
+        const editable_line_t line = snapshot.command_line;
+        if (snapshot.selection_is_active)
         {
-            streams.stdout_stream.append(wcstring(line.text, start, len));
+            streams.stdout_stream.append(wcstring(line.text, snapshot.selection_start, snapshot.selection_length));
         }
         return 0;
     }
@@ -518,7 +519,7 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
                 builtin_print_help(parser, streams, argv[0], streams.stderr_stream);
             }
 
-            current_buffer = reader_get_last_commandline();
+            current_buffer = snapshot.command_line;
             current_buffer.position = (size_t)maxi(0L, mini(new_pos, (long)current_buffer.text.size()));
             apply_new_commandline(current_buffer);
             return 0;
@@ -533,7 +534,7 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
 
     if (line_mode)
     {
-        const editable_line_t line = reader_get_last_commandline();
+        const editable_line_t line = snapshot.command_line;
         size_t pos = line.position;
         const wchar_t *buff = line.text.c_str();
         streams.stdout_stream.append_format(L"%lu\n", (unsigned long)parse_util_lineno(buff, pos));
@@ -543,12 +544,12 @@ static int builtin_commandline(parser_t &parser, io_streams_t &streams, wchar_t 
 
     if (search_mode)
     {
-        return ! reader_search_mode();
+        return ! snapshot.search_mode;
     }
 
     if (paging_mode)
     {
-        return ! reader_has_pager_contents();
+        return ! snapshot.has_pager_contents;
     }
 
 

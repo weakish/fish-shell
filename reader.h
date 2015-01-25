@@ -125,11 +125,6 @@ void reader_repaint_if_needed();
 */
 void reader_run_command(const wcstring &buff);
 
-/** Returns the last set commandline. This is thread safe. */
-editable_line_t reader_get_last_commandline();
-
-/** Returns the last set selection. The bool return indicates if it is active, the size_ts are the selection range. This is thread safe. */
-bool reader_get_last_selection(size_t *start, size_t *len);
 
 /** Returns the current reader's history */
 history_t *reader_get_history(void);
@@ -297,5 +292,18 @@ bool reader_expand_abbreviation_in_command(const wcstring &cmdline, size_t curso
 
 /* Apply a completion string. Exposed for testing only. */
 wcstring completion_apply_to_command_line(const wcstring &val_str, complete_flags_t flags, const wcstring &command_line, size_t *inout_cursor_pos, bool append_only);
+
+/* Thread safe access to a "snapshot" of the reader */
+struct reader_snapshot_t
+{
+    editable_line_t command_line;
+    bool selection_is_active;
+    size_t selection_start;
+    size_t selection_length;
+    int search_mode;
+    bool has_pager_contents;
+};
+
+reader_snapshot_t reader_get_last_snapshot();
 
 #endif
