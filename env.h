@@ -190,6 +190,21 @@ class env_stack_t : public environment_t
     /** Generation count for exported variable changes. A value of EXPORT_GENERATION_INVALID means it's stale. */
     export_generation_t changed_exported_generation;
     
+    /** Backing for $PWD variable */
+    shared_ptr<working_directory_t> pwd;
+    
+    /** Gets the CWD */
+    const working_directory_t &cwd() const
+    {
+        if (! this->pwd.get())
+        {
+            fprintf(stderr, "Bad juju in %d for %p\n", getpid(), this);
+            while (1) sleep(100000);
+        }
+        assert(this->pwd.get() != NULL);
+        return *this->pwd;
+    }
+    
     /** Child stacks */
     explicit env_stack_t(const env_stack_t &parent);
     
@@ -256,6 +271,12 @@ class env_stack_t : public environment_t
     /** Returns all variable names. */
     wcstring_list_t get_names(env_mode_flags_t flags) const;
     
+    /** Sets PWD using the given fd and directory. Takes ownership of the fd. */
+    void set_pwd_with_fd(const wcstring &path, int fd);
+    
+    /** Sets PWD using the given directory. */
+    void set_pwd(const wcstring &path);
+    
     void update_export_array_if_necessary(bool recalc);
     const null_terminated_array_t<char> &get_export_array() const;
     
@@ -275,7 +296,7 @@ env_var_t env_get_from_principal(const wcstring &key, env_mode_flags_t mode = EN
 void env_universal_barrier();
 
 /** Update the PWD variable directory */
-int env_set_pwd();
+int env_set_pwd_from_cwd(env_stack_t *stack);
 
 /* Returns the PWD with a terminating slash */
 wcstring env_get_pwd_slash(const environment_t &vars);

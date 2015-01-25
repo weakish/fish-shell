@@ -190,13 +190,14 @@ wcstring parser_t::user_presentable_path(const wcstring &path) const
 }
 
 
-parser_t::parser_t(enum parser_type_t type, bool errors) :
+parser_t::parser_t(enum parser_type_t type, const wcstring &cwd, bool errors) :
     parser_type(type),
     expected_thread(),
     show_errors(errors),
     cancellation_requested(false),
     is_within_fish_initialization(false)
 {
+    this->vars().set_pwd(cwd);
 }
 
 parser_t::parser_t(const parser_t &parent) :
@@ -213,6 +214,13 @@ parser_t::parser_t(const parser_t &parent) :
     parent.assert_is_this_thread();
 }
 
+static wcstring get_cwd()
+{
+    wchar_t dir_path[4096];
+    wchar_t *res = wgetcwd(dir_path, 4096);
+    return res ? res : L"/";
+}
+
 /* A pointer to the principal parser (which is a static local) */
 static parser_t *s_principal_parser = NULL;
 
@@ -220,7 +228,7 @@ parser_t &parser_t::principal_parser(void)
 {
     ASSERT_IS_NOT_FORKED_CHILD();
     ASSERT_IS_MAIN_THREAD();
-    static parser_t parser(PARSER_TYPE_GENERAL, true);
+    static parser_t parser(PARSER_TYPE_GENERAL, get_cwd(), true);
     if (! s_principal_parser)
     {
         parser.expected_thread = pthread_self();
@@ -1441,7 +1449,7 @@ breakpoint_block_t::breakpoint_block_t() : block_t(BREAKPOINT)
 
 bool parser_use_threads()
 {
-    return false;
+    return true;
 }
 
 bool parser_concurrent_execution()

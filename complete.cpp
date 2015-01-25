@@ -359,11 +359,11 @@ class completer_t
 
 
 public:
-    completer_t(const wcstring &c, completion_request_flags_t f, const environment_t *v) :
+    completer_t(const wcstring &c, completion_request_flags_t f, const environment_t &v) :
         flags(f),
         initial_cmd(c),
-        vars(v),
-        completion_parser(PARSER_TYPE_GENERAL, true /* show errors */)
+        vars(&v),
+        completion_parser(PARSER_TYPE_GENERAL, v.get(L"PWD"), true /* show errors */)
     {
     }
 
@@ -395,6 +395,7 @@ public:
     void complete_from_args(const wcstring &str,
                             const wcstring &args,
                             const wcstring &desc,
+                            const wcstring &working_directory,
                             complete_flags_t flags);
 
     void complete_cmd_desc(const wcstring &str);
@@ -421,6 +422,11 @@ public:
             result |= EXPAND_FUZZY_MATCH;
 
         return result;
+    }
+    
+    const wcstring cwd() const
+    {
+        return this->parser().cwd().path();
     }
     
     parser_t &parser()
@@ -1005,13 +1011,14 @@ void completer_t::complete_cmd(const wcstring &str_cmd, bool use_function, bool 
 void completer_t::complete_from_args(const wcstring &str,
                                      const wcstring &args,
                                      const wcstring &desc,
+                                     const wcstring &wd,
                                      complete_flags_t flags)
 {
 
     std::vector<completion_t> possible_comp;
 
     bool is_autosuggest = (this->type() == COMPLETE_AUTOSUGGEST);
-    parser_t parser(is_autosuggest ? PARSER_TYPE_COMPLETIONS_ONLY : PARSER_TYPE_GENERAL, false /* don't show errors */);
+    parser_t parser(is_autosuggest ? PARSER_TYPE_COMPLETIONS_ONLY : PARSER_TYPE_GENERAL, wd, false /* don't show errors */);
 
     parser.push_is_interactive(0);
     parser.expand_argument_list(args, *vars, &possible_comp);
@@ -1206,7 +1213,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
                     {
                         if (o->result_mode & NO_COMMON) use_common = false;
                         if (o->result_mode & NO_FILES) use_files = false;
-                        complete_from_args(arg, o->comp, o->localized_desc(), o->flags);
+                        complete_from_args(arg, o->comp, o->localized_desc(), this->cwd(), o->flags);
                     }
 
                 }
@@ -1230,7 +1237,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
                             old_style_match = 1;
                             if (o->result_mode & NO_COMMON) use_common = false;
                             if (o->result_mode & NO_FILES) use_files = false;
-                            complete_from_args(str, o->comp, o->localized_desc(), o->flags);
+                            complete_from_args(str, o->comp, o->localized_desc(), this->cwd(), o->flags);
                         }
                     }
                 }
@@ -1257,7 +1264,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
                         {
                             if (o->result_mode & NO_COMMON) use_common = false;
                             if (o->result_mode & NO_FILES) use_files = false;
-                            complete_from_args(str, o->comp, o->localized_desc(), o->flags);
+                            complete_from_args(str, o->comp, o->localized_desc(), this->cwd(), o->flags);
 
                         }
                     }
@@ -1283,7 +1290,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
                 if ((o->short_opt == L'\0') && (o->long_opt[0]==L'\0'))
                 {
                     use_files = use_files && ((o->result_mode & NO_FILES)==0);
-                    complete_from_args(str, o->comp, o->localized_desc(), o->flags);
+                    complete_from_args(str, o->comp, o->localized_desc(), this->cwd(), o->flags);
                 }
 
                 if (wcslen(str) > 0 && use_switches)
@@ -1603,7 +1610,6 @@ bool completer_t::try_complete_user(const wcstring &str)
 
 void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps, const environment_t *vars, completion_request_flags_t flags)
 {
-    assert(vars != NULL);
     /* Determine the innermost subcommand */
     const wchar_t *cmdsubst_begin, *cmdsubst_end;
     parse_util_cmdsubst_extent(cmd_with_subcmds.c_str(), cmd_with_subcmds.size(), &cmdsubst_begin, &cmdsubst_end);
@@ -1611,7 +1617,8 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
     const wcstring cmd = wcstring(cmdsubst_begin, cmdsubst_end - cmdsubst_begin);
 
     /* Make our completer */
-    completer_t completer(cmd, flags, vars);
+    assert(vars != NULL);
+    completer_t completer(cmd, flags, *vars);
 
     wcstring current_command;
     const size_t pos = cmd.size();

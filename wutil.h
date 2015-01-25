@@ -41,13 +41,14 @@ bool set_cloexec(int fd);
 /** Wide character version of open() that also sets the close-on-exec flag (atomically when possible). */
 int wopen_cloexec(const wcstring &pathname, int flags, mode_t mode = 0);
 
+
 /** Mark an fd as nonblocking; returns errno or 0 on success */
 int make_fd_nonblocking(int fd);
 
 /** Mark an fd as blocking; returns errno or 0 on success */
 int make_fd_blocking(int fd);
 
-/** Wide character version of opendir(). Note that opendir() is guaranteed to set close-on-exec by POSIX (hooray). */
+/** Wide character version of opendir(). Requires that the path be absolute. Note that opendir() is guaranteed to set close-on-exec by POSIX (hooray). */
 DIR *wopendir(const wcstring &name);
 
 /**
@@ -90,10 +91,8 @@ const char *safe_strerror(int err);
 */
 wchar_t *wgetcwd(wchar_t *buff, size_t sz);
 
-/**
-   Wide character version of chdir()
-*/
-int wchdir(const wcstring &dir);
+/** Attempts to chdir to a directory. Returns an fd representing that directory (i.e. open("."), or -1 on failure */
+int wchdir_to(const wcstring &dir);
 
 /**
   Wide character version of realpath function. Just like the GNU

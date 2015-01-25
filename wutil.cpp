@@ -32,6 +32,7 @@
 
 #include "common.h"
 #include "wutil.h"
+#include "path.h"
 
 typedef std::string cstring;
 
@@ -157,12 +158,6 @@ wchar_t *wgetcwd(wchar_t *buff, size_t sz)
     return ret;
 }
 
-int wchdir(const wcstring &dir)
-{
-    cstring tmp = wcs2string(dir);
-    return chdir(tmp.c_str());
-}
-
 FILE *wfopen(const wcstring &path, const char *mode)
 {
     int permissions = 0, options = 0;
@@ -243,35 +238,41 @@ static int wopen_internal(const wcstring &pathname, int flags, mode_t mode, bool
 
 int wopen_cloexec(const wcstring &pathname, int flags, mode_t mode)
 {
+    ASSERT_PATH_IS_ABSOLUTE(pathname);
     return wopen_internal(pathname, flags, mode, true);
 }
 
 DIR *wopendir(const wcstring &name)
 {
+    ASSERT_PATH_IS_ABSOLUTE(name);
     const cstring tmp = wcs2string(name);
     return opendir(tmp.c_str());
 }
 
 int wstat(const wcstring &file_name, struct stat *buf)
 {
+    ASSERT_PATH_IS_ABSOLUTE(file_name);
     const cstring tmp = wcs2string(file_name);
     return stat(tmp.c_str(), buf);
 }
 
 int lwstat(const wcstring &file_name, struct stat *buf)
 {
+    ASSERT_PATH_IS_ABSOLUTE(file_name);
     const cstring tmp = wcs2string(file_name);
     return lstat(tmp.c_str(), buf);
 }
 
 int waccess(const wcstring &file_name, int mode)
 {
+    ASSERT_PATH_IS_ABSOLUTE(file_name);
     const cstring tmp = wcs2string(file_name);
     return access(tmp.c_str(), mode);
 }
 
 int wunlink(const wcstring &file_name)
 {
+    ASSERT_PATH_IS_ABSOLUTE(file_name);
     const cstring tmp = wcs2string(file_name);
     return unlink(tmp.c_str());
 }
@@ -432,6 +433,24 @@ wchar_t *wrealpath(const wcstring &pathname, wchar_t *resolved_path)
 
 #endif
 
+static pthread_mutex_t s_wchdir_lock = PTHREAD_MUTEX_INITIALIZER;
+
+int wchdir_to(const wcstring &dir)
+{
+    ASSERT_PATH_IS_ABSOLUTE(dir);
+    const cstring tmp = wcs2string(dir);
+    scoped_lock locker(s_wchdir_lock);
+    if (chdir(tmp.c_str()) < 0)
+    {
+        /* chdir failed */
+        return -1;
+    }
+    else
+    {
+        /* chdir succeeded. Open the current directory. */
+        return wopen_internal(L".", O_RDONLY, 0, true);
+    }
+}
 
 wcstring wdirname(const wcstring &path)
 {

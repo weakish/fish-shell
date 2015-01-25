@@ -543,7 +543,7 @@ bool autosuggest_validate_from_history(const history_item_t &item, file_detectio
                 {
                     suggestionOK = false;
                 }
-                else if (paths_are_same_file(working_directory, path))
+                else if (paths_are_same_file(working_directory, path, working_directory))
                 {
                     /* Don't suggest the working directory as the path! */
                     suggestionOK = false;
@@ -1158,6 +1158,7 @@ void highlighter_t::color_redirection(const parse_node_t &redirection_node)
             {
                 /* Ok, we successfully expanded our target. Now verify that it works with this redirection. We will probably need it as a path (but not in the case of fd redirections */
                 const wcstring target_path = apply_working_directory(target, this->working_directory);
+                ASSERT_PATH_IS_ABSOLUTE(target_path);
                 switch (redirect_type)
                 {
                     case TOK_REDIRECT_FD:

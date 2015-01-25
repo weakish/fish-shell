@@ -314,7 +314,7 @@ public:
     static void skip_all_blocks();
 
     /** Create a parser of the given type */
-    parser_t(enum parser_type_t type, bool show_errors);
+    parser_t(enum parser_type_t type, const wcstring &cwd, bool show_errors);
 
     /** Global event blocks */
     event_blockage_list_t global_event_blocks;
@@ -398,6 +398,12 @@ public:
     const env_stack_t &vars() const
     {
         return variable_stack;
+    }
+    
+    const working_directory_t &cwd() const
+    {
+        assert_is_this_thread();
+        return this->variable_stack.cwd();
     }
     
     /* Hackish. In order to correctly report the origin of code with no associated file, we need to know whether it's run during initialization or not. */

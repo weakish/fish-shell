@@ -52,13 +52,13 @@ bool path_get_path(const wcstring &cmd,
 
    \param dir The name of the directory.
    \param out_or_NULL If non-NULL, return the path to the resolved directory
-   \param wd The working directory, or NULL to use the default. The working directory should have a slash appended at the end.
+   \param wd The working directory. The working directory should have a slash appended at the end.
    \param vars The environment variable snapshot to use (for the CDPATH variable)
    \return 0 if the command can not be found, the path of the command otherwise. The path should be free'd with free().
 */
 bool path_get_cdpath(const wcstring &dir,
                      wcstring *out_or_NULL,
-                     const wchar_t *wd,
+                     const wcstring &wd,
                      const environment_t &vars);
 
 /** Returns whether the path can be used for an implicit cd command; if so, also returns the path by reference (if desired). This requires it to start with one of the allowed prefixes (., .., ~) and resolve to a directory. */
@@ -79,6 +79,12 @@ bool paths_are_equivalent(const wcstring &p1, const wcstring &p2);
 bool path_is_valid(const wcstring &path, const wcstring &working_directory);
 
 /** Returns whether the two paths refer to the same file */
-bool paths_are_same_file(const wcstring &path1, const wcstring &path2);
+bool paths_are_same_file(const wcstring &path1, const wcstring &path2, const wcstring &cwd);
+
+bool path_is_absolute(const wcstring &path);
+bool path_is_absolute(const wchar_t *path);
+
+/** Asserts that a path is absolute */
+#define ASSERT_PATH_IS_ABSOLUTE(x) do { assert(path_is_absolute((x))); } while (0)
 
 #endif

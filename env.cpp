@@ -158,7 +158,7 @@ env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), to
 }
 
 /* This creates a "child stack", not a copy. */
-env_stack_t::env_stack_t(const env_stack_t &parent) : global(parent.global), top(parent.top), boundary(parent.top), exit_status(parent.exit_status)
+env_stack_t::env_stack_t(const env_stack_t &parent) : global(parent.global), top(parent.top), boundary(parent.top), exit_status(parent.exit_status), pwd(parent.pwd)
 {
 }
 
@@ -436,8 +436,9 @@ static void setup_path()
     }
 }
 
-int env_set_pwd()
+int env_set_pwd_from_cwd(env_stack_t *stack)
 {
+    assert(stack != NULL);
     wchar_t dir_path[4096];
     wchar_t *res = wgetcwd(dir_path, 4096);
     if (!res)
@@ -446,6 +447,29 @@ int env_set_pwd()
     }
     env_set(L"PWD", dir_path, ENV_EXPORT | ENV_GLOBAL);
     return 1;
+}
+
+void env_stack_t::set_pwd_with_fd(const wcstring &path, int fd)
+{
+    assert(this->pwd.get() != NULL);
+    ASSERT_PATH_IS_ABSOLUTE(path);
+    wcstring path_canonical = path;
+    path_make_canonical(path_canonical);
+    this->pwd->change_to(fd, path_canonical);
+}
+
+void env_stack_t::set_pwd(const wcstring &path)
+{
+    wcstring path_canonical = path;
+    path_make_canonical(path_canonical);
+    if (this->pwd.get() == NULL)
+    {
+        this->pwd.reset(new working_directory_t(path));
+    }
+    else
+    {
+        this->pwd->change_to(path_canonical);
+    }
 }
 
 wcstring env_get_pwd_slash(const environment_t &vars)
@@ -595,7 +619,7 @@ void env_init(const struct config_paths_t *paths /* or NULL */)
     }
 
     /* Set PWD */
-    env_set_pwd();
+    env_set_pwd_from_cwd(vars);
 
     /* Set up universal variables. The empty string means to use the deafult path. */
     assert(s_universal_variables == NULL);
@@ -674,6 +698,27 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
     if ((var_mode & ENV_USER) && is_read_only(key))
     {
         return ENV_PERM;
+    }
+    
+    if (key == L"PWD")
+    {
+        assert(val != NULL);
+        fprintf(stderr, "setting PWD to %ls in %p\n", val, this);
+        if (this->pwd.get() == NULL)
+        {
+            // First setting must be absolute
+            ASSERT_PATH_IS_ABSOLUTE(val);
+        }
+        if (this->pwd.get() == NULL)
+        {
+            this->pwd.reset(new working_directory_t(val));
+            fprintf(stderr, "Set PWD to %ls\n", this->pwd.get()->path().c_str());
+        }
+        else
+        {
+            this->pwd->change_to(val);
+        }
+        return 0;
     }
     
     if (key == L"umask")
@@ -1036,6 +1081,19 @@ env_var_t env_stack_t::get(const wcstring &key, env_mode_flags_t mode) const
             return format_string(L"0%0.3o", get_umask());
         }
         // we should never get here unless the electric var list is out of sync
+    }
+    
+    if (key == L"PWD")
+    {
+        const working_directory_t *cwd = this->pwd.get();
+        if (cwd == NULL)
+        {
+            return env_var_t::missing_var();
+        }
+        else
+        {
+            return cwd->path();
+        }
     }
 
     if (search_local || search_global) {

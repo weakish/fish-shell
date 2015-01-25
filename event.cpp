@@ -528,7 +528,6 @@ static void event_fire_delayed(parser_t &parser)
     scoped_lock locker(s_event_handlers_lock);
     event_list_t queue;
     queue.swap(s_blocked_events);
-    locker.unlock();
     
     for (size_t i=0; i < queue.size(); i++)
     {
@@ -539,9 +538,12 @@ static void event_fire_delayed(parser_t &parser)
         }
         else
         {
+            locker.unlock();
             event_fire_internal(parser, *e);
+            locker.lock();
         }
     }
+    locker.unlock();
 
 #warning Need to synchronize access to signal list
     int al = active_list;

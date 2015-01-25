@@ -116,6 +116,13 @@ static void autoload_names(std::set<wcstring> &names, int get_hidden)
     for (i=0; i<path_list.size(); i++)
     {
         const wcstring &ndir_str = path_list.at(i);
+        
+        /* Skip elements that aren't absolute. Need to find a better way to handle this. */
+        if (! string_prefixes_string(L"/", ndir_str))
+        {
+            continue;
+        }
+        
         const wchar_t *ndir = (wchar_t *)ndir_str.c_str();
         DIR *dir = wopendir(ndir);
         if (!dir)

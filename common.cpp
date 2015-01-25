@@ -69,6 +69,7 @@ parts of fish.
 #include "wildcard.h"
 #include "parser.h"
 #include "complete.h"
+#include "path.h"
 
 #include "util.cpp"
 #include "fallback.cpp"
@@ -1875,6 +1876,7 @@ bool list_contains_string(const wcstring_list_t &list, const wcstring &str)
 
 int create_directory(const wcstring &d)
 {
+    ASSERT_PATH_IS_ABSOLUTE(d);
     int ok = 0;
     struct stat buf;
     int stat_res = 0;

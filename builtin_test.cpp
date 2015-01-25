@@ -10,6 +10,7 @@ Implemented from scratch (yes, really) by way of IEEE 1003.1 as reference.
 #include "builtin.h"
 #include "wutil.h"
 #include "proc.h"
+#include "parser.h"
 #include <sys/stat.h>
 #include <memory>
 
@@ -73,8 +74,8 @@ enum token_t
     test_paren_close,             // ")", close paren
 };
 
-static bool binary_primary_evaluate(test_expressions::token_t token, const wcstring &left, const wcstring &right, wcstring_list_t &errors);
-static bool unary_primary_evaluate(test_expressions::token_t token, const wcstring &arg, wcstring_list_t &errors);
+static bool binary_primary_evaluate(test_expressions::token_t token, const wcstring &left, const wcstring &right, wcstring_list_t &errors, const working_directory_t &cwd);
+static bool unary_primary_evaluate(test_expressions::token_t token, const wcstring &arg, wcstring_list_t &errors, const working_directory_t &cwd);
 
 
 enum
@@ -211,7 +212,7 @@ public:
     virtual ~expression() { }
 
     // evaluate returns true if the expression is true (i.e. BUILTIN_TEST_SUCCESS)
-    virtual bool evaluate(wcstring_list_t &errors) = 0;
+    virtual bool evaluate(wcstring_list_t &errors, const working_directory_t &cwd) = 0;
 };
 
 typedef std::auto_ptr<expression> expr_ref_t;
@@ -222,7 +223,7 @@ class unary_primary : public expression
 public:
     wcstring arg;
     unary_primary(token_t tok, range_t where, const wcstring &what) : expression(tok, where), arg(what) { }
-    bool evaluate(wcstring_list_t &errors);
+    bool evaluate(wcstring_list_t &errors, const working_directory_t &cwd);
 };
 
 /* Two argument primary like foo != bar */
@@ -234,7 +235,7 @@ public:
 
     binary_primary(token_t tok, range_t where, const wcstring &left, const wcstring &right) : expression(tok, where), arg_left(left), arg_right(right)
     { }
-    bool evaluate(wcstring_list_t &errors);
+    bool evaluate(wcstring_list_t &errors, const working_directory_t &cwd);
 };
 
 /* Unary operator like bang */
@@ -243,7 +244,7 @@ class unary_operator : public expression
 public:
     expr_ref_t subject;
     unary_operator(token_t tok, range_t where, expr_ref_t &exp) : expression(tok, where), subject(exp) { }
-    bool evaluate(wcstring_list_t &errors);
+    bool evaluate(wcstring_list_t &errors, const working_directory_t &cwd);
 };
 
 /* Combining expression. Contains a list of AND or OR expressions. It takes more than two so that we don't have to worry about precedence in the parser. */
@@ -268,7 +269,7 @@ public:
         }
     }
 
-    bool evaluate(wcstring_list_t &errors);
+    bool evaluate(wcstring_list_t &errors, const working_directory_t &cwd);
 };
 
 /* Parenthetical expression */
@@ -278,7 +279,7 @@ public:
     expr_ref_t contents;
     parenthetical_expression(token_t tok, range_t where, expr_ref_t &expr) : expression(tok, where), contents(expr) { }
 
-    virtual bool evaluate(wcstring_list_t &errors);
+    virtual bool evaluate(wcstring_list_t &errors, const working_directory_t &cwd);
 };
 
 void test_parser::add_error(const wchar_t *fmt, ...)
@@ -674,23 +675,23 @@ expression *test_parser::parse_args(const wcstring_list_t &args, wcstring &err)
     return result;
 }
 
-bool unary_primary::evaluate(wcstring_list_t &errors)
+bool unary_primary::evaluate(wcstring_list_t &errors, const working_directory_t &cwd)
 {
-    return unary_primary_evaluate(token, arg, errors);
+    return unary_primary_evaluate(token, arg, errors, cwd);
 }
 
-bool binary_primary::evaluate(wcstring_list_t &errors)
+bool binary_primary::evaluate(wcstring_list_t &errors, const working_directory_t &cwd)
 {
-    return binary_primary_evaluate(token, arg_left, arg_right, errors);
+    return binary_primary_evaluate(token, arg_left, arg_right, errors, cwd);
 }
 
-bool unary_operator::evaluate(wcstring_list_t &errors)
+bool unary_operator::evaluate(wcstring_list_t &errors, const working_directory_t &cwd)
 {
     switch (token)
     {
         case test_bang:
             assert(subject.get());
-            return ! subject->evaluate(errors);
+            return ! subject->evaluate(errors, cwd);
         default:
             errors.push_back(format_string(L"Unknown token type in %s", __func__));
             return false;
@@ -698,7 +699,7 @@ bool unary_operator::evaluate(wcstring_list_t &errors)
     }
 }
 
-bool combining_expression::evaluate(wcstring_list_t &errors)
+bool combining_expression::evaluate(wcstring_list_t &errors, const working_directory_t &cwd)
 {
     switch (token)
     {
@@ -707,7 +708,7 @@ bool combining_expression::evaluate(wcstring_list_t &errors)
         {
             /* One-element case */
             if (subjects.size() == 1)
-                return subjects.at(0)->evaluate(errors);
+                return subjects.at(0)->evaluate(errors, cwd);
 
             /* Evaluate our lists, remembering that AND has higher precedence than OR. We can visualize this as a sequence of OR expressions of AND expressions. */
             assert(combiners.size() + 1 == subjects.size());
@@ -728,7 +729,7 @@ bool combining_expression::evaluate(wcstring_list_t &errors)
                 for (; idx < max; idx++)
                 {
                     /* Evaluate it, short-circuiting */
-                    and_result = and_result && subjects.at(idx)->evaluate(errors);
+                    and_result = and_result && subjects.at(idx)->evaluate(errors, cwd);
 
                     /* If the combiner at this index (which corresponding to how we combine with the next subject) is not AND, then exit the loop */
                     if (idx + 1 < max && combiners.at(idx) != test_combine_and)
@@ -751,9 +752,9 @@ bool combining_expression::evaluate(wcstring_list_t &errors)
     }
 }
 
-bool parenthetical_expression::evaluate(wcstring_list_t &errors)
+bool parenthetical_expression::evaluate(wcstring_list_t &errors, const working_directory_t &cwd)
 {
-    return contents->evaluate(errors);
+    return contents->evaluate(errors, cwd);
 }
 
 /* IEEE 1003.1 says nothing about what it means for two strings to be "algebraically equal". For example, should we interpret 0x10 as 0, 10, or 16? Here we use only base 10 and use wcstoll, which allows for leading + and -, and leading whitespace. This matches bash. */
@@ -765,7 +766,7 @@ static bool parse_number(const wcstring &arg, long long *out)
     return endptr && *endptr == L'\0';
 }
 
-static bool binary_primary_evaluate(test_expressions::token_t token, const wcstring &left, const wcstring &right, wcstring_list_t &errors)
+static bool binary_primary_evaluate(test_expressions::token_t token, const wcstring &left, const wcstring &right, wcstring_list_t &errors, const working_directory_t &cwd)
 {
     using namespace test_expressions;
     long long left_num, right_num;
@@ -802,7 +803,7 @@ static bool binary_primary_evaluate(test_expressions::token_t token, const wcstr
 }
 
 
-static bool unary_primary_evaluate(test_expressions::token_t token, const wcstring &arg, wcstring_list_t &errors)
+static bool unary_primary_evaluate(test_expressions::token_t token, const wcstring &arg, wcstring_list_t &errors, const working_directory_t &cwd)
 {
     using namespace test_expressions;
     struct stat buf;
@@ -810,56 +811,56 @@ static bool unary_primary_evaluate(test_expressions::token_t token, const wcstri
     switch (token)
     {
         case test_filetype_b:            // "-b", for block special files
-            return !wstat(arg, &buf) && S_ISBLK(buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && S_ISBLK(buf.st_mode);
 
         case test_filetype_c:            // "-c", for character special files
-            return !wstat(arg, &buf) && S_ISCHR(buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && S_ISCHR(buf.st_mode);
 
         case test_filetype_d:            // "-d", for directories
-            return !wstat(arg, &buf) && S_ISDIR(buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && S_ISDIR(buf.st_mode);
 
         case test_filetype_e:            // "-e", for files that exist
-            return !wstat(arg, &buf);
+            return !wstat(cwd.resolve_if_relative(arg), &buf);
 
         case test_filetype_f:            // "-f", for for regular files
-            return !wstat(arg, &buf) && S_ISREG(buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && S_ISREG(buf.st_mode);
 
         case test_filetype_G:            // "-G", for check effective group id
-            return !wstat(arg, &buf) && getegid() == buf.st_gid;
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && getegid() == buf.st_gid;
 
         case test_filetype_g:            // "-g", for set-group-id
-            return !wstat(arg, &buf) && (S_ISGID & buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && (S_ISGID & buf.st_mode);
 
         case test_filetype_h:            // "-h", for symbolic links
         case test_filetype_L:            // "-L", same as -h
-            return !lwstat(arg, &buf) && S_ISLNK(buf.st_mode);
+            return !lwstat(cwd.resolve_if_relative(arg), &buf) && S_ISLNK(buf.st_mode);
 
         case test_filetype_O:            // "-O", for check effective user id
-            return !wstat(arg, &buf) && geteuid() == buf.st_uid;
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && geteuid() == buf.st_uid;
 
         case test_filetype_p:            // "-p", for FIFO
-            return !wstat(arg, &buf) && S_ISFIFO(buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && S_ISFIFO(buf.st_mode);
 
         case test_filetype_S:            // "-S", socket
-            return !wstat(arg, &buf) && S_ISSOCK(buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && S_ISSOCK(buf.st_mode);
 
         case test_filesize_s:            // "-s", size greater than zero
-            return !wstat(arg, &buf) && buf.st_size > 0;
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && buf.st_size > 0;
 
         case test_filedesc_t:            // "-t", whether the fd is associated with a terminal
             return parse_number(arg, &num) && num == (int)num && isatty((int)num);
 
         case test_fileperm_r:            // "-r", read permission
-            return !waccess(arg, R_OK);
+            return !waccess(cwd.resolve_if_relative(arg), R_OK);
 
         case test_fileperm_u:            // "-u", whether file is setuid
-            return !wstat(arg, &buf) && (S_ISUID & buf.st_mode);
+            return !wstat(cwd.resolve_if_relative(arg), &buf) && (S_ISUID & buf.st_mode);
 
         case test_fileperm_w:            // "-w", whether file write permission is allowed
-            return !waccess(arg, W_OK);
+            return !waccess(cwd.resolve_if_relative(arg), W_OK);
 
         case test_fileperm_x:            // "-x", whether file execute/search is allowed
-            return !waccess(arg, X_OK);
+            return !waccess(cwd.resolve_if_relative(arg), X_OK);
 
         case test_string_n:              // "-n", non-empty string
             return ! arg.empty();
@@ -952,7 +953,7 @@ int builtin_test(parser_t &parser, io_streams_t &streams, wchar_t **argv)
             else
             {
                 wcstring_list_t eval_errors;
-                bool result = expr->evaluate(eval_errors);
+                bool result = expr->evaluate(eval_errors, parser.cwd());
                 if (! eval_errors.empty())
                 {
                     printf("test returned eval errors:\n");

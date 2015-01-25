@@ -355,3 +355,83 @@ io_chain_t::io_chain_t() : std::vector<shared_ptr<io_data_t> >()
 {
 }
 
+wcstring resolve_if_relative(const wcstring &path, const wcstring &cwd)
+{
+    if (path.empty())
+    {
+        return path;
+    }
+    else if (path.at(0) == L'/')
+    {
+        /* absolute */
+        return path;
+    }
+    else
+    {
+        /* relative */
+        wcstring full_path = cwd;
+        append_path_component(full_path, path);
+        return full_path;
+    }
+}
+
+static pthread_mutex_t s_working_directory_lock = PTHREAD_MUTEX_INITIALIZER;;
+
+wcstring working_directory_t::path() const
+{
+    scoped_lock locker(s_working_directory_lock);
+    return this->cwd;
+}
+
+bool working_directory_t::valid() const
+{
+    scoped_lock locker(s_working_directory_lock);
+    return this->fd >= 0;
+}
+
+int working_directory_t::open_relative(const wcstring &path, int flags, mode_t mode) const
+{
+    /* TODO: can use openat() here */
+    if (path.empty())
+    {
+        errno = ENOENT;
+        return -1;
+    }
+    return wopen_cloexec(this->resolve_if_relative(path), flags, mode);
+}
+
+void working_directory_t::change_to(const wcstring &path)
+{
+    assert(! path.empty());
+    int new_fd = this->open_relative(path, O_RDONLY);
+    this->change_to(new_fd, path);
+}
+
+wcstring working_directory_t::resolve_if_relative(const wcstring &path) const
+{
+    return ::resolve_if_relative(path, this->path());
+}
+
+void working_directory_t::change_to(int new_fd, const wcstring &path)
+{
+    scoped_lock locker(s_working_directory_lock);
+    if (this->fd >= 0)
+    {
+        close(this->fd);
+    }
+    this->fd = new_fd;
+    this->cwd = path;
+}
+
+working_directory_t::~working_directory_t()
+{
+    if (this->fd >= 0)
+    {
+        close(this->fd);
+    }
+}
+
+working_directory_t::working_directory_t(const wcstring &path) : cwd(path), fd(wopen_cloexec(path, O_RDONLY))
+{
+}
+

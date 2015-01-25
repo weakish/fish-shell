@@ -3234,42 +3234,46 @@ static int builtin_cd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
 
         res = 1;
     }
-    else if (wchdir(dir) != 0)
+    else
     {
-        struct stat buffer;
-        int status;
-
-        status = wstat(dir, &buffer);
-        if (!status && S_ISDIR(buffer.st_mode))
+        const wcstring resolved_dir = parser.cwd().resolve_if_relative(dir);
+        int new_cwd_fd = wchdir_to(resolved_dir);
+        if (new_cwd_fd < 0)
         {
-            streams.stderr_stream.append_format(
-                          _(L"%ls: Permission denied: '%ls'\n"),
-                          argv[0],
-                          dir.c_str());
-
+            struct stat buffer;
+            int status;
+            
+            status = wstat(resolved_dir, &buffer);
+            if (!status && S_ISDIR(buffer.st_mode))
+            {
+                streams.stderr_stream.append_format(
+                                                    _(L"%ls: Permission denied: '%ls'\n"),
+                                                    argv[0],
+                                                    dir.c_str());
+                
+            }
+            else
+            {
+                
+                streams.stderr_stream.append_format(
+                                                    _(L"%ls: '%ls' is not a directory\n"),
+                                                    argv[0],
+                                                    dir.c_str());
+            }
+            
+            if (! parser.get_is_interactive())
+            {
+                streams.stderr_stream.append(parser.current_line());
+            }
+            
+            res = 1;
         }
         else
         {
-
-            streams.stderr_stream.append_format(
-                          _(L"%ls: '%ls' is not a directory\n"),
-                          argv[0],
-                          dir.c_str());
+            /* set_pwd_with_fd takes ownership of the fd */
+            parser.vars().set_pwd_with_fd(resolved_dir, new_cwd_fd);
         }
-
-        if (! parser.get_is_interactive())
-        {
-            streams.stderr_stream.append(parser.current_line());
-        }
-
-        res = 1;
     }
-    else if (!env_set_pwd())
-    {
-        res=1;
-        streams.stderr_stream.append_format(_(L"%ls: Could not set PWD variable\n"), argv[0]);
-    }
-
     return res;
 }
 
@@ -3396,7 +3400,7 @@ static int builtin_source(parser_t &parser, io_streams_t &streams, wchar_t **arg
     else
     {
 
-        if ((fd = wopen_cloexec(argv[1], O_RDONLY)) == -1)
+        if ((fd = parser.cwd().open_relative(argv[1], O_RDONLY)) == -1)
         {
             streams.stderr_stream.append_format(_(L"%ls: Error encountered while sourcing file '%ls':\n"), argv[0], argv[1]);
             builtin_wperror(streams, L"source");

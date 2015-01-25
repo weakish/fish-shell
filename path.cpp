@@ -23,19 +23,22 @@
 */
 #define MISSING_COMMAND_ERR_MSG _( L"Error while searching for command '%ls'" )
 
-static bool path_get_path_core(const wcstring &cmd, wcstring *out_path, const env_var_t &bin_path_var)
+static bool path_get_path_core(const wcstring &cmd, wcstring *out_path, const env_var_t &bin_path_var, const env_var_t &cwd)
 {
     int err = ENOENT;
 
     debug(3, L"path_get_path( '%ls' )", cmd.c_str());
+    
+    assert(! cwd.missing());
 
     /* If the command has a slash, it must be a full path */
     if (cmd.find(L'/') != wcstring::npos)
     {
-        if (waccess(cmd, X_OK)==0)
+        const wcstring abs_cmd = resolve_if_relative(cmd, cwd);
+        if (waccess(abs_cmd, X_OK)==0)
         {
             struct stat buff;
-            if (wstat(cmd, &buff))
+            if (wstat(abs_cmd, &buff))
             {
                 return false;
             }
@@ -43,7 +46,7 @@ static bool path_get_path_core(const wcstring &cmd, wcstring *out_path, const en
             if (S_ISREG(buff.st_mode))
             {
                 if (out_path)
-                    out_path->assign(cmd);
+                    out_path->assign(abs_cmd);
                 return true;
             }
             else
@@ -54,8 +57,6 @@ static bool path_get_path_core(const wcstring &cmd, wcstring *out_path, const en
         }
         else
         {
-            struct stat buff;
-            wstat(cmd, &buff);
             return false;
         }
 
@@ -86,6 +87,7 @@ static bool path_get_path_core(const wcstring &cmd, wcstring *out_path, const en
             if (nxt_path.empty())
                 continue;
             append_path_component(nxt_path, cmd);
+            nxt_path = resolve_if_relative(nxt_path, cwd);
             if (waccess(nxt_path, X_OK)==0)
             {
                 struct stat buff;
@@ -133,20 +135,17 @@ static bool path_get_path_core(const wcstring &cmd, wcstring *out_path, const en
 
 bool path_get_path(const wcstring &cmd, wcstring *out_path, const environment_t &vars)
 {
-    return path_get_path_core(cmd, out_path, vars.get(L"PATH"));
+    return path_get_path_core(cmd, out_path, vars.get(L"PATH"), vars.get(L"PWD"));
 }
 
-bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, const environment_t &vars)
+bool path_get_cdpath(const wcstring &dir, wcstring *out, const wcstring &wd, const environment_t &vars)
 {
     int err = ENOENT;
     if (dir.empty())
         return false;
 
-    if (wd)
-    {
-        size_t len = wcslen(wd);
-        assert(len > 0 && wd[len - 1] == L'/');
-    }
+    assert(! wd.empty());
+    assert(wd.at(wd.size() - 1) == L'/');
 
     wcstring_list_t paths;
     if (dir.at(0) == L'/')
@@ -159,10 +158,8 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
              dir == L"." || dir == L"..")
     {
         /* Path is relative to the working directory */
-        wcstring path;
-        if (wd)
-            path.append(wd);
-        path.append(dir);
+        wcstring path = wd;
+        append_path_component(path, dir);
         paths.push_back(path);
     }
     else
@@ -177,9 +174,9 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
         while (tokenizer.next(nxt_path))
         {
 
-            if (nxt_path == L"." && wd != NULL)
+            if (nxt_path == L".")
             {
-                // nxt_path is just '.', and we have a working directory, so use the wd instead
+                // nxt_path is just '.', so use the wd
                 // TODO: if nxt_path starts with ./ we need to replace the . with the wd
                 nxt_path = wd;
             }
@@ -200,8 +197,8 @@ bool path_get_cdpath(const wcstring &dir, wcstring *out, const wchar_t *wd, cons
     for (wcstring_list_t::const_iterator iter = paths.begin(); iter != paths.end(); ++iter)
     {
         struct stat buf;
-        const wcstring &dir = *iter;
-        if (wstat(dir, &buf) == 0)
+        const wcstring abs_dir = resolve_if_relative(*iter, wd);
+        if (wstat(abs_dir, &buf) == 0)
         {
             if (S_ISDIR(buf.st_mode))
             {
@@ -382,18 +379,21 @@ bool path_is_valid(const wcstring &path, const wcstring &working_directory)
     else
     {
         /* Simple check */
+        ASSERT_PATH_IS_ABSOLUTE(path);
         path_is_valid = (0 == waccess(path, F_OK));
     }
     return path_is_valid;
 }
 
-bool paths_are_same_file(const wcstring &path1, const wcstring &path2)
+bool paths_are_same_file(const wcstring &path1, const wcstring &path2, const wcstring &cwd)
 {
     if (paths_are_equivalent(path1, path2))
         return true;
 
+    const wcstring path1_abs = resolve_if_relative(path1, cwd);
+    const wcstring path2_abs = resolve_if_relative(path2, cwd);
     struct stat s1, s2;
-    if (wstat(path1, &s1) == 0 && wstat(path2, &s2) == 0)
+    if (wstat(path1_abs, &s1) == 0 && wstat(path2_abs, &s2) == 0)
     {
         return s1.st_ino == s2.st_ino && s1.st_dev == s2.st_dev;
     }
@@ -401,4 +401,14 @@ bool paths_are_same_file(const wcstring &path1, const wcstring &path2)
     {
         return false;
     }
+}
+
+bool path_is_absolute(const wcstring &path)
+{
+    return ! path.empty() && path.at(0) == L'/';
+}
+
+bool path_is_absolute(const wchar_t *path)
+{
+    return path[0] == L'/';
 }

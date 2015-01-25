@@ -79,12 +79,21 @@ static int env_set_from_builtin(io_streams_t &streams, env_stack_t *vars, const 
                 any_success = true;
                 continue;
             }
+            
+            /* Don't complain about relative paths */
+            if (! path_is_absolute(dir))
+            {
+                any_success = true;
+                continue;
+            }
+            
 
             bool show_perror = false;
             int show_hint = 0;
             bool error = false;
 
             struct stat buff;
+            ASSERT_PATH_IS_ABSOLUTE(dir);
             if (wstat(dir, &buff))
             {
                 error = true;

@@ -31,6 +31,7 @@ wildcards using **.
 #include "complete.h"
 #include "reader.h"
 #include "expand.h"
+#include "path.h"
 #include "exec.h"
 #include "parser.h"
 #include <map>
@@ -383,6 +384,13 @@ static wcstring make_path(const wcstring &base_dir, const wcstring &name)
     return base_dir + name;
 }
 
+static wcstring get_cwd()
+{
+    wchar_t dir_path[4096];
+    wchar_t *res = wgetcwd(dir_path, 4096);
+    return res ? res : L"/";
+}
+
 /**
    Return a description of a file based on its suffix. This function
    does not perform any caching, it directly calls the mimedb command
@@ -396,7 +404,7 @@ static wcstring complete_get_desc_suffix_internal(const wcstring &suff)
     wcstring_list_t lst;
     wcstring desc;
     
-    parser_t mimedb_parser(PARSER_TYPE_GENERAL, false);
+    parser_t mimedb_parser(PARSER_TYPE_GENERAL, get_cwd(), false);
     if (exec_subshell(mimedb_parser, cmd, lst, false /* do not apply exit status */) != -1)
     {
         if (! lst.empty())
@@ -495,6 +503,7 @@ static wcstring file_get_desc(const wcstring &filename,
                               struct stat buf,
                               int err)
 {
+    ASSERT_PATH_IS_ABSOLUTE(filename);
     const wchar_t *suffix;
 
     if (!lstat_res)
@@ -626,6 +635,7 @@ static void wildcard_completion_allocate(std::vector<completion_t> &list,
         const wchar_t *wc,
         expand_flags_t expand_flags)
 {
+    ASSERT_PATH_IS_ABSOLUTE(fullname);
     struct stat buf, lbuf;
     wcstring sb;
     wcstring munged_completion;
@@ -1066,6 +1076,8 @@ int wildcard_expand(const wchar_t *wc,
                     expand_flags_t flags,
                     std::vector<completion_t> &out)
 {
+    ASSERT_PATH_IS_ABSOLUTE(base_dir);
+    
     size_t c = out.size();
 
     /* Make a set of used completion strings so we can do fast membership tests inside wildcard_expand_internal. Otherwise wildcards like '**' are very slow, because we end up with an N^2 membership test.

@@ -290,4 +290,32 @@ struct io_streams_t
 /** Print debug information about the specified IO redirection chain to stderr. */
 void io_print(const io_chain_t &chain);
 
+wcstring resolve_if_relative(const wcstring &path, const wcstring &cwd);
+
+/** Special working directory support, that allows for multiple notions of cwd. This is mutable. */
+class working_directory_t
+{
+    wcstring cwd;
+    int fd;
+    
+public:
+    wcstring path() const;
+    bool valid() const;
+    ~working_directory_t();
+    working_directory_t(const wcstring &path);
+    
+    /* Changes to a new path, which may be relative to this path */
+    void change_to(const wcstring &path);
+    
+    /* Changes to a new path, which must be absolute. Takes ownership of the fd. */
+    void change_to(int fd, const wcstring &path);
+
+    /* If the given path is relative, resolves it against our path */
+    wcstring resolve_if_relative(const wcstring &path) const;
+
+    /* Opens a path. If the path is relative, it's made relative to this path. The returned fd is marked CLOEXEC. */
+    int open_relative(const wcstring &path, int flags, mode_t mode = 0) const;
+};
+
+
 #endif
