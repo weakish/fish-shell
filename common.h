@@ -1020,6 +1020,13 @@ void assert_is_not_forked_child(const char *who);
 /** Macro to help suppress potentially unused variable warnings */
 #define USE(var) (void)(var)
 
+bool path_is_absolute(const wcstring &path);
+bool path_is_absolute(const wchar_t *path);
+
+/** Asserts that a path is absolute */
+#define ASSERT_PATH_IS_ABSOLUTE(x) do { assert(path_is_absolute((x))); } while (0)
+
+
 extern "C" {
     __attribute__((noinline)) void debug_thread_error(void);
 }

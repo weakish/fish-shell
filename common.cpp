@@ -2418,3 +2418,13 @@ char **make_null_terminated_array(const std::vector<std::string> &lst)
 {
     return make_null_terminated_array_helper(lst);
 }
+
+bool path_is_absolute(const wcstring &path)
+{
+    return ! path.empty() && path.at(0) == L'/';
+}
+
+bool path_is_absolute(const wchar_t *path)
+{
+    return path[0] == L'/';
+}

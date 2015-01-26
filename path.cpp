@@ -402,13 +402,3 @@ bool paths_are_same_file(const wcstring &path1, const wcstring &path2, const wcs
         return false;
     }
 }
-
-bool path_is_absolute(const wcstring &path)
-{
-    return ! path.empty() && path.at(0) == L'/';
-}
-
-bool path_is_absolute(const wchar_t *path)
-{
-    return path[0] == L'/';
-}
