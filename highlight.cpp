@@ -201,6 +201,10 @@ bool is_potential_path(const wcstring &const_path, const environment_t &vars, co
 
         /* Keep a cache of which paths / filesystems are case sensitive */
         case_sensitivity_cache_t case_sensitivity_cache;
+        
+        /* Get the cwd */
+        const env_var_t cwd = vars.get(L"PWD");
+        assert(! cwd.missing());
 
         for (size_t wd_idx = 0; wd_idx < directories.size() && ! result; wd_idx++)
         {
@@ -239,7 +243,7 @@ bool is_potential_path(const wcstring &const_path, const environment_t &vars, co
                     if (out_path)
                         *out_path = clean_path;
                 }
-                else if ((dir = wopendir(dir_name)))
+                else if ((dir = wopendir(resolve_if_relative(dir_name, cwd))))
                 {
                     // We opened the dir_name; look for a string where the base name prefixes it
                     wcstring ent;
