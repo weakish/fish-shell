@@ -76,20 +76,27 @@ enum loop_status_t
     LOOP_CONTINUE, /**< Current loop block should be skipped */
 };
 
-/**
-   block_t represents a block of commands.
-*/
+/** block_t represents a block of commands. */
 class job_t;
+
+struct block_t;
+typedef shared_ptr<block_t> block_ref_t;
+
 struct block_t
 {
+    friend class parser_t;
 protected:
     /** Protected constructor. Use one of the subclasses below. */
     block_t(block_type_t t);
 
 private:
     const block_type_t block_type; /**< Type of block. */
+    
+    /* The parent block. Multiple blocks may share a single parent. */
+    block_ref_t parent;
 
 public:
+    
     block_type_t type() const
     {
         return this->block_type;
@@ -274,8 +281,8 @@ private:
     /** Variables in the execution stack */
     env_stack_t variable_stack;
 
-    /** The list of blocks, allocated with new. It's our responsibility to delete these */
-    std::vector<block_t *> block_stack;
+    /** The topmost of the list of blocks. */
+    block_ref_t block_stack_top;
 
     /** Gets a description of the block stack, for debugging */
     wcstring block_stack_description() const;
@@ -375,7 +382,12 @@ public:
     /** Count of blocks */
     size_t block_count() const
     {
-        return block_stack.size();
+        size_t count = 0;
+        for (const block_t *cursor = this->block_stack_top.get(); cursor != NULL; cursor = cursor->parent.get())
+        {
+            count++;
+        }
+        return count;
     }
 
     /** Get the list of jobs */

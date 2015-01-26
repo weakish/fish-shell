@@ -200,6 +200,7 @@ parser_t::parser_t(enum parser_type_t type, const wcstring &cwd, bool errors) :
     this->vars().set_pwd(cwd);
 }
 
+/* Black magic */
 parser_t::parser_t(const parser_t &parent) :
     parser_type(parent.parser_type),
     expected_thread(), // default means none
@@ -209,7 +210,8 @@ parser_t::parser_t(const parser_t &parent) :
     interactive_filenames(parent.interactive_filenames),
     substitution_comamnd_lines(parent.substitution_comamnd_lines),
     forbidden_function(parent.forbidden_function),
-    variable_stack(parent.variable_stack)
+    variable_stack(parent.variable_stack),
+    block_stack_top(parent.block_stack_top)
 {
     parent.assert_is_this_thread();
 }
@@ -280,6 +282,7 @@ void parser_t::skip_all_blocks(void)
 
 void parser_t::push_block(block_t *new_current)
 {
+    this->assert_is_this_thread();
     const enum block_type_t type = new_current->type();
     new_current->src_lineno = parser_t::get_lineno();
 
@@ -320,8 +323,9 @@ void parser_t::push_block(block_t *new_current)
 
     new_current->job = 0;
     new_current->loop_status=LOOP_NORMAL;
-
-    this->block_stack.push_back(new_current);
+    
+    new_current->parent = this->block_stack_top;
+    this->block_stack_top.reset(new_current); //takes ownership
 
     // Types TOP and SUBST are not considered blocks for the purposes of `status -b`
     if (type != TOP && type != SUBST)
@@ -340,7 +344,8 @@ void parser_t::push_block(block_t *new_current)
 
 void parser_t::pop_block()
 {
-    if (block_stack.empty())
+    this->assert_is_this_thread();
+    if (block_stack_top.get() == NULL)
     {
         debug(1,
               L"function %s called on empty block stack.",
@@ -349,19 +354,17 @@ void parser_t::pop_block()
         return;
     }
 
-    block_t *old = block_stack.back();
-    block_stack.pop_back();
+    const block_ref_t old = this->block_stack_top;
+    this->block_stack_top = this->block_stack_top->parent;
 
     if (old->wants_pop_env)
         this->vars().pop();
 
-    delete old;
-
     // Figure out if `status -b` should consider us to be in a block now
     int new_is_block=0;
-    for (std::vector<block_t*>::const_iterator it = block_stack.begin(), end = block_stack.end(); it != end; ++it)
+    for (const block_t *cursor = this->block_stack_top.get(); cursor != NULL; cursor = cursor->parent.get())
     {
-        const enum block_type_t type = (*it)->type();
+        const enum block_type_t type = cursor->type();
         if (type != TOP && type != SUBST)
         {
             new_is_block = 1;
@@ -412,25 +415,37 @@ wcstring parser_t::block_stack_description() const
 
 const block_t *parser_t::block_at_index(size_t idx) const
 {
-    /* 0 corresponds to the last element in our vector */
-    size_t count = block_stack.size();
-    return idx < count ? block_stack.at(count - idx - 1) : NULL;
+    /* Clumsy linked list walking! 0 corresponds to the top element */
+    size_t count = 0;
+    const block_t *cursor = this->block_stack_top.get();
+    while (cursor != NULL && count < idx)
+    {
+        cursor = cursor->parent.get();
+        count++;
+    }
+    return cursor;
 }
 
 block_t *parser_t::block_at_index(size_t idx)
 {
-    size_t count = block_stack.size();
-    return idx < count ? block_stack.at(count - idx - 1) : NULL;
+    size_t count = 0;
+    block_t *cursor = this->block_stack_top.get();
+    while (cursor != NULL && count < idx)
+    {
+        cursor = cursor->parent.get();
+        count++;
+    }
+    return cursor;
 }
 
 const block_t *parser_t::current_block() const
 {
-    return block_stack.empty() ? NULL : block_stack.back();
+    return this->block_stack_top.get();
 }
 
 block_t *parser_t::current_block()
 {
-    return block_stack.empty() ? NULL : block_stack.back();
+    return this->block_stack_top.get();
 }
 
 void parser_t::forbid_function(const wcstring &function)
@@ -1048,7 +1063,7 @@ int parser_t::eval_block_node(node_offset_t node_idx, const io_chain_t &io, enum
     /* Handle cancellation requests. If our block stack is currently empty, then we already did successfully cancel (or there was nothing to cancel); clear the flag. If our block stack is not empty, we are still in the process of cancelling; refuse to evaluate anything */
     if (this->cancellation_requested)
     {
-        if (! block_stack.empty())
+        if (this->block_stack_top.get() != NULL)
         {
             return 1;
         }
