@@ -3237,7 +3237,8 @@ static int builtin_cd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     else
     {
         const wcstring resolved_dir = parser.cwd().resolve_if_relative(dir);
-        int new_cwd_fd = wchdir_to(resolved_dir);
+        wcstring realpathed_dir;
+        int new_cwd_fd = wchdir_to(resolved_dir, &realpathed_dir);
         if (new_cwd_fd < 0)
         {
             struct stat buffer;
@@ -3271,7 +3272,7 @@ static int builtin_cd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
         else
         {
             /* set_pwd_with_fd takes ownership of the fd */
-            parser.vars().set_pwd_with_fd(resolved_dir, new_cwd_fd);
+            parser.vars().set_pwd_with_fd(realpathed_dir, new_cwd_fd);
         }
     }
     return res;

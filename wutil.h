@@ -91,8 +91,8 @@ const char *safe_strerror(int err);
 */
 wchar_t *wgetcwd(wchar_t *buff, size_t sz);
 
-/** Attempts to chdir to a directory. Returns an fd representing that directory (i.e. open("."), or -1 on failure */
-int wchdir_to(const wcstring &dir);
+/** Attempts to chdir to a directory. Returns an fd representing that directory (i.e. open("."), or -1 on failure. If out_realpath is not NULL, it is set to the real path (e.g. resolving symlinks). */
+int wchdir_to(const wcstring &dir, wcstring *out_realpath = NULL);
 
 /**
   Wide character version of realpath function. Just like the GNU

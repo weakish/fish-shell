@@ -435,7 +435,7 @@ wchar_t *wrealpath(const wcstring &pathname, wchar_t *resolved_path)
 
 static pthread_mutex_t s_wchdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
-int wchdir_to(const wcstring &dir)
+int wchdir_to(const wcstring &dir, wcstring *out_realpath)
 {
     ASSERT_PATH_IS_ABSOLUTE(dir);
     const cstring tmp = wcs2string(dir);
@@ -447,8 +447,23 @@ int wchdir_to(const wcstring &dir)
     }
     else
     {
-        /* chdir succeeded. Open the current directory. */
-        return wopen_internal(L".", O_RDONLY, 0, true);
+        /* chdir succeeded. Get the real path if requested, then open the current directory. */
+        bool failed = false;
+        if (out_realpath != NULL)
+        {
+            wchar_t cwd_buffer[PATH_MAX];
+            wchar_t *cwd = wgetcwd(cwd_buffer, PATH_MAX);
+            if (cwd == NULL)
+            {
+                /* Bad juju */
+                failed = true;
+            }
+            else
+            {
+                out_realpath->assign(cwd);
+            }
+        }
+        return failed ? -1 : wopen_internal(L".", O_RDONLY, 0, true);
     }
 }
 
