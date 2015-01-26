@@ -703,7 +703,6 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
     if (key == L"PWD")
     {
         assert(val != NULL);
-        fprintf(stderr, "setting PWD to %ls in %p\n", val, this);
         if (this->pwd.get() == NULL)
         {
             // First setting must be absolute
@@ -712,7 +711,7 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
         if (this->pwd.get() == NULL)
         {
             this->pwd.reset(new working_directory_t(val));
-            fprintf(stderr, "Set PWD to %ls\n", this->pwd.get()->path().c_str());
+            //fprintf(stderr, "Set PWD to %ls\n", this->pwd.get()->path().c_str());
         }
         else
         {

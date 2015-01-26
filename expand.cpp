@@ -1767,6 +1767,9 @@ static int expand_string_internal(const wcstring &input, parser_t *parser_or_nul
     // If we are going to do cmdsub expansion, we must have a parser
     assert(parser_or_null != NULL || (flags & EXPAND_SKIP_CMDSUBST));
     
+    const env_var_t cwd = vars.get(L"PWD");
+    assert(! cwd.missing());
+    
     size_t i;
     int res = EXPAND_OK;
 
@@ -1905,7 +1908,7 @@ static int expand_string_internal(const wcstring &input, parser_t *parser_or_nul
             }
 
             std::vector<completion_t> expanded;
-            wc_res = wildcard_expand_string(rest, start, flags, expanded);
+            wc_res = wildcard_expand_string(rest, start, cwd, flags, expanded);
             if (flags & ACCEPT_INCOMPLETE)
             {
                 out->insert(out->end(), expanded.begin(), expanded.end());

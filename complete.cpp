@@ -1618,6 +1618,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
 
     /* Make our completer */
     assert(vars != NULL);
+    assert(! vars->get(L"PWD").missing_or_empty());
     completer_t completer(cmd, flags, *vars);
 
     wcstring current_command;

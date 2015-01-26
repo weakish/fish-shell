@@ -627,15 +627,16 @@ static wcstring file_get_desc(const wcstring &filename,
    \param fullname the full filename of the file
    \param completion the completion part of the file name
    \param wc the wildcard to match against
+   \param cwd The current working directory
    \param is_cmd whether we are performing command completion
 */
 static void wildcard_completion_allocate(std::vector<completion_t> &list,
         const wcstring &fullname,
         const wcstring &completion,
         const wchar_t *wc,
+        const wcstring &cwd,
         expand_flags_t expand_flags)
 {
-    ASSERT_PATH_IS_ABSOLUTE(fullname);
     struct stat buf, lbuf;
     wcstring sb;
     wcstring munged_completion;
@@ -645,6 +646,8 @@ static void wildcard_completion_allocate(std::vector<completion_t> &list,
     int stat_errno=0;
 
     long long sz;
+    
+    const wcstring abs_fullname = resolve_if_relative(fullname, cwd);
 
     /*
       If the file is a symlink, we need to stat both the file itself
@@ -652,7 +655,7 @@ static void wildcard_completion_allocate(std::vector<completion_t> &list,
       non-symlinks by first doing an lstat, and if the file is not a
       link we copy the results over to the regular stat buffer.
     */
-    if ((lstat_res = lwstat(fullname, &lbuf)))
+    if ((lstat_res = lwstat(abs_fullname, &lbuf)))
     {
         /* lstat failed! */
         sz=-1;
@@ -663,7 +666,7 @@ static void wildcard_completion_allocate(std::vector<completion_t> &list,
         if (S_ISLNK(lbuf.st_mode))
         {
 
-            if ((stat_res = wstat(fullname, &buf)))
+            if ((stat_res = wstat(abs_fullname, &buf)))
             {
                 sz=-1;
             }
@@ -722,12 +725,13 @@ static void wildcard_completion_allocate(std::vector<completion_t> &list,
   expansion flags specified. flags can be a combination of
   EXECUTABLES_ONLY and DIRECTORIES_ONLY.
 */
-static bool test_flags(const wchar_t *filename, expand_flags_t flags)
+static bool test_flags(const wchar_t *filename, const wcstring &cwd, expand_flags_t flags)
 {
+    const wcstring abs_filename = resolve_if_relative(filename, cwd);
     if (flags & DIRECTORIES_ONLY)
     {
         struct stat buf;
-        if (wstat(filename, &buf) == -1)
+        if (wstat(abs_filename, &buf) == -1)
         {
             return false;
         }
@@ -741,10 +745,10 @@ static bool test_flags(const wchar_t *filename, expand_flags_t flags)
 
     if (flags & EXECUTABLES_ONLY)
     {
-        if (waccess(filename, X_OK) != 0)
+        if (waccess(abs_filename, X_OK) != 0)
             return false;
         struct stat buf;
-        if (wstat(filename, &buf) == -1)
+        if (wstat(abs_filename, &buf) == -1)
         {
             return false;
         }
@@ -779,6 +783,7 @@ static void insert_completion_if_missing(const wcstring &str, std::vector<comple
  */
 static int wildcard_expand_internal(const wchar_t *wc,
                                     const wchar_t * const base_dir,
+                                    const wcstring &cwd,
                                     expand_flags_t flags,
                                     std::vector<completion_t> &out,
                                     std::set<wcstring> &completion_set,
@@ -823,7 +828,7 @@ static int wildcard_expand_internal(const wchar_t *wc,
         {
             wchar_t * foo = wcsdup(wc);
             foo[len-1]=0;
-            int res = wildcard_expand_internal(foo, base_dir, flags, out, completion_set, visited_files);
+            int res = wildcard_expand_internal(foo, base_dir, cwd, flags, out, completion_set, visited_files);
             free(foo);
             return res;
         }
@@ -833,7 +838,7 @@ static int wildcard_expand_internal(const wchar_t *wc,
 
     dir_string = (base_dir[0] == L'\0') ? L"." : base_dir;
 
-    if (!(dir = wopendir(dir_string)))
+    if (!(dir = wopendir(resolve_if_relative(dir_string, cwd))))
     {
         return 0;
     }
@@ -872,9 +877,9 @@ static int wildcard_expand_internal(const wchar_t *wc,
                     {
                         wcstring long_name = make_path(base_dir, next);
 
-                        if (test_flags(long_name.c_str(), flags))
+                        if (test_flags(long_name.c_str(), cwd, flags))
                         {
-                            wildcard_completion_allocate(out, long_name, next, L"", flags);
+                            wildcard_completion_allocate(out, long_name, next, L"", cwd, flags);
                         }
                     }
                 }
@@ -900,9 +905,9 @@ static int wildcard_expand_internal(const wchar_t *wc,
                     std::vector<completion_t> test;
                     if (wildcard_complete(name_str, wc, L"", NULL, test, flags & EXPAND_FUZZY_MATCH, 0))
                     {
-                        if (test_flags(long_name.c_str(), flags))
+                        if (test_flags(long_name.c_str(), cwd, flags))
                         {
-                            wildcard_completion_allocate(out, long_name, name_str, wc, flags);
+                            wildcard_completion_allocate(out, long_name, name_str, wc, cwd, flags);
 
                         }
                     }
@@ -922,7 +927,7 @@ static int wildcard_expand_internal(const wchar_t *wc,
                               will be added in the next pass.
                             */
                             struct stat buf;
-                            if (!wstat(long_name, &buf))
+                            if (!wstat(resolve_if_relative(long_name, cwd), &buf))
                             {
                                 skip = S_ISDIR(buf.st_mode);
                             }
@@ -993,7 +998,7 @@ static int wildcard_expand_internal(const wchar_t *wc,
                 // Replace everything after base_dir with the new path component
                 new_dir.replace(base_dir_len, wcstring::npos, name_str);
 
-                int stat_res = wstat(new_dir, &buf);
+                int stat_res = wstat(resolve_if_relative(new_dir, wc), &buf);
 
                 if (!stat_res)
                 {
@@ -1025,6 +1030,7 @@ static int wildcard_expand_internal(const wchar_t *wc,
 
                             new_res = wildcard_expand_internal(new_wc,
                                                                new_dir.c_str(),
+                                                               cwd,
                                                                flags,
                                                                out,
                                                                completion_set,
@@ -1047,6 +1053,7 @@ static int wildcard_expand_internal(const wchar_t *wc,
 
                             new_res = wildcard_expand_internal(wcschr(wc, ANY_STRING_RECURSIVE),
                                                                new_dir.c_str(),
+                                                               cwd,
                                                                flags | WILDCARD_RECURSIVE,
                                                                out,
                                                                completion_set,
@@ -1071,13 +1078,8 @@ static int wildcard_expand_internal(const wchar_t *wc,
 }
 
 
-int wildcard_expand(const wchar_t *wc,
-                    const wchar_t *base_dir,
-                    expand_flags_t flags,
-                    std::vector<completion_t> &out)
+int wildcard_expand(const wchar_t *wc, const wchar_t *base_dir, const wcstring &cwd, expand_flags_t flags, std::vector<completion_t> &out)
 {
-    ASSERT_PATH_IS_ABSOLUTE(base_dir);
-    
     size_t c = out.size();
 
     /* Make a set of used completion strings so we can do fast membership tests inside wildcard_expand_internal. Otherwise wildcards like '**' are very slow, because we end up with an N^2 membership test.
@@ -1089,7 +1091,7 @@ int wildcard_expand(const wchar_t *wc,
     }
 
     std::set<file_id_t> visited_files;
-    int res = wildcard_expand_internal(wc, base_dir, flags, out, completion_set, visited_files);
+    int res = wildcard_expand_internal(wc, base_dir, cwd, flags, out, completion_set, visited_files);
 
     if (flags & ACCEPT_INCOMPLETE)
     {
@@ -1113,7 +1115,7 @@ int wildcard_expand(const wchar_t *wc,
     return res;
 }
 
-int wildcard_expand_string(const wcstring &wc, const wcstring &base_dir, expand_flags_t flags, std::vector<completion_t> &outputs)
+int wildcard_expand_string(const wcstring &wc, const wcstring &base_dir, const wcstring &cwd, expand_flags_t flags, std::vector<completion_t> &outputs)
 {
     /* Hackish fix for 1631. We are about to call c_str(), which will produce a string truncated at any embedded nulls. We could fix this by passing around the size, etc. However embedded nulls are never allowed in a filename, so we just check for them and return 0 (no matches) if there is an embedded null. This isn't quite right, e.g. it will fail for \0?, but that is an edge case. */
     if (wc.find(L'\0') != wcstring::npos)
@@ -1122,7 +1124,7 @@ int wildcard_expand_string(const wcstring &wc, const wcstring &base_dir, expand_
     }
     // PCA: not convinced this temporary variable is really necessary
     std::vector<completion_t> lst;
-    int res = wildcard_expand(wc.c_str(), base_dir.c_str(), flags, lst);
+    int res = wildcard_expand(wc.c_str(), base_dir.c_str(), cwd, flags, lst);
     outputs.insert(outputs.end(), lst.begin(), lst.end());
     return res;
 }

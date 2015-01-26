@@ -190,6 +190,11 @@ static wcstring get_cwd()
     return res ? res : L"/";
 }
 
+static void set_cwd(env_stack_t *env)
+{
+    env->set(L"PWD", get_cwd().c_str(), 0);
+}
+
 #define do_test(e) do { if (! (e)) err(L"Test failed on line %lu: %s", __LINE__, #e); } while (0)
 
 /* Test sane escapes */
@@ -2018,6 +2023,7 @@ static void test_complete(void)
     {
         vars.set(name_strs[i], L"ABC", ENV_LOCAL);
     }
+    set_cwd(&vars);
 
     std::vector<completion_t> completions;
     complete(L"$QF", completions, &vars, COMPLETION_REQUEST_DEFAULT);
@@ -2099,6 +2105,7 @@ static void test_complete(void)
     if (system("mkdir -p '/tmp/complete_test/'")) err(L"mkdir failed");
     if (system("touch '/tmp/complete_test/testfile'")) err(L"touch failed");
     if (chdir("/tmp/complete_test/")) err(L"chdir failed");
+    set_cwd(&vars);
     complete(L"cat te", completions, &vars, COMPLETION_REQUEST_DEFAULT);
     do_test(completions.size() == 1);
     do_test(completions.at(0).completion == L"stfile");
@@ -2285,6 +2292,7 @@ static void perform_one_autosuggestion_should_ignore_test(const wcstring &comman
 {
     completion_list_t comps;
     env_stack_t vars;
+    set_cwd(&vars);
     complete(command, comps, &vars, COMPLETION_REQUEST_AUTOSUGGESTION);
     do_test(comps.empty());
     if (! comps.empty())
@@ -2349,6 +2357,7 @@ void perf_complete()
     t1 = get_time();
 
     env_stack_t vars;
+    set_cwd(&vars);
 
     for (c=L'a'; c<=L'z'; c++)
     {
