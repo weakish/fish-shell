@@ -497,13 +497,14 @@ static wcstring complete_get_desc_suffix(const wchar_t *suff_orig)
 */
 
 static wcstring file_get_desc(const wcstring &filename,
+                              const wcstring &cwd,
                               int lstat_res,
                               struct stat lbuf,
                               int stat_res,
                               struct stat buf,
                               int err)
 {
-    ASSERT_PATH_IS_ABSOLUTE(filename);
+    const wcstring abs_filename = resolve_if_relative(filename, cwd);
     const wchar_t *suffix;
 
     if (!lstat_res)
@@ -524,7 +525,7 @@ static wcstring file_get_desc(const wcstring &filename,
                             (buf.st_mode & S_IXOTH))
                     {
 
-                        if (waccess(filename, X_OK) == 0)
+                        if (waccess(abs_filename, X_OK) == 0)
                         {
                             /*
                               Weird group permissions and other such
@@ -590,7 +591,7 @@ static wcstring file_get_desc(const wcstring &filename,
                     (buf.st_mode & S_IXOTH))
             {
 
-                if (waccess(filename, X_OK) == 0)
+                if (waccess(abs_filename, X_OK) == 0)
                 {
                     /*
                       Weird group permissions and other such issues
@@ -693,7 +694,7 @@ static void wildcard_completion_allocate(std::vector<completion_t> &list,
     bool wants_desc = !(expand_flags & EXPAND_NO_DESCRIPTIONS);
     wcstring desc;
     if (wants_desc)
-        desc = file_get_desc(fullname, lstat_res, lbuf, stat_res, buf, stat_errno);
+        desc = file_get_desc(fullname, cwd, lstat_res, lbuf, stat_res, buf, stat_errno);
 
     if (sz >= 0 && S_ISDIR(buf.st_mode))
     {
