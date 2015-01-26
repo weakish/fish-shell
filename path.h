@@ -64,7 +64,7 @@ bool path_get_cdpath(const wcstring &dir,
 /** Returns whether the path can be used for an implicit cd command; if so, also returns the path by reference (if desired). This requires it to start with one of the allowed prefixes (., .., ~) and resolve to a directory. */
 bool path_can_be_implicit_cd(const wcstring &path,
                              wcstring *out_path,
-                             const wchar_t *wd,
+                             const wcstring &wd,
                              const environment_t &vars);
 
 /**

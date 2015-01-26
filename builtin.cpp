@@ -3190,7 +3190,7 @@ static int builtin_cd(parser_t &parser, io_streams_t &streams, wchar_t **argv)
     bool got_cd_path = false;
     if (! dir_in.missing())
     {
-        got_cd_path = path_get_cdpath(dir_in, &dir, NULL, parser.vars());
+        got_cd_path = path_get_cdpath(dir_in, &dir, parser.vars().get(L"PWD"), parser.vars());
     }
 
     if (!got_cd_path)

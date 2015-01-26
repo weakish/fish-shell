@@ -1317,7 +1317,7 @@ static bool command_is_valid(const wcstring &cmd, enum parse_statement_decoratio
 
     /* Implicit cd */
     if (! is_valid && implicit_cd_ok)
-        is_valid = path_can_be_implicit_cd(cmd, NULL, working_directory.c_str(), vars);
+        is_valid = path_can_be_implicit_cd(cmd, NULL, working_directory, vars);
 
     /* Return what we got */
     return is_valid;
