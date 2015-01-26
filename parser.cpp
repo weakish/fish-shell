@@ -213,6 +213,7 @@ parser_t::parser_t(const parser_t &parent) :
     variable_stack(parent.variable_stack),
     block_stack_top(parent.block_stack_top)
 {
+    // TODO: 
     parent.assert_is_this_thread();
 }
 

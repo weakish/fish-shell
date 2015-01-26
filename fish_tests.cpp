@@ -183,6 +183,13 @@ static wcstring comma_join(const wcstring_list_t &lst)
     return result;
 }
 
+static wcstring get_cwd()
+{
+    wchar_t dir_path[4096];
+    wchar_t *res = wgetcwd(dir_path, 4096);
+    return res ? res : L"/";
+}
+
 #define do_test(e) do { if (! (e)) err(L"Test failed on line %lu: %s", __LINE__, #e); } while (0)
 
 /* Test sane escapes */
@@ -612,7 +619,7 @@ static void test_parser()
 {
     say(L"Testing parser");
 
-    parser_t parser(PARSER_TYPE_GENERAL, true);
+    parser_t parser(PARSER_TYPE_GENERAL, get_cwd(), true);
 
     say(L"Testing block nesting");
     if (!parse_util_detect_errors(L"if; end"))
@@ -784,8 +791,7 @@ static void test_parser()
 
     /* Ensure that we don't crash on infinite self recursion and mutual recursion. These must use the principal parser because we cannot yet execute jobs on other parsers (!) */
     say(L"Testing recursion detection");
-#warning Need to reenable recursion detection
-    //parser_t::principal_parser().eval(L"function recursive ; recursive ; end ; recursive; ", io_chain_t(), TOP);
+    parser_t::principal_parser().eval(L"function recursive ; recursive ; end ; recursive; ", io_chain_t(), TOP);
 #if 0
     /* This is disabled since it produces a long backtrace. We should find a way to either visually compress the backtrace, or disable error spewing */
     parser_t::principal_parser().eval(L"function recursive1 ; recursive2 ; end ; function recursive2 ; recursive1 ; end ; recursive1; ", io_chain_t(), TOP);
@@ -1863,7 +1869,7 @@ static void test_is_potential_path()
 int builtin_test(parser_t &parser, io_streams_t &streams, wchar_t **argv);
 static bool run_one_test_test(int expected, wcstring_list_t &lst, bool bracket)
 {
-    parser_t parser(PARSER_TYPE_GENERAL, true);
+    parser_t parser(PARSER_TYPE_GENERAL, get_cwd(), true);
     io_streams_t streams;
     size_t i, count = lst.size();
     wchar_t **argv = new wchar_t *[count+3];
@@ -1902,7 +1908,7 @@ static bool run_test_test(int expected, const wcstring &str)
 static void test_test_brackets()
 {
     // Ensure [ knows it needs a ]
-    parser_t parser(PARSER_TYPE_GENERAL, true);
+    parser_t parser(PARSER_TYPE_GENERAL, get_cwd(), true);
     io_streams_t streams;
 
     const wchar_t *argv1[] = {L"[", L"foo", NULL};
