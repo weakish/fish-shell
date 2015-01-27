@@ -21,10 +21,10 @@ Test 4 pass
 0
 Test 5 pass
 Test redirections
-errput
 output
 errput
 output
+errput
 is_stdout
 abc\ndef
 abc
