@@ -2428,3 +2428,13 @@ bool path_is_absolute(const wchar_t *path)
 {
     return path[0] == L'/';
 }
+
+bool path_is_absolute_or_empty(const wcstring &path)
+{
+    return path.empty() || path.at(0) == L'/';
+}
+
+bool path_is_absolute_or_empty(const wchar_t *path)
+{
+    return path[0] == L'/' || path[0] == L'\0';
+}

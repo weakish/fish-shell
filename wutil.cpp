@@ -238,41 +238,41 @@ static int wopen_internal(const wcstring &pathname, int flags, mode_t mode, bool
 
 int wopen_cloexec(const wcstring &pathname, int flags, mode_t mode)
 {
-    ASSERT_PATH_IS_ABSOLUTE(pathname);
+    ASSERT_PATH_IS_ABSOLUTE_OR_EMPTY(pathname);
     return wopen_internal(pathname, flags, mode, true);
 }
 
 DIR *wopendir(const wcstring &name)
 {
-    ASSERT_PATH_IS_ABSOLUTE(name);
+    ASSERT_PATH_IS_ABSOLUTE_OR_EMPTY(name);
     const cstring tmp = wcs2string(name);
     return opendir(tmp.c_str());
 }
 
 int wstat(const wcstring &file_name, struct stat *buf)
 {
-    ASSERT_PATH_IS_ABSOLUTE(file_name);
+    ASSERT_PATH_IS_ABSOLUTE_OR_EMPTY(file_name);
     const cstring tmp = wcs2string(file_name);
     return stat(tmp.c_str(), buf);
 }
 
 int lwstat(const wcstring &file_name, struct stat *buf)
 {
-    ASSERT_PATH_IS_ABSOLUTE(file_name);
+    ASSERT_PATH_IS_ABSOLUTE_OR_EMPTY(file_name);
     const cstring tmp = wcs2string(file_name);
     return lstat(tmp.c_str(), buf);
 }
 
 int waccess(const wcstring &file_name, int mode)
 {
-    ASSERT_PATH_IS_ABSOLUTE(file_name);
+    ASSERT_PATH_IS_ABSOLUTE_OR_EMPTY(file_name);
     const cstring tmp = wcs2string(file_name);
     return access(tmp.c_str(), mode);
 }
 
 int wunlink(const wcstring &file_name)
 {
-    ASSERT_PATH_IS_ABSOLUTE(file_name);
+    ASSERT_PATH_IS_ABSOLUTE_OR_EMPTY(file_name);
     const cstring tmp = wcs2string(file_name);
     return unlink(tmp.c_str());
 }
@@ -437,7 +437,7 @@ static pthread_mutex_t s_wchdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int wchdir_to(const wcstring &dir, wcstring *out_realpath)
 {
-    ASSERT_PATH_IS_ABSOLUTE(dir);
+    ASSERT_PATH_IS_ABSOLUTE_OR_EMPTY(dir);
     const cstring tmp = wcs2string(dir);
     scoped_lock locker(s_wchdir_lock);
     if (chdir(tmp.c_str()) < 0)
