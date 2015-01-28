@@ -2417,15 +2417,28 @@ static reader_snapshot_t s_last_snapshot;
 static void reader_save_last_snapshot(const reader_data_t *data)
 {
     ASSERT_IS_MAIN_THREAD();
-    const size_t sel_length = std::min(data->sel_stop_pos - data->sel_start_pos + 1, data->command_line.size());
-
     scoped_lock locker(s_last_snapshot_lock);
-    s_last_snapshot.command_line = data->command_line;
-    s_last_snapshot.selection_is_active = data->sel_active;
-    s_last_snapshot.selection_start = data->sel_start_pos;
-    s_last_snapshot.selection_length = sel_length;
-    s_last_snapshot.search_mode = data->search_mode;
-    s_last_snapshot.has_pager_contents = ! data->current_page_rendering.screen_data.empty();
+    if (data == NULL)
+    {
+        s_last_snapshot.command_line.clear();
+        s_last_snapshot.selection_is_active = false;
+        s_last_snapshot.selection_start = 0;
+        s_last_snapshot.selection_length = 0;
+        s_last_snapshot.search_mode = 0;
+        s_last_snapshot.has_pager_contents = false;
+        s_last_snapshot.history_name.clear();
+    }
+    else
+    {
+        const size_t sel_length = std::min(data->sel_stop_pos - data->sel_start_pos + 1, data->command_line.size());
+        s_last_snapshot.command_line = data->command_line;
+        s_last_snapshot.selection_is_active = data->sel_active;
+        s_last_snapshot.selection_start = data->sel_start_pos;
+        s_last_snapshot.selection_length = sel_length;
+        s_last_snapshot.search_mode = data->search_mode;
+        s_last_snapshot.has_pager_contents = ! data->current_page_rendering.screen_data.empty();
+        s_last_snapshot.history_name = data->app_name;
+    }
 }
 
 reader_snapshot_t reader_get_last_snapshot()
@@ -2437,8 +2450,14 @@ reader_snapshot_t reader_get_last_snapshot()
 
 history_t *reader_get_history(void)
 {
-    ASSERT_IS_MAIN_THREAD();
-    return data ? data->history : NULL;
+    history_t *result = NULL;
+    const wcstring history_name = reader_get_last_snapshot().history_name;
+    // empty names mean no data, and therefore no history
+    if (! history_name.empty())
+    {
+        result = &history_t::history_with_name(history_name);
+    }
+    return result;
 }
 
 /* Sets the command line contents, without clearing the pager */
@@ -2598,6 +2617,7 @@ void reader_push(const wchar_t *name)
     reader_set_highlight_function(&highlight_universal);
     reader_set_test_function(&default_test);
     reader_set_left_prompt(L"");
+    reader_save_last_snapshot(data);
 }
 
 void reader_pop()
@@ -2626,6 +2646,7 @@ void reader_pop()
         //history_set_mode( data->app_name.c_str() );
         s_reset(&data->screen, screen_reset_abandon_line);
     }
+    reader_save_last_snapshot(data);
 }
 
 void reader_set_left_prompt(const wcstring &new_prompt)

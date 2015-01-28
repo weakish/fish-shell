@@ -302,6 +302,7 @@ struct reader_snapshot_t
     size_t selection_length;
     int search_mode;
     bool has_pager_contents;
+    wcstring history_name;
 };
 
 reader_snapshot_t reader_get_last_snapshot();

@@ -1049,11 +1049,10 @@ env_var_t env_stack_t::get(const wcstring &key, env_mode_flags_t mode) const
     if (is_electric(key))
     {
         if (!search_global) return env_var_t::missing_var();
-        /* Big hack...we only allow getting the history on the main thread. Note that history_t may ask for an environment variable, so don't take the lock here (we don't need it) */
-        if (key == L"history" && is_main_thread())
+        /* Note that history_t may ask for an environment variable, so don't take the lock here (we don't need it) */
+        if (key == L"history")
         {
             env_var_t result;
-
             history_t *history = reader_get_history();
             if (! history)
             {
