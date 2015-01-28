@@ -470,10 +470,9 @@ static void event_fire_internal(parser_t &parser, const event_t &event)
 
     if (signal_is_blocked())
     {
-#warning What to do about this?
         /* Fix for https://github.com/fish-shell/fish-shell/issues/608. Don't run event handlers while signals are blocked. */
         event_t *heap_event = new event_t(event);
-        input_common_add_callback(fire_event_callback, heap_event);
+        input_common_add_callback1(fire_event_callback, heap_event);
         return;
     }
 

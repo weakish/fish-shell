@@ -37,6 +37,9 @@ Implementation file for the low level input library
 */
 #define WAIT_ON_ESCAPE 10
 
+/** Lock protecting static variables */
+static pthread_mutex_t s_input_lock = PTHREAD_MUTEX_INITIALIZER;
+
 /** Characters that have been read and returned by the sequence matching code */
 static std::stack<wint_t, std::vector<wint_t> > lookahead_list;
 
@@ -48,11 +51,13 @@ static void input_flush_callbacks(void);
 
 static bool has_lookahead(void)
 {
+    ASSERT_IS_MAIN_THREAD();
     return ! lookahead_list.empty();
 }
 
 static wint_t lookahead_pop(void)
 {
+    ASSERT_IS_MAIN_THREAD();
     wint_t result = lookahead_list.top();
     lookahead_list.pop();
     return result;
@@ -60,11 +65,13 @@ static wint_t lookahead_pop(void)
 
 static void lookahead_push(wint_t c)
 {
+    ASSERT_IS_MAIN_THREAD();
     lookahead_list.push(c);
 }
 
 static wint_t lookahead_top(void)
 {
+    ASSERT_IS_MAIN_THREAD();
     return lookahead_list.top();
 }
 
@@ -87,6 +94,7 @@ void input_common_destroy()
 */
 static wint_t readb()
 {
+    ASSERT_IS_MAIN_THREAD();
     /* do_loop must be set on every path through the loop; leaving it uninitialized allows the static analyzer to assist in catching mistakes. */
     unsigned char arr[1];
     bool do_loop;
@@ -294,14 +302,28 @@ void input_common_unreadch(wint_t ch)
     lookahead_push(ch);
 }
 
-void input_common_add_callback(void (*callback)(void *), void *arg)
+static void run_0arg_callback(void *arg)
 {
-    ASSERT_IS_MAIN_THREAD();
+    void (*func)(void) = reinterpret_cast<void (*)(void)>(arg);
+    func();
+}
+
+void input_common_add_callback(void (*callback)())
+{
+    input_common_add_callback1(run_0arg_callback, reinterpret_cast<void *>(callback));
+}
+
+void input_common_add_callback1(void (*callback)(void *), void *arg)
+{
+    scoped_lock locker(s_input_lock);
     callback_queue.push(callback_info_t(callback, arg));
 }
 
 static void input_flush_callbacks(void)
 {
+    ASSERT_IS_MAIN_THREAD();
+    scoped_lock locker(s_input_lock);
+    
     /* Nothing to do if nothing to do */
     if (callback_queue.empty())
         return;
@@ -309,6 +331,8 @@ static void input_flush_callbacks(void)
     /* We move the queue into a local variable, so that events queued up during a callback don't get fired until next round. */
     callback_queue_t local_queue;
     std::swap(local_queue, callback_queue);
+    locker.unlock();
+    
     while (! local_queue.empty())
     {
         const callback_info_t &callback = local_queue.front();

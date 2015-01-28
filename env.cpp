@@ -369,16 +369,16 @@ static void react_to_variable_change(const wcstring &key)
 {
     if (var_is_locale(key))
     {
-        handle_locale();
+        input_common_add_callback(handle_locale);
     }
     else if (key == L"fish_term256" || key == L"fish_term24bit")
     {
-        update_fish_color_support();
-        reader_react_to_color_change();
+        input_common_add_callback(update_fish_color_support);
+        input_common_add_callback(reader_react_to_color_change);
     }
     else if (string_prefixes_string(L"fish_color_", key))
     {
-        reader_react_to_color_change();
+        input_common_add_callback(reader_react_to_color_change);
     }
 }
 

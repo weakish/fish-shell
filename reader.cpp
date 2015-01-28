@@ -1068,6 +1068,7 @@ void reader_exit(int do_exit, int forced)
 
 void reader_repaint_needed()
 {
+    ASSERT_IS_MAIN_THREAD();
     if (data)
     {
         data->repaint_needed = true;
@@ -1076,6 +1077,7 @@ void reader_repaint_needed()
 
 void reader_repaint_if_needed()
 {
+    ASSERT_IS_MAIN_THREAD();
     if (data == NULL)
         return;
 
@@ -1096,13 +1098,9 @@ void reader_repaint_if_needed()
     }
 }
 
-static void reader_repaint_if_needed_one_arg(void * unused)
-{
-    reader_repaint_if_needed();
-}
-
 void reader_react_to_color_change()
 {
+    ASSERT_IS_MAIN_THREAD();
     if (! data)
         return;
 
@@ -1110,7 +1108,7 @@ void reader_react_to_color_change()
     {
         data->repaint_needed = true;
         data->screen_reset_needed = true;
-        input_common_add_callback(reader_repaint_if_needed_one_arg, NULL);
+        input_common_add_callback(reader_repaint_if_needed);
     }
 }
 
