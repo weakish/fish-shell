@@ -44,7 +44,7 @@ void input_common_destroy();
    WAIT_ON_ESCAPE milliseconds for a character to be available for
    reading before returning with the value WEOF.
 */
-wchar_t input_common_readch(int timed);
+wchar_t input_common_readch(bool timed);
 
 /**
    Push a character or a readline function onto the stack of unread

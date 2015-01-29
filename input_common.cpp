@@ -51,13 +51,13 @@ static void input_flush_callbacks(void);
 
 static bool has_lookahead(void)
 {
-    ASSERT_IS_MAIN_THREAD();
+    ASSERT_IS_LOCKED(s_input_lock);
     return ! lookahead_list.empty();
 }
 
 static wint_t lookahead_pop(void)
 {
-    ASSERT_IS_MAIN_THREAD();
+    ASSERT_IS_LOCKED(s_input_lock);
     wint_t result = lookahead_list.top();
     lookahead_list.pop();
     return result;
@@ -65,13 +65,13 @@ static wint_t lookahead_pop(void)
 
 static void lookahead_push(wint_t c)
 {
-    ASSERT_IS_MAIN_THREAD();
+    ASSERT_IS_LOCKED(s_input_lock);
     lookahead_list.push(c);
 }
 
 static wint_t lookahead_top(void)
 {
-    ASSERT_IS_MAIN_THREAD();
+    ASSERT_IS_LOCKED(s_input_lock);
     return lookahead_list.top();
 }
 
@@ -153,6 +153,7 @@ static wint_t readb()
                         {
                             return res;
                         }
+                        scoped_lock locker(s_input_lock);
                         if (has_lookahead())
                         {
                             return lookahead_pop();
@@ -193,6 +194,7 @@ static wint_t readb()
             if (ioport > 0 && FD_ISSET(ioport, &fdset))
             {
                 iothread_service_completion();
+                scoped_lock locker(s_input_lock);
                 if (has_lookahead())
                 {
                     return lookahead_pop();
@@ -217,70 +219,78 @@ static wint_t readb()
     return arr[0];
 }
 
-wchar_t input_common_readch(int timed)
+static wchar_t input_common_readch_nolookahead(bool timed)
 {
+    // Does NOT take the input lock, since it does not manipulate our static variables
+    if (timed)
+    {
+        int count;
+        fd_set fds;
+        struct timeval tm=
+        {
+            0,
+            1000 * WAIT_ON_ESCAPE
+        }
+        ;
+        
+        FD_ZERO(&fds);
+        FD_SET(0, &fds);
+        count = select(1, &fds, 0, 0, &tm);
+        
+        switch (count)
+        {
+            case 0:
+                return WEOF;
+                
+            case -1:
+                return WEOF;
+                break;
+            default:
+                break;
+                
+        }
+    }
+    
+    wchar_t res;
+    mbstate_t state = {};
+    
+    while (1)
+    {
+        wint_t b = readb();
+        char bb;
+        
+        size_t sz;
+        
+        if ((b >= R_NULL) && (b < R_NULL + 1000))
+            return b;
+        
+        bb=b;
+        
+        sz = mbrtowc(&res, &bb, 1, &state);
+        
+        switch (sz)
+        {
+            case (size_t)(-1):
+                memset(&state, '\0', sizeof(state));
+                debug(2, L"Illegal input");
+                return R_NULL;
+            case (size_t)(-2):
+                break;
+            case 0:
+                return 0;
+            default:
+                return res;
+        }
+    }
+}
+
+wchar_t input_common_readch(bool timed)
+{
+    scoped_lock locker(s_input_lock);
     if (! has_lookahead())
     {
-        if (timed)
-        {
-            int count;
-            fd_set fds;
-            struct timeval tm=
-            {
-                0,
-                1000 * WAIT_ON_ESCAPE
-            }
-            ;
-
-            FD_ZERO(&fds);
-            FD_SET(0, &fds);
-            count = select(1, &fds, 0, 0, &tm);
-
-            switch (count)
-            {
-                case 0:
-                    return WEOF;
-
-                case -1:
-                    return WEOF;
-                    break;
-                default:
-                    break;
-
-            }
-        }
-
-        wchar_t res;
-        mbstate_t state = {};
-
-        while (1)
-        {
-            wint_t b = readb();
-            char bb;
-
-            size_t sz;
-
-            if ((b >= R_NULL) && (b < R_NULL + 1000))
-                return b;
-
-            bb=b;
-
-            sz = mbrtowc(&res, &bb, 1, &state);
-
-            switch (sz)
-            {
-                case (size_t)(-1):
-                    memset(&state, '\0', sizeof(state));
-                    debug(2, L"Illegal input");
-                    return R_NULL;
-                case (size_t)(-2):
-                    break;
-                case 0:
-                    return 0;
-                default:
-                    return res;
-            }
-        }
+        locker.unlock();
+        return input_common_readch_nolookahead(timed);
     }
     else
     {
@@ -289,9 +299,11 @@ wchar_t input_common_readch(int timed)
             while (has_lookahead() && lookahead_top() == WEOF)
                 lookahead_pop();
             if (! has_lookahead())
-                return input_common_readch(0);
+            {
+                locker.unlock();
+                return input_common_readch_nolookahead(false);
+            }
         }
-
         return lookahead_pop();
     }
 }
@@ -299,6 +311,7 @@ wchar_t input_common_readch(int timed)
 
 void input_common_unreadch(wint_t ch)
 {
+    scoped_lock locker(s_input_lock);
     lookahead_push(ch);
 }
 
