@@ -168,6 +168,7 @@ typedef shared_ptr<env_node_t> env_node_ref_t;
 typedef unsigned export_generation_t;
 #define EXPORT_GENERATION_INVALID ((export_generation_t)(-1))
 
+class parser_t;
 class env_stack_t : public environment_t
 {
     friend class parser_t;
@@ -192,6 +193,9 @@ class env_stack_t : public environment_t
     
     /** Backing for $PWD variable */
     shared_ptr<working_directory_t> pwd;
+    
+    /** Unowned backreference to the owning parser (or NULL). This is used to run event handlers on. */
+    parser_t *event_handling_parser;
     
     /** Gets the CWD */
     const working_directory_t &cwd() const

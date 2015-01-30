@@ -153,12 +153,12 @@ class env_node_t
     }
 };
 
-env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global), exit_status(0), changed_exported_generation(EXPORT_GENERATION_INVALID)
+env_stack_t::env_stack_t() : global(new env_node_t(false, env_node_ref_t())), top(global), exit_status(0), changed_exported_generation(EXPORT_GENERATION_INVALID), event_handling_parser(NULL)
 {
 }
 
-/* This creates a "child stack", not a copy. */
-env_stack_t::env_stack_t(const env_stack_t &parent) : global(parent.global), top(parent.top), boundary(parent.top), exit_status(parent.exit_status), pwd(parent.pwd)
+/* This creates a "child stack", not a copy. The event hanlding parser is not copied. */
+env_stack_t::env_stack_t(const env_stack_t &parent) : global(parent.global), top(parent.top), boundary(parent.top), exit_status(parent.exit_status), pwd(parent.pwd), event_handling_parser(NULL)
 {
 }
 
@@ -896,7 +896,7 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
     // Must not hold the lock around react_to_variable_change or event firing
     locker.unlock();
     
-    if (!is_universal)
+    if (!is_universal && this->event_handling_parser != NULL)
     {
         event_t ev = event_t::variable_event(key);
         ev.arguments.reserve(3);
@@ -905,11 +905,7 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
         ev.arguments.push_back(key);
         
         //  debug( 1, L"env_set: fire events on variable %ls", key );
-#warning Totally wrong
-        if (is_main_thread())
-        {
-            event_fire(parser_t::principal_parser(), &ev);
-        }
+        event_fire(*this->event_handling_parser, &ev);
         //  debug( 1, L"env_set: return from event firing" );
     }
     
@@ -997,10 +993,9 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
             ev.arguments.push_back(L"ERASE");
             ev.arguments.push_back(key);
 
-#warning Totally wrong
-            if (is_main_thread())
+            if (this->event_handling_parser)
             {
-                event_fire(parser_t::principal_parser(), &ev);
+                event_fire(*this->event_handling_parser, &ev);
             }
 
             erased = 1;

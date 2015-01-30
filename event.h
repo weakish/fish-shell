@@ -154,6 +154,9 @@ void event_fire(parser_t &parser, const event_t *event);
 /** Like event_fire, but takes a signal directly. */
 void event_fire_signal(int signal);
 
+/** Enqueues an event to the main thread, to be run on the principal parser */
+void event_enqueue_to_main(const event_t &event);
+
 /**
    Initialize the event-handling library
 */

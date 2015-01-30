@@ -197,6 +197,7 @@ parser_t::parser_t(enum parser_type_t type, const wcstring &cwd, bool errors) :
     cancellation_requested(false),
     is_within_fish_initialization(false)
 {
+    this->vars().event_handling_parser = this;
     this->vars().set_pwd(cwd);
 }
 
@@ -213,8 +214,8 @@ parser_t::parser_t(const parser_t &parent) :
     variable_stack(parent.variable_stack),
     block_stack_top(parent.block_stack_top)
 {
-    // TODO: 
     parent.assert_is_this_thread();
+    this->vars().event_handling_parser = this;
 }
 
 static wcstring get_cwd()

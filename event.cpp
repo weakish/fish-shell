@@ -417,16 +417,6 @@ bool event_is_signal_observed(int sig)
     return result;
 }
 
-/* Callback for firing (and then deleting) an event */
-static void fire_event_callback(void *arg)
-{
-    ASSERT_IS_MAIN_THREAD();
-    assert(arg != NULL);
-    event_t *event = static_cast<event_t *>(arg);
-    event_fire(parser_t::principal_parser(), event);
-    delete event;
-}
-
 /**
    Perform the specified event. Since almost all event firings will
    not be matched by even a single event handler, we make sure to
@@ -471,8 +461,7 @@ static void event_fire_internal(parser_t &parser, const event_t &event)
     if (signal_is_blocked())
     {
         /* Fix for https://github.com/fish-shell/fish-shell/issues/608. Don't run event handlers while signals are blocked. */
-        event_t *heap_event = new event_t(event);
-        input_common_add_callback1(fire_event_callback, heap_event);
+        event_enqueue_to_main(event);
         return;
     }
 
@@ -601,6 +590,21 @@ void event_fire_signal(int signal)
         sig_list[active_list].overflow=1;
 }
 
+/* Callback for firing (and then deleting) an event */
+static void fire_event_callback_then_delete(void *arg)
+{
+    ASSERT_IS_MAIN_THREAD();
+    assert(arg != NULL);
+    event_t *event = static_cast<event_t *>(arg);
+    event_fire(parser_t::principal_parser(), event);
+    delete event;
+}
+
+void event_enqueue_to_main(const event_t &event)
+{
+    event_t *heap_event = new event_t(event);
+    input_common_add_callback1(fire_event_callback_then_delete, heap_event);
+}
 
 void event_fire(parser_t &parser, const event_t *event)
 {
