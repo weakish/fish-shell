@@ -2087,7 +2087,7 @@ int define_function(parser_t &parser, io_streams_t &streams, const wcstring_list
                 {
                     int job_id = -1;
 
-                    if (is_subshell)
+                    if (parser.get_is_subshell())
                     {
                         size_t block_idx = 0;
 
@@ -3063,7 +3063,7 @@ static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **arg
                 return !is_interactive_session;
 
             case IS_SUBST:
-                return !is_subshell;
+                return ! parser.get_is_subshell();
 
             case IS_BLOCK:
                 return ! parser.block_is_on_stack();

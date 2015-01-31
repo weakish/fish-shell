@@ -1365,7 +1365,7 @@ void exec_job(parser_t &parser, job_t *j)
 
     if (!job_get_flag(j, JOB_FOREGROUND))
     {
-        proc_last_bg_pid = j->pgid;
+        parser.set_last_bg_pid(j->pgid);
     }
 
     if (! exec_error)
@@ -1400,7 +1400,6 @@ void exec_job(parser_t &parser, job_t *j)
 static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstring_list_t *lst, bool apply_exit_status)
 {
     parser.assert_is_this_thread();
-    int prev_subshell = is_subshell;
     const int prev_status = parser.get_last_status();
     bool split_output=false;
 
@@ -1413,7 +1412,7 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
         split_output=true;
     }
 
-    is_subshell=1;
+    parser.push_is_subshell();
 
 
     int subcommand_status = -1; //assume the worst
@@ -1434,8 +1433,7 @@ static int exec_subshell_internal(parser_t &parser, const wcstring &cmd, wcstrin
     // Otherwise set the status of the subcommand
     parser.set_last_status(apply_exit_status ? subcommand_status : prev_status);
 
-
-    is_subshell = prev_subshell;
+    parser.pop_is_subshell();
 
     if (lst != NULL && io_buffer.get() != NULL)
     {

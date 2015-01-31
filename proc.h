@@ -261,11 +261,6 @@ enum
 };
 
 /**
-  Whether we are running a subshell command
-*/
-extern int is_subshell;
-
-/**
   Whether this shell is attached to the keyboard at all
 */
 extern int is_interactive_session;
@@ -292,11 +287,6 @@ extern int is_event;
 */
 bool get_proc_had_barrier();
 void set_proc_had_barrier(bool flag);
-
-/**
-   Pid of last process started in the background
-*/
-extern pid_t proc_last_bg_pid;
 
 /**
    If this flag is set, fish will never fork or run execve. It is used

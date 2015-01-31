@@ -789,7 +789,7 @@ static void find_process(const wchar_t *proc, expand_flags_t flags, std::vector<
 /**
    Process id expansion
 */
-static bool expand_pid(const wcstring &instr_with_sep, expand_flags_t flags, std::vector<completion_t> &out, parse_error_list_t *errors)
+static bool expand_pid(const parser_t *parser_or_null, const wcstring &instr_with_sep, expand_flags_t flags, std::vector<completion_t> &out, parse_error_list_t *errors)
 {
     /* Hack. If there's no INTERNAL_SEP and no PROCESS_EXPAND, then there's nothing to do. Check out this "null terminated string." */
     const wchar_t some_chars[] = {INTERNAL_SEPARATOR, PROCESS_EXPAND, L'\0'};
@@ -841,11 +841,12 @@ static bool expand_pid(const wcstring &instr_with_sep, expand_flags_t flags, std
             append_completion(out, to_string<long>(getpid()));
             return true;
         }
-        if (wcscmp((in+1), LAST_STR)==0)
+        if (parser_or_null != NULL && wcscmp((in+1), LAST_STR)==0)
         {
-            if (proc_last_bg_pid > 0)
+            pid_t last_bg_pid = parser_or_null->get_last_bg_pid();
+            if (last_bg_pid > 0)
             {
-                append_completion(out, to_string<long>(proc_last_bg_pid));
+                append_completion(out, to_string<long>(last_bg_pid));
             }
             return true;
         }
@@ -1862,7 +1863,7 @@ static int expand_string_internal(const wcstring &input, parser_t *parser_or_nul
                  interested in other completions, so we
                  short-circuit and return
                  */
-                expand_pid(next, flags, output, NULL);
+                expand_pid(parser_or_null, next, flags, output, NULL);
                 return EXPAND_OK;
             }
             else
@@ -1870,7 +1871,7 @@ static int expand_string_internal(const wcstring &input, parser_t *parser_or_nul
                 append_completion(*out, next);
             }
         }
-        else if (! expand_pid(next, flags, *out, errors))
+        else if (! expand_pid(parser_or_null, next, flags, *out, errors))
         {
             return EXPAND_ERROR;
         }

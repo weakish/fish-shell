@@ -196,7 +196,9 @@ parser_t::parser_t(enum parser_type_t type, const wcstring &cwd, bool errors) :
     show_errors(errors),
     cancellation_requested(false),
     is_within_fish_initialization(false),
-    is_event_count(0)
+    is_event_count(0),
+    is_subshell_count(0),
+    proc_last_bg_pid(-1)
 {
     this->vars().event_handling_parser = this;
     this->vars().set_pwd(cwd);
@@ -210,10 +212,12 @@ parser_t::parser_t(const parser_t &parent) :
     cancellation_requested(parent.cancellation_requested),
     is_within_fish_initialization(parent.is_within_fish_initialization),
     is_event_count(parent.is_event_count),
+    is_subshell_count(parent.is_subshell_count),
     interactive_filenames(parent.interactive_filenames),
     substitution_comamnd_lines(parent.substitution_comamnd_lines),
     forbidden_function(parent.forbidden_function),
     variable_stack(parent.variable_stack),
+    proc_last_bg_pid(parent.proc_last_bg_pid),
     block_stack_top(parent.block_stack_top)
 {
     parent.assert_is_this_thread();
@@ -268,6 +272,45 @@ void parser_t::set_is_within_fish_initialization(bool flag)
 {
     is_within_fish_initialization = flag;
 }
+
+void parser_t::push_is_event()
+{
+    assert_is_this_thread();
+    assert(this->is_event_count + 1 > 0); // don't overflow
+    this->is_event_count++;
+}
+
+void parser_t::pop_is_event()
+{
+    assert_is_this_thread();
+    assert(this->is_event_count > 0);
+    this->is_event_count--;
+}
+
+bool parser_t::get_is_event() const
+{
+    return this->is_event_count > 0;
+}
+
+void parser_t::push_is_subshell()
+{
+    assert_is_this_thread();
+    assert(this->is_subshell_count + 1 > 0); // don't overflow
+    this->is_subshell_count++;
+}
+
+void parser_t::pop_is_subshell()
+{
+    assert_is_this_thread();
+    assert(this->is_subshell_count > 0);
+    this->is_subshell_count--;
+}
+
+bool parser_t::get_is_subshell() const
+{
+    return this->is_subshell_count > 0;
+}
+
 
 void parser_t::skip_all_blocks(void)
 {

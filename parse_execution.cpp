@@ -1384,12 +1384,12 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
     job_set_flag(j, JOB_FOREGROUND, ! tree.job_should_be_backgrounded(job_node));
 
     job_set_flag(j, JOB_TERMINAL, job_get_flag(j, JOB_CONTROL) \
-                 && (!is_subshell && !parser->get_is_event()));
+                 && (! parser->get_is_subshell() && ! parser->get_is_event()));
 
-    job_set_flag(j, JOB_SKIP_NOTIFICATION, is_subshell \
+    job_set_flag(j, JOB_SKIP_NOTIFICATION, parser->get_is_subshell() \
                  || parser->block_is_on_stack() \
                  || parser->get_is_event() \
-                 || (!parser->get_is_interactive()));
+                 || (! parser->get_is_interactive()));
 
     /* Tell the current block what its job is. This has to happen before we populate it (#1394) */
     parser->current_block()->job = j;

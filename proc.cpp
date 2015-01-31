@@ -78,12 +78,13 @@ Some of the code in this file is based on code from the Glibc manual.
 */
 #define BUFFER_SIZE 4096
 
+/* These globals are set from fish.cpp and then never changed */
 int is_interactive_session=0;
-int is_subshell=0;
 int is_login=0;
+int no_exec=0;
+
 pid_t proc_last_bg_pid = 0;
 int job_control_mode = JOB_CONTROL_INTERACTIVE;
-int no_exec=0;
 
 static int is_interactive = -1;
 

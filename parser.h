@@ -15,6 +15,7 @@
 #include "env.h"
 #include "job.h"
 #include <vector>
+#include <unistd.h>
 
 /**
    event_blockage_t represents a block on events of the specified type
@@ -263,8 +264,14 @@ private:
     /** Indicates that we are within the process of initializing fish */
     bool is_within_fish_initialization;
     
-    /** Tracks how many event handlers are running on this parser */
+    /** Tracks how many event handlers are currently executing on this parser */
     unsigned is_event_count;
+
+    /** Tracks how many subshells are currently executing on this parser */
+    unsigned is_subshell_count;
+    
+    /** Pid of last process started in the background */
+    pid_t proc_last_bg_pid;
     
     /** Stack of execution contexts. We own these pointers and must delete them */
     std::vector<parse_execution_context_t *> execution_contexts;
@@ -452,26 +459,26 @@ public:
     {
         this->variable_stack.exit_status = val;
     }
-    
-    void push_is_event()
+
+    void set_last_bg_pid(pid_t p)
     {
         assert_is_this_thread();
-        assert(this->is_event_count + 1 > 0); // don't overflow
-        this->is_event_count++;
-    }
-
-    void pop_is_event()
-    {
-        assert_is_this_thread();
-        assert(this->is_event_count > 0);
-        this->is_event_count--;
+        this->proc_last_bg_pid = p;
     }
     
-    bool get_is_event() const
+    pid_t get_last_bg_pid() const
     {
-        return this->is_event_count > 0;
+        assert_is_this_thread();
+        return this->proc_last_bg_pid;
     }
-
+    
+    void push_is_event();
+    void pop_is_event();
+    bool get_is_event() const;
+    
+    void push_is_subshell();
+    void pop_is_subshell();
+    bool get_is_subshell() const;
     
     /* Set and get the current 'interactive' filename, what used to be called the reader filename. */
     const wchar_t *current_interactive_filename() const;
