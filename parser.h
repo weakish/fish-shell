@@ -263,6 +263,9 @@ private:
     /** Indicates that we are within the process of initializing fish */
     bool is_within_fish_initialization;
     
+    /** Tracks how many event handlers are running on this parser */
+    unsigned is_event_count;
+    
     /** Stack of execution contexts. We own these pointers and must delete them */
     std::vector<parse_execution_context_t *> execution_contexts;
 
@@ -309,7 +312,7 @@ private:
     wcstring user_presentable_path(const wcstring &path) const;
     
     static const environment_t &principal_environment();
-
+    
 public:
 
     /** Get the "principal" parser, whatever that is */
@@ -449,6 +452,26 @@ public:
     {
         this->variable_stack.exit_status = val;
     }
+    
+    void push_is_event()
+    {
+        assert_is_this_thread();
+        assert(this->is_event_count + 1 > 0); // don't overflow
+        this->is_event_count++;
+    }
+
+    void pop_is_event()
+    {
+        assert_is_this_thread();
+        assert(this->is_event_count > 0);
+        this->is_event_count--;
+    }
+    
+    bool get_is_event() const
+    {
+        return this->is_event_count > 0;
+    }
+
     
     /* Set and get the current 'interactive' filename, what used to be called the reader filename. */
     const wchar_t *current_interactive_filename() const;

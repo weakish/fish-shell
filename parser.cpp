@@ -195,7 +195,8 @@ parser_t::parser_t(enum parser_type_t type, const wcstring &cwd, bool errors) :
     expected_thread(),
     show_errors(errors),
     cancellation_requested(false),
-    is_within_fish_initialization(false)
+    is_within_fish_initialization(false),
+    is_event_count(0)
 {
     this->vars().event_handling_parser = this;
     this->vars().set_pwd(cwd);
@@ -208,6 +209,7 @@ parser_t::parser_t(const parser_t &parent) :
     show_errors(parent.show_errors),
     cancellation_requested(parent.cancellation_requested),
     is_within_fish_initialization(parent.is_within_fish_initialization),
+    is_event_count(parent.is_event_count),
     interactive_filenames(parent.interactive_filenames),
     substitution_comamnd_lines(parent.substitution_comamnd_lines),
     forbidden_function(parent.forbidden_function),

@@ -620,7 +620,7 @@ void event_fire(parser_t &parser, const event_t *event)
     else
     {
         ASSERT_IS_MAIN_THREAD();
-        is_event++;
+        parser.push_is_event();
 
         /*
           Fire events triggered by signals
@@ -641,7 +641,7 @@ void event_fire(parser_t &parser, const event_t *event)
                 locker.lock();
             }
         }
-        is_event--;
+        parser.pop_is_event();
     }
 }
 
