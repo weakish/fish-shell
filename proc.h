@@ -266,11 +266,6 @@ enum
 extern int is_subshell;
 
 /**
-  Whether we are running a block of commands
-*/
-extern int is_block;
-
-/**
   Whether this shell is attached to the keyboard at all
 */
 extern int is_interactive_session;

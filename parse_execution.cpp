@@ -1387,7 +1387,7 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
                  && (!is_subshell && !is_event));
 
     job_set_flag(j, JOB_SKIP_NOTIFICATION, is_subshell \
-                 || is_block \
+                 || parser->block_is_on_stack() \
                  || is_event \
                  || (!parser->get_is_interactive()));
 

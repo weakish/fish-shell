@@ -3066,7 +3066,7 @@ static int builtin_status(parser_t &parser, io_streams_t &streams, wchar_t **arg
                 return !is_subshell;
 
             case IS_BLOCK:
-                return !is_block;
+                return ! parser.block_is_on_stack();
 
             case IS_LOGIN:
                 return !is_login;

@@ -378,6 +378,9 @@ public:
     /** Returns the current (innermost) block */
     const block_t *current_block() const;
     block_t *current_block();
+    
+    /** Returns true if the current block is a "block block" (e.g. begin, if, etc) */
+    bool block_is_on_stack() const;
 
     /** Count of blocks */
     size_t block_count() const

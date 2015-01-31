@@ -329,12 +329,6 @@ void parser_t::push_block(block_t *new_current)
     new_current->parent = this->block_stack_top;
     this->block_stack_top.reset(new_current); //takes ownership
 
-    // Types TOP and SUBST are not considered blocks for the purposes of `status -b`
-    if (type != TOP && type != SUBST)
-    {
-        is_block = 1;
-    }
-
     if ((new_current->type() != FUNCTION_DEF) &&
             (new_current->type() != FAKE) &&
             (new_current->type() != TOP))
@@ -361,19 +355,6 @@ void parser_t::pop_block()
 
     if (old->wants_pop_env)
         this->vars().pop();
-
-    // Figure out if `status -b` should consider us to be in a block now
-    int new_is_block=0;
-    for (const block_t *cursor = this->block_stack_top.get(); cursor != NULL; cursor = cursor->parent.get())
-    {
-        const enum block_type_t type = cursor->type();
-        if (type != TOP && type != SUBST)
-        {
-            new_is_block = 1;
-            break;
-        }
-    }
-    is_block = new_is_block;
 }
 
 void parser_t::pop_block(const block_t *expected)
@@ -442,12 +423,32 @@ block_t *parser_t::block_at_index(size_t idx)
 
 const block_t *parser_t::current_block() const
 {
+    assert_is_this_thread();
     return this->block_stack_top.get();
 }
 
 block_t *parser_t::current_block()
 {
+    assert_is_this_thread();
     return this->block_stack_top.get();
+}
+
+bool parser_t::block_is_on_stack() const
+{
+    assert_is_this_thread();
+    // We have a "block block" if any of the elements of our block stack are not TOP and not SUBST
+    bool result = false;
+    const block_t *cursor = this->current_block();
+    while (cursor != NULL)
+    {
+        if (cursor->type() != TOP && cursor->type() != SUBST)
+        {
+            result = true;
+            break;
+        }
+        cursor = cursor->parent.get();
+    }
+    return result;
 }
 
 void parser_t::forbid_function(const wcstring &function)
