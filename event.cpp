@@ -531,7 +531,6 @@ static void event_fire_delayed(parser_t &parser)
             locker.lock();
         }
     }
-    locker.unlock();
 
 #warning Need to synchronize access to signal list
     int al = active_list;
@@ -570,7 +569,9 @@ static void event_fire_delayed(parser_t &parser)
             }
             else
             {
+                locker.unlock();
                 event_fire_internal(parser, e);
+                locker.lock();
             }
         }
     }
