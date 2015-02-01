@@ -213,11 +213,11 @@ parser_t::parser_t(const parser_t &parent) :
     is_within_fish_initialization(parent.is_within_fish_initialization),
     is_event_count(parent.is_event_count),
     is_subshell_count(parent.is_subshell_count),
+    proc_last_bg_pid(parent.proc_last_bg_pid),
     interactive_filenames(parent.interactive_filenames),
     substitution_comamnd_lines(parent.substitution_comamnd_lines),
     forbidden_function(parent.forbidden_function),
     variable_stack(parent.variable_stack),
-    proc_last_bg_pid(parent.proc_last_bg_pid),
     block_stack_top(parent.block_stack_top)
 {
     parent.assert_is_this_thread();
