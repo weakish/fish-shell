@@ -1591,7 +1591,7 @@ wcstring_list_t env_vars_snapshot_t::get_names(env_mode_flags_t flags) const
     return result;
 }
 
-const wchar_t * const env_vars_snapshot_t::highlighting_keys[] = {L"PATH", L"CDPATH", L"fish_function_path", L"PWD", USER_ABBREVIATIONS_VARIABLE_NAME, NULL};
+const wchar_t * const env_vars_snapshot_t::highlighting_keys[] = {L"PATH", L"CDPATH", L"fish_function_path", L"PWD", L"HOME", USER_ABBREVIATIONS_VARIABLE_NAME, NULL};
 
 environment_t::environment_t() { }
 environment_t::~environment_t() { }
