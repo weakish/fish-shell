@@ -61,9 +61,11 @@ signal_list_t;
 static signal_list_t sig_list[2]= {{},{}};
 
 /**
-   The index of sig_list that is the list of signals currently written to
-*/
-static volatile int active_list=0;
+ The index of sig_list that is the list of signals currently written to.
+ Writing this is protected by s_event_handlers_lock. Reading is unprotected
+ because the signal handler has to do so.
+ */
+static volatile int s_active_signal_list_index = 0;
 
 /** The lock that guards the list of event handlers */
 static pthread_mutex_t s_event_handlers_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -532,8 +534,7 @@ static void event_fire_delayed(parser_t &parser)
         }
     }
 
-#warning Need to synchronize access to signal list
-    int al = active_list;
+    int al = s_active_signal_list_index;
     while (sig_list[al].count > 0)
     {
         signal_list_t *lst;
@@ -541,10 +542,11 @@ static void event_fire_delayed(parser_t &parser)
         /*
           Switch signal lists
         */
+        ASSERT_IS_LOCKED(s_event_handlers_lock);
         sig_list[1-al].count=0;
         sig_list[1-al].overflow=0;
         al = 1-al;
-        active_list=al;
+        s_active_signal_list_index = al; //critical write
 
         /*
           Set up
@@ -585,10 +587,11 @@ void event_fire_signal(int signal)
       allocation or something else that might be bad when in a
       signal handler.
     */
-    if (sig_list[active_list].count < SIG_UNHANDLED_MAX)
-        sig_list[active_list].signal[sig_list[active_list].count++]=signal;
+    int active_idx = s_active_signal_list_index; // the critical read
+    if (sig_list[active_idx].count < SIG_UNHANDLED_MAX)
+        sig_list[active_idx].signal[sig_list[active_idx].count++] = signal;
     else
-        sig_list[active_list].overflow=1;
+        sig_list[active_idx].overflow = 1;
 }
 
 /* Callback for firing (and then deleting) an event */
@@ -613,14 +616,8 @@ void event_fire(parser_t &parser, const event_t *event)
     {
         event_fire_signal(event->param1.signal);
     }
-    else if (! is_main_thread())
-    {
-        // nothing
-        #warning Need to rationalize how events generated in background threads are handled.
-    }
     else
     {
-        ASSERT_IS_MAIN_THREAD();
         parser.push_is_event();
 
         /*
@@ -639,7 +636,6 @@ void event_fire(parser_t &parser, const event_t *event)
             {
                 locker.unlock();
                 event_fire_internal(parser, *event);
-                locker.lock();
             }
         }
         parser.pop_is_event();
