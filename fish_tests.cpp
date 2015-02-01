@@ -1865,6 +1865,9 @@ static void test_is_potential_path()
     do_test(! is_potential_path(L"/tmp/is_potential_path_test/aardvark", vars, wds, PATH_REQUIRE_DIR, &tmp));
     do_test(! is_potential_path(L"/tmp/is_potential_path_test/al/", vars, wds, 0, &tmp));
     do_test(! is_potential_path(L"/tmp/is_potential_path_test/ar", vars, wds, 0, &tmp));
+    
+    do_test(! is_potential_path(L"~sdklfjsdflksf/not/a/valid/path/nosirree", vars, wds, PATH_EXPAND_TILDE, &tmp));
+    do_test(! is_potential_path(L"~sdklfjsdflksf/not/a/valid/path/nosirree/", vars, wds, PATH_EXPAND_TILDE, &tmp));
 
     do_test(is_potential_path(L"/usr", vars, wds, PATH_REQUIRE_DIR, &tmp) && tmp == L"/usr/");
 

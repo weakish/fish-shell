@@ -156,10 +156,18 @@ bool is_potential_path(const wcstring &const_path, const environment_t &vars, co
 
     wcstring path(const_path);
     if (flags & PATH_EXPAND_TILDE)
+    {
         expand_tilde(path, vars);
+        if (! path.empty() && path.at(0) == L'~')
+        {
+            /* Tilde expansion failed */
+            return false;
+        }
+    }
 
     //  debug( 1, L"%ls -> %ls ->%ls", path, tilde, unescaped );
 
+    clean_path.reserve(path.size());
     for (size_t i=0; i < path.size(); i++)
     {
         wchar_t c = path.at(i);
@@ -212,8 +220,8 @@ bool is_potential_path(const wcstring &const_path, const environment_t &vars, co
 
             const wcstring abs_path = apply_working_directory(clean_path, wd);
 
-            /* Skip this if it's empty or we've already checked it */
-            if (abs_path.empty() || checked_paths.count(abs_path))
+            /* Skip this if it's empty, not absolute, or we've already checked it */
+            if (abs_path.empty() || checked_paths.count(abs_path) || ! path_is_absolute(abs_path))
                 continue;
             checked_paths.insert(abs_path);
 
