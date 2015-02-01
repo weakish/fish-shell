@@ -2673,7 +2673,7 @@ static int builtin_read(parser_t &parser, io_streams_t &streams, wchar_t **argv)
       Check if we should read interactively using \c reader_readline()
     */
     #warning This is_principal() check is bogus. Need to rationalize how read behaves in background threads.
-    if (isatty(0) && streams.stdin_fd == STDIN_FILENO && !split_null && parser.is_principal())
+    if (streams.stdin_fd == STDIN_FILENO && isatty(STDIN_FILENO) && !split_null && parser.is_principal())
     {
         const wchar_t *line;
 

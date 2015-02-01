@@ -1985,6 +1985,8 @@ static bool check_for_orphaned_process(unsigned long loop_count, pid_t shell_pgi
 */
 static void reader_interactive_init(parser_t &parser)
 {
+    ASSERT_IS_MAIN_THREAD();
+    
     /* See if we are running interactively.  */
     pid_t shell_pgid;
 

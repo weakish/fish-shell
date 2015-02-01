@@ -42,24 +42,16 @@ void signal_set_handlers(bool is_interactive);
 */
 void signal_handle(int sig, int do_handle);
 
-/**
-  Block all signals
-*/
+/** Block all signals. This only has effect on the main thread. */
 void signal_block();
 
-/**
-   Unblock all signals
-*/
+/** Unblock all signals. This only has effect on the main thread. */
 void signal_unblock();
 
-/**
-   Returns true if signals are being blocked
-*/
+/** Returns true if signals are being blocked. This may only be called on the main thread. */
 bool signal_is_blocked();
 
-/**
-  Returns signals with non-default handlers
-*/
+/** Returns signals with non-default handlers. This may be called after fork. */
 void get_signals_with_handlers(sigset_t *set);
 
 #endif

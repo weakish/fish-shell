@@ -460,7 +460,7 @@ static void event_fire_internal(parser_t &parser, const event_t &event)
     if (fire.empty())
         return;
 
-    if (signal_is_blocked())
+    if (is_main_thread() && signal_is_blocked())
     {
         /* Fix for https://github.com/fish-shell/fish-shell/issues/608. Don't run event handlers while signals are blocked. */
         event_enqueue_to_main(event);

@@ -616,7 +616,7 @@ void signal_set_handlers(bool is_interactive)
 
 void signal_handle(int sig, int do_handle)
 {
-#warning Needs to be made thread safe
+    /* This is called only from event.cpp, and it holds a lock. */
     struct sigaction act;
 
     /*
@@ -661,7 +661,8 @@ void signal_block()
 {
     if (! is_main_thread())
     {
-        #warning Terrible - need to rationalize signals across threads
+        // Signals are only ever delivered on the main thread, thanks to the pthread sigmask
+        // This means that we can ignore signal_block off of the main thread
         return;
     }
     ASSERT_IS_MAIN_THREAD();
@@ -681,7 +682,8 @@ void signal_unblock()
 {
     if (! is_main_thread())
     {
-        #warning Terrible - need to rationalize signals across threads
+        // Signals are only ever delivered on the main thread, thanks to the pthread sigmask
+        // This means that we can ignore signal_block off of the main thread
         return;
     }
 
