@@ -1162,8 +1162,8 @@ void exec_job(parser_t &parser, job_t *j)
                             const wcstring &err = builtin_output_streams->stderr_stream.get_buffer();
                             const std::string outbuff = wcs2string(out);
                             const std::string errbuff = wcs2string(err);
-                            bool builtin_io_done = do_builtin_io(outbuff.data(), outbuff.size(), errbuff.data(), errbuff.size());
-                            if (! builtin_io_done)
+                            int builtin_io_errcode = do_builtin_io(outbuff.data(), outbuff.size(), errbuff.data(), errbuff.size());
+                            if (builtin_io_errcode != 0)
                             {
                                 show_stackframe();
                             }
@@ -1219,8 +1219,8 @@ void exec_job(parser_t &parser, job_t *j)
                         */
                         p->pid = getpid();
                         setup_child_process(j, p, process_net_io_chain);
-                        do_builtin_io(outbuff, outbuff_len, errbuff, errbuff_len);
-                        exit_without_destructors(p->status);
+                        int errcode = do_builtin_io(outbuff, outbuff_len, errbuff, errbuff_len);
+                        exit_without_destructors(errcode ? errcode : p->status);
                     }
                     else
                     {

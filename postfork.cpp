@@ -545,17 +545,16 @@ void safe_report_exec_error(int err, const char *actual_cmd, const char * const 
 }
 
 /** Perform output from builtins. May be called from a forked child, so don't do anything that may allocate memory, etc.. */
-bool do_builtin_io(const char *out, size_t outlen, const char *err, size_t errlen)
+int do_builtin_io(const char *out, size_t outlen, const char *err, size_t errlen)
 {
-    bool success = true;
+#warning Need to print an error for failures other than EPIPE
+    int errcode = 0;
     if (out && outlen)
     {
 
         if (write_loop(STDOUT_FILENO, out, outlen) < 0)
         {
-            debug_safe(0, "Error while writing to stdout");
-            safe_perror("write_loop");
-            success = false;
+            errcode = errno;
         }
     }
 
@@ -563,8 +562,8 @@ bool do_builtin_io(const char *out, size_t outlen, const char *err, size_t errle
     {
         if (write_loop(STDERR_FILENO, err, errlen) < 0)
         {
-            success = false;
+            errcode = errno;
         }
     }
-    return success;
+    return errcode;
 }
