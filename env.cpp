@@ -672,9 +672,6 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
     bool has_changed_old = this->has_changed_exported();
     bool has_changed_new = false;
     int done=0;
-    
-    int is_universal = 0;
-    
     if (val && contains(key, L"PWD", L"HOME"))
     {
         /* Canoncalize our path; if it changes, recurse and try again. */
@@ -780,7 +777,6 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
                 mark_changed_exported();
             }
         }
-        is_universal = 1;
     }
     else
     {
@@ -844,8 +840,6 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
 
                 uvars()->set(key, val, exportv);
                 env_universal_barrier();
-                is_universal = 1;
-                
                 done = 1;
                 
             }
@@ -893,22 +887,17 @@ int env_stack_t::set(const wcstring &key, const wchar_t *val, env_mode_flags_t v
         }
     }
     
-    // Must not hold the lock around react_to_variable_change or event firing
-    locker.unlock();
-    
-    if (!is_universal && this->event_handling_parser != NULL)
+    if (this->event_handling_parser)
     {
         event_t ev = event_t::variable_event(key);
         ev.arguments.reserve(3);
         ev.arguments.push_back(L"VARIABLE");
         ev.arguments.push_back(L"SET");
         ev.arguments.push_back(key);
-        
-        //  debug( 1, L"env_set: fire events on variable %ls", key );
+
         event_fire(*this->event_handling_parser, &ev);
-        //  debug( 1, L"env_set: return from event firing" );
     }
-    
+
     react_to_variable_change(key);
     
     return 0;
@@ -988,16 +977,15 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
 
         if (try_remove(first_node, key, var_mode))
         {
-            event_t ev = event_t::variable_event(key);
-            ev.arguments.push_back(L"VARIABLE");
-            ev.arguments.push_back(L"ERASE");
-            ev.arguments.push_back(key);
-
             if (this->event_handling_parser)
             {
+
+                event_t ev = event_t::variable_event(key);
+                ev.arguments.push_back(L"VARIABLE");
+                ev.arguments.push_back(L"ERASE");
+                ev.arguments.push_back(key);
                 event_fire(*this->event_handling_parser, &ev);
             }
-
             erased = 1;
         }
     }
@@ -1010,6 +998,14 @@ int env_stack_t::remove(const wcstring &key, int var_mode)
         if (erased)
         {
             env_universal_barrier();
+            if (this->event_handling_parser)
+            {
+                    event_t ev = event_t::variable_event(key);
+                    ev.arguments.push_back(L"VARIABLE");
+                    ev.arguments.push_back(L"ERASE");
+                    ev.arguments.push_back(key);
+                    event_fire(*this->event_handling_parser, &ev);
+            }
         }
     }
 
