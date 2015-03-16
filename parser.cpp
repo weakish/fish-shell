@@ -17,7 +17,6 @@ The fish parser. Contains functions for parsing and evaluating code.
 #include <termios.h>
 #include <pwd.h>
 #include <dirent.h>
-#include <signal.h>
 #include <algorithm>
 
 #include "fallback.h"
@@ -809,14 +808,11 @@ bool parser_t::job_remove(job_t *j)
 
 void parser_t::job_promote(job_t *job)
 {
-    signal_block();
-
     job_list_t::iterator loc = std::find(my_job_list.begin(), my_job_list.end(), job);
     assert(loc != my_job_list.end());
 
     /* Move the job to the beginning */
     my_job_list.splice(my_job_list.begin(), my_job_list, loc);
-    signal_unblock();
 }
 
 job_t *parser_t::job_get(job_id_t id)
@@ -1019,13 +1015,6 @@ bool parser_t::detect_errors_in_argument_list(const wcstring &arg_list_src, wcst
     return errored;
 }
 
-// helper type used in parser::test below
-struct block_info_t
-{
-    int position; //tokenizer position
-    block_type_t type; //type of the block
-};
-
 void parser_t::get_backtrace(const wcstring &src, const parse_error_list_t &errors, wcstring *output) const
 {
     assert(output != NULL);
@@ -1082,7 +1071,7 @@ block_t::block_t(block_type_t t) :
     skip(),
     tok_pos(),
     node_offset(NODE_OFFSET_INVALID),
-    loop_status(),
+    loop_status(LOOP_NORMAL),
     job(),
     src_filename(),
     src_lineno(),

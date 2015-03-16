@@ -45,9 +45,10 @@ parts of fish.
 #include <execinfo.h>
 #endif
 
-
 #if HAVE_NCURSES_H
 #include <ncurses.h>
+#elif HAVE_NCURSES_CURSES_H
+#include <ncurses/curses.h>
 #else
 #include <curses.h>
 #endif
@@ -216,14 +217,14 @@ static wcstring str2wcs_internal(const char *in, const size_t in_len)
             wc = ENCODE_DIRECT_BASE + (unsigned char)in[in_pos];
             result.push_back(wc);
             in_pos++;
-            bzero(&state, sizeof state);
+            memset(&state, 0, sizeof state);
         }
         else if (ret == 0)
         {
             /* Embedded null byte! */
             result.push_back(L'\0');
             in_pos++;
-            bzero(&state, sizeof state);
+            memset(&state, 0, sizeof state);
         }
         else
         {
@@ -255,7 +256,6 @@ char *wcs2str(const wchar_t *in)
 {
     if (! in)
         return NULL;
-    char *out;
     size_t desired_size = MAX_UTF8_BYTES*wcslen(in)+1;
     char local_buff[512];
     if (desired_size <= sizeof local_buff / sizeof *local_buff)
@@ -277,7 +277,7 @@ char *wcs2str(const wchar_t *in)
     else
     {
         // here we fall into the bad case of allocating a buffer probably much larger than necessary
-        out = (char *)malloc(MAX_UTF8_BYTES*wcslen(in)+1);
+        char *out = (char *)malloc(MAX_UTF8_BYTES*wcslen(in)+1);
         if (!out)
         {
             DIE_MEM();
@@ -315,7 +315,7 @@ std::string wcs2string(const wcstring &input)
         }
         else
         {
-            bzero(converted, sizeof converted);
+            memset(converted, 0, sizeof converted);
             size_t len = wcrtomb(converted, wc, &state);
             if (len == (size_t)(-1))
             {
@@ -381,27 +381,6 @@ static char *wcs2str_internal(const wchar_t *in, char *out)
     out[out_pos] = 0;
 
     return out;
-}
-
-char **wcsv2strv(const wchar_t * const *in)
-{
-    size_t i, count = 0;
-
-    while (in[count] != 0)
-        count++;
-    char **res = (char **)malloc(sizeof(char *)*(count+1));
-    if (res == 0)
-    {
-        DIE_MEM();
-    }
-
-    for (i=0; i<count; i++)
-    {
-        res[i]=wcs2str(in[i]);
-    }
-    res[count]=0;
-    return res;
-
 }
 
 wcstring format_string(const wchar_t *format, ...)
@@ -827,10 +806,9 @@ void format_long_safe(wchar_t buff[64], long val)
         size_t idx = 0;
         bool negative = (val < 0);
 
-        while (val > 0)
+        while (val != 0)
         {
             long rem = val % 10;
-            /* Here we're assuming that wide character digits are contiguous - is that a correct assumption? */
             buff[idx++] = L'0' + (wchar_t)(rem < 0 ? -rem : rem);
             val /= 10;
         }
@@ -2017,7 +1995,7 @@ void format_size_safe(char buff[128], unsigned long long sz)
 {
     const size_t buff_size = 128;
     const size_t max_len = buff_size - 1; //need to leave room for a null terminator
-    bzero(buff, buff_size);
+    memset(buff, 0, buff_size);
     size_t idx = 0;
     const char * const sz_name[]=
     {

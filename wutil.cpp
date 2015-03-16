@@ -77,14 +77,32 @@ bool wreaddir_resolving(DIR *dir, const std::wstring &dir_path, std::wstring &ou
     if (out_is_dir)
     {
         /* The caller cares if this is a directory, so check */
-        bool is_dir;
+        bool is_dir = false;
+        
+        /* We may be able to skip stat, if the readdir can tell us the file type directly */
+        bool check_with_stat = true;
+#ifdef HAVE_STRUCT_DIRENT_D_TYPE
         if (d->d_type == DT_DIR)
         {
+            /* Known directory */
             is_dir = true;
+            check_with_stat = false;
         }
         else if (d->d_type == DT_LNK || d->d_type == DT_UNKNOWN)
         {
             /* We want to treat symlinks to directories as directories. Use stat to resolve it. */
+            check_with_stat = true;
+        }
+        else
+        {
+            /* Regular file */
+            is_dir = false;
+            check_with_stat = false;
+        }
+#endif // HAVE_STRUCT_DIRENT_D_TYPE
+        if (check_with_stat)
+        {
+            /* We couldn't determine the file type from the dirent; check by stat'ing it */
             cstring fullpath = wcs2string(dir_path);
             fullpath.push_back('/');
             fullpath.append(d->d_name);
@@ -97,10 +115,6 @@ bool wreaddir_resolving(DIR *dir, const std::wstring &dir_path, std::wstring &ou
             {
                 is_dir = !!(S_ISDIR(buf.st_mode));
             }
-        }
-        else
-        {
-            is_dir = false;
         }
         *out_is_dir = is_dir;
     }
@@ -188,12 +202,6 @@ FILE *wfopen(const wcstring &path, const char *mode)
     return result;
 }
 
-FILE *wfreopen(const wcstring &path, const char *mode, FILE *stream)
-{
-    cstring tmp = wcs2string(path);
-    return freopen(tmp.c_str(), mode, stream);
-}
-
 bool set_cloexec(int fd)
 {
     int flags = fcntl(fd, F_GETFD, 0);
@@ -232,24 +240,10 @@ static int wopen_internal(const wcstring &pathname, int flags, mode_t mode, bool
     return fd;
 
 }
-int wopen(const wcstring &pathname, int flags, mode_t mode)
-{
-    // off the main thread, always use wopen_cloexec
-    ASSERT_IS_MAIN_THREAD();
-    ASSERT_IS_NOT_FORKED_CHILD();
-    return wopen_internal(pathname, flags, mode, false);
-}
 
 int wopen_cloexec(const wcstring &pathname, int flags, mode_t mode)
 {
     return wopen_internal(pathname, flags, mode, true);
-}
-
-
-int wcreat(const wcstring &pathname, mode_t mode)
-{
-    const cstring tmp = wcs2string(pathname);
-    return creat(tmp.c_str(), mode);
 }
 
 DIR *wopendir(const wcstring &name)
@@ -329,12 +323,23 @@ const char *safe_strerror(int err)
     // uClibc does not have sys_errlist, however, its strerror is believed to be async-safe
     // See #808
     return strerror(err);
-#else
+#elif defined(HAVE__SYS__ERRS) || defined(HAVE_SYS_ERRLIST)
+#ifdef HAVE_SYS_ERRLIST
     if (err >= 0 && err < sys_nerr && sys_errlist[err] != NULL)
     {
         return sys_errlist[err];
     }
+#elif defined(HAVE__SYS__ERRS)
+    extern const char _sys_errs[];
+    extern const int _sys_index[];
+    extern int _sys_num_err;
+
+    if (err >= 0 && err < _sys_num_err) {
+		return &_sys_errs[_sys_index[err]];
+    }
+#endif // either HAVE__SYS__ERRS or HAVE_SYS_ERRLIST
     else
+#endif // defined(HAVE__SYS__ERRS) || defined(HAVE_SYS_ERRLIST)
     {
         int saved_err = errno;
 
@@ -351,7 +356,6 @@ const char *safe_strerror(int err)
         errno = saved_err;
         return buff;
     }
-#endif
 }
 
 void safe_perror(const char *message)
@@ -485,22 +489,7 @@ const wchar_t *wgettext(const wchar_t *in)
         val = new wcstring(format_string(L"%s", out)); //note that this writes into the map!
     }
     errno = err;
-    return val->c_str();
-}
-
-const wchar_t *wgetenv(const wcstring &name)
-{
-    ASSERT_IS_MAIN_THREAD();
-    cstring name_narrow = wcs2string(name);
-    char *res_narrow = getenv(name_narrow.c_str());
-    static wcstring out;
-
-    if (!res_narrow)
-        return 0;
-
-    out = format_string(L"%s", res_narrow);
-    return out.c_str();
-
+    return val->c_str(); //looks dangerous but is safe, since the string is stored in the map
 }
 
 int wmkdir(const wcstring &name, int mode)

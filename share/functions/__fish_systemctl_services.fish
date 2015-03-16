@@ -1,4 +1,9 @@
 function __fish_systemctl_services
-    command find /etc/systemd/system -type f -name '*.service' -printf '%f\n'
-    command find /usr/lib/systemd/system -type f -name '*.service' -printf '%f\n'
+	if type -q systemctl
+		if __fish_contains_opt user
+			systemctl --user list-unit-files --no-legend --type=service ^/dev/null $argv | cut -f 1 -d ' '
+		else
+			systemctl list-unit-files --no-legend --type=service ^/dev/null $argv | cut -f 1 -d ' '
+		end
+	end
 end

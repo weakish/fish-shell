@@ -9,6 +9,7 @@
 #define FISH_OUTPUT_H
 
 #include <wchar.h>
+#include "fallback.h"
 #include "screen.h"
 #include "color.h"
 
@@ -92,20 +93,8 @@ int writech(wint_t ch);
 void writestr(const wchar_t *str);
 
 /**
-   Write a wide character string to FD 1. If the string is wider than
-   the specified maximum, truncate and ellipsize it.
-*/
-void writestr_ellipsis(const wchar_t *str, int max_width);
-
-/**
-   Escape and write a string to fd 1
-*/
-int write_escaped_str(const wchar_t *str, int max_len);
-
-/**
    Return the internal color code representing the specified color
 */
-int output_color_code(const wcstring &val, bool is_background);
 rgb_color_t parse_color(const wcstring &val, bool is_background);
 
 /**
@@ -143,6 +132,9 @@ enum
 typedef unsigned int color_support_t;
 color_support_t output_get_color_support();
 void output_set_color_support(color_support_t support);
+
+/** Given a list of rgb_color_t, pick the "best" one, as determined by the color support. Returns rgb_color_t::none() if empty */
+rgb_color_t best_color(const std::vector<rgb_color_t> &colors, color_support_t support);
 
 /* Exported for builtin_set_color's usage only */
 void write_color(rgb_color_t color, bool is_fg);

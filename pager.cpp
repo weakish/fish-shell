@@ -30,7 +30,8 @@ static size_t divide_round_up(size_t numer, size_t denom)
         return 0;
 
     assert(denom > 0);
-    return numer / denom + (numer % denom ? 1 : 0);
+    bool has_rem = (numer % denom) > 0;
+    return numer / denom + (has_rem ? 1 : 0);
 }
 
 /**
@@ -393,7 +394,7 @@ void pager_t::refilter_completions()
 void pager_t::set_completions(const completion_list_t &raw_completions)
 {
     // Get completion infos out of it
-    unfiltered_completion_infos = process_completions_into_infos(raw_completions, prefix.c_str());
+    unfiltered_completion_infos = process_completions_into_infos(raw_completions, prefix);
 
     // Maybe join them
     if (prefix == L"-")
@@ -524,54 +525,6 @@ bool pager_t::completion_try_print(size_t cols, const wcstring &prefix, const co
         width = pref_width;
         print = true;
     }
-    else
-    {
-        long next_rows = (lst.size()-1)/(cols-1)+1;
-        /*    fwprintf( stderr,
-          L"cols %d, min_tot %d, term %d, rows=%d, nextrows %d, termrows %d, diff %d\n",
-          cols,
-          min_tot_width, term_width,
-          rows, next_rows, term_height,
-          pref_tot_width-term_width );
-        */
-        if (min_tot_width < term_width &&
-                (((row_count < term_height) && (next_rows >= term_height)) ||
-                 (pref_tot_width-term_width< 4 && cols < 3)))
-        {
-            /*
-              Terminal almost wide enough, or squeezing makes the
-              whole list fit on-screen.
-
-              This part of the code is really important. People hate
-              having to scroll through the completion list. In cases
-              where there are a huge number of completions, it can't
-              be helped, but it is not uncommon for the completions to
-              _almost_ fit on one screen. In those cases, it is almost
-              always desirable to 'squeeze' the completions into a
-              single page.
-
-              If we are using N columns and can get everything to
-              fit using squeezing, but everything would also fit
-              using N-1 columns, don't try.
-            */
-
-            int tot_width = min_tot_width;
-            width = min_width;
-
-            while (tot_width < term_width)
-            {
-                for (long i=0; (i<cols) && (tot_width < term_width); i++)
-                {
-                    if (width[i] < pref_width[i])
-                    {
-                        width[i]++;
-                        tot_width++;
-                    }
-                }
-            }
-            print = true;
-        }
-    }
 
     if (print)
     {
@@ -626,7 +579,7 @@ bool pager_t::completion_try_print(size_t cols, const wcstring &prefix, const co
         if (! progress_text.empty())
         {
             line_t &line = rendering->screen_data.add_line();
-            print_max(progress_text.c_str(), highlight_spec_pager_progress | highlight_make_background(highlight_spec_pager_progress), term_width, true /* has_more */, &line);
+            print_max(progress_text, highlight_spec_pager_progress | highlight_make_background(highlight_spec_pager_progress), term_width, true /* has_more */, &line);
         }
 
         if (search_field_shown)

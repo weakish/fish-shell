@@ -102,9 +102,15 @@
    response)
 */
 #ifdef USE_GETTEXT
-#define C_(wstr) ((wcscmp(wstr, L"")==0)?L"":wgettext(wstr))
+static const wchar_t *C_(const wcstring &s)
+{
+    return s.empty() ? L"" : wgettext(s.c_str());
+}
 #else
-#define C_(string) (string)
+static const wcstring &C_(const wcstring &s)
+{
+    return s;
+}
 #endif
 
 /* Testing apparatus */
@@ -159,10 +165,9 @@ typedef struct complete_entry_opt
     /** Completion flags */
     complete_flags_t flags;
 
-    const wchar_t *localized_desc() const
+    const wcstring localized_desc() const
     {
-        const wchar_t *tmp = desc.c_str();
-        return C_(tmp);
+        return C_(desc);
     }
 } complete_entry_opt_t;
 
@@ -320,18 +325,6 @@ completion_t &completion_t::operator=(const completion_t &him)
     return *this;
 }
 
-
-wcstring_list_t completions_to_wcstring_list(const std::vector<completion_t> &list)
-{
-    wcstring_list_t strings;
-    strings.reserve(list.size());
-    for (std::vector<completion_t>::const_iterator iter = list.begin(); iter != list.end(); ++iter)
-    {
-        strings.push_back(iter->completion);
-    }
-    return strings;
-}
-
 bool completion_t::is_alphabetically_less_than(const completion_t &a, const completion_t &b)
 {
     return a.completion < b.completion;
@@ -408,9 +401,7 @@ public:
     
     bool complete_from_docopt(const wcstring &cmd_orig, const parse_node_tree_t &tree, const parse_node_tree_t::parse_node_list_t &arg_nodes, const wcstring &src, bool cursor_in_last_arg);
 
-    void complete_param_expand(const wcstring &str, bool do_file);
-
-    void debug_print_completions();
+    void complete_param_expand(const wcstring &str, bool do_file, bool directories_only = false);
 
     void complete_cmd(const wcstring &str,
                       bool use_function,
@@ -1372,9 +1363,14 @@ static int complete_load_no_reload(wcstring *name)
 }
 
 /**
-   Find completion for the argument str of command cmd_orig with
-   previous option popt. Insert results into comp_out. Return 0 if file
-   completion should be disabled, 1 otherwise.
+   complete_param: Given a command, find completions for the argument str of command cmd_orig with previous option popt.
+   
+   Examples in format (cmd, popt, str):
+   
+      echo hello world <tab> -> ("echo", "world", "")
+      echo hello world<tab> -> ("echo", "hello", "world")
+ 
+   Insert results into comp_out. Return true to perform file completion, false to disable it.
 */
 struct local_options_t
 {
@@ -1383,7 +1379,6 @@ struct local_options_t
 };
 bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spopt, const wcstring &sstr, bool use_switches)
 {
-
     const wchar_t * const cmd_orig = scmd_orig.c_str();
     const wchar_t * const popt = spopt.c_str();
     const wchar_t * const str = sstr.c_str();
@@ -1524,7 +1519,7 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
                     if (o->short_opt != L'\0' &&
                             short_ok(str, o->short_opt, iter->short_opt_str))
                     {
-                        const wchar_t *desc = o->localized_desc();
+                        const wcstring desc = o->localized_desc();
                         wchar_t completion[2];
                         completion[0] = o->short_opt;
                         completion[1] = 0;
@@ -1586,14 +1581,14 @@ bool completer_t::complete_param(const wcstring &scmd_orig, const wcstring &spop
                                 wcstring completion = format_string(L"%ls=", whole_opt.c_str()+offset);
                                 append_completion(this->completions,
                                                   completion,
-                                                  C_(o->desc.c_str()),
+                                                  C_(o->desc),
                                                   flags);
 
                             }
 
                             append_completion(this->completions,
                                               whole_opt.c_str() + offset,
-                                              C_(o->desc.c_str()),
+                                              C_(o->desc),
                                               flags);
                         }
                     }
@@ -1675,7 +1670,7 @@ bool completer_t::complete_from_docopt(const wcstring &cmd_unescape, const parse
 /**
    Perform file completion on the specified string
 */
-void completer_t::complete_param_expand(const wcstring &sstr, bool do_file)
+void completer_t::complete_param_expand(const wcstring &sstr, bool do_file, bool directories_only)
 {
     const wchar_t * const str = sstr.c_str();
     const wchar_t *comp_str;
@@ -1693,6 +1688,9 @@ void completer_t::complete_param_expand(const wcstring &sstr, bool do_file)
 
     if (! do_file)
         flags |= EXPAND_SKIP_WILDCARDS;
+    
+    if (directories_only && do_file)
+        flags |= DIRECTORIES_ONLY;
 
     /* Squelch file descriptions per issue 254 */
     if (this->type() == COMPLETE_AUTOSUGGEST || do_file)
@@ -1707,14 +1705,6 @@ void completer_t::complete_param_expand(const wcstring &sstr, bool do_file)
                       flags, NULL) == EXPAND_ERROR)
     {
         debug(3, L"Error while expanding string '%ls'", comp_str);
-    }
-}
-
-void completer_t::debug_print_completions()
-{
-    for (size_t i=0; i < completions.size(); i++)
-    {
-        printf("- Completion: %ls\n", completions.at(i).completion.c_str());
     }
 }
 
@@ -2038,7 +2028,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                 for (size_t i=0; i < all_arguments.size(); i++)
                 {
                     const parse_node_t *node = all_arguments.at(i);
-                    if (node->location_in_or_at_end_of_source_range(pos))
+                    if (node->location_in_or_at_end_of_source_range(adjusted_pos))
                     {
                         matching_arg_index = i;
                         break;
@@ -2049,12 +2039,23 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                 wcstring current_argument, previous_argument;
                 if (matching_arg_index != (size_t)(-1))
                 {
-                    /* Get the current argument and the previous argument, if we have one */
-                    current_argument = all_arguments.at(matching_arg_index)->get_source(cmd);
 
-                    if (matching_arg_index > 0)
+                    const wcstring matching_arg = all_arguments.at(matching_arg_index)->get_source(cmd);
+                    
+                    /* If the cursor is in whitespace, then the "current" argument is empty and the previous argument is the matching one. But if the cursor was in or at the end of the argument, then the current argument is the matching one, and the previous argument is the one before it. */
+                    bool cursor_in_whitespace = (adjusted_pos < pos);
+                    if (cursor_in_whitespace)
                     {
-                        previous_argument = all_arguments.at(matching_arg_index - 1)->get_source(cmd);
+                        current_argument = L"";
+                        previous_argument = matching_arg;
+                    }
+                    else
+                    {
+                        current_argument = matching_arg;
+                        if (matching_arg_index > 0)
+                        {
+                            previous_argument = all_arguments.at(matching_arg_index - 1)->get_source(cmd);
+                        }
                     }
 
                     /* Check to see if we have a preceding double-dash */
@@ -2076,7 +2077,7 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                     in_redirection = (redirection != NULL);
                 }
                 
-                bool do_file = false;
+                bool do_file = false, directories_only = false;
                 if (in_redirection)
                 {
                     do_file = true;
@@ -2145,23 +2146,24 @@ void complete(const wcstring &cmd_with_subcmds, std::vector<completion_t> &comps
                             }
                             delete transient_cmd; //may be null
                         }
-                        
-                        /* If we have found no command specific completions at all, fall back to using file completions. */
-                        if (completer.empty())
-                        {
-                            do_file = true;
-                        }
-                        
-                        /* And if we're autosuggesting, and the token is empty, don't do file suggestions */
-                        if ((flags & COMPLETION_REQUEST_AUTOSUGGESTION) && current_argument.empty())
-                        {
-                            do_file = false;
-                        }
+                    }
+
+                    /* If we have found no command specific completions at all, fall back to using file completions. */
+                    if (completer.empty())
+                        do_file = true;
+                    
+                    /* Hack. If we're cd, do directories only (#1059) */
+                    directories_only = (original_command_unescape == L"cd");
+                    
+                    /* And if we're autosuggesting, and the token is empty, don't do file suggestions */
+                    if ((flags & COMPLETION_REQUEST_AUTOSUGGESTION) && current_argument.empty())
+                    {
+                        do_file = false;
                     }
                 }
 
                 /* This function wants the unescaped string */
-                completer.complete_param_expand(current_token, do_file);
+                completer.complete_param_expand(current_token, do_file, directories_only);
             }
         }
     }
@@ -2199,7 +2201,7 @@ void complete_print(wcstring &out)
     for (std::vector<const completion_entry_t *>::const_iterator iter = all_completions.begin(); iter != all_completions.end(); ++iter)
     {
         const completion_entry_t *e = *iter;
-        const option_list_t options = e->get_options();
+        const option_list_t &options = e->get_options();
         for (option_list_t::const_iterator oiter = options.begin(); oiter != options.end(); ++oiter)
         {
             const complete_entry_opt_t *o = &*oiter;
@@ -2235,7 +2237,7 @@ void complete_print(wcstring &out)
 
             append_switch(out,
                           L"description",
-                          C_(o->desc.c_str()));
+                          C_(o->desc));
 
             append_switch(out,
                           L"arguments",

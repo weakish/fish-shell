@@ -74,7 +74,9 @@ enum parse_token_type_t
     LAST_TERMINAL_TYPE = parse_token_type_terminate,
 
     LAST_TOKEN_OR_SYMBOL = parse_token_type_terminate,
-    FIRST_PARSE_TOKEN_TYPE = parse_token_type_string
+
+    FIRST_PARSE_TOKEN_TYPE = parse_token_type_string,
+    LAST_PARSE_TOKEN_TYPE = parse_token_type_end
 } __packed;
 
 /* These must be maintained in sorted order (except for none, which isn't a keyword). This enables us to do binary search. */
@@ -107,6 +109,14 @@ enum parse_statement_decoration_t
     parse_statement_decoration_command,
     parse_statement_decoration_builtin,
     parse_statement_decoration_exec
+};
+
+/* Boolean statement types */
+enum parse_bool_statement_type_t
+{
+    parse_bool_and,
+    parse_bool_or,
+    parse_bool_not
 };
 
 /* Parse error code list */
@@ -185,7 +195,7 @@ void parse_error_offset_source_start(parse_error_list_t *errors, size_t amt);
 #define CMD_OR_ERR_MSG _( L"Expected a command, but instead found a pipe. Did you mean 'COMMAND; or COMMAND'? See the help section for the 'or' builtin command by typing 'help or'.")
 
 /** Error message when a non-string token is found when expecting a command name */
-#define CMD_AND_ERR_MSG _( L"Expected a command, but instead found a '&'. Did you mean 'COMMAND; and COMMAND'? See the help section for the 'and' builtin command by typing 'help and'.")
+#define CMD_AND_ERR_MSG _( L"Expected a command, but instead found an '&'. Did you mean 'COMMAND; and COMMAND'? See the help section for the 'and' builtin command by typing 'help and'.")
 
 /** Error message when encountering an illegal command name */
 #define ILLEGAL_CMD_ERR_MSG _( L"Illegal command name '%ls'")

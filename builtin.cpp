@@ -647,7 +647,7 @@ static int builtin_bind_erase(const wcstring_list_t &seq_list, int all, const wc
                 wcstring seq2;
                 if (get_terminfo_sequence(seq.c_str(), &seq2))
                 {
-                    input_mapping_erase(seq2.c_str(), mode);
+                    input_mapping_erase(seq2, mode);
                 }
                 else
                 {
@@ -1929,8 +1929,8 @@ static int builtin_echo(parser_t &parser, wchar_t **argv)
                         unsigned char narrow_val = 0;
                         if (builtin_echo_parse_numeric_sequence(str + j + 1, &consumed, &narrow_val))
                         {
-                            /* Here consumed must have been set to something */
-                            wc = narrow_val; //is this OK for conversion?
+                            /* Here consumed must have been set to something. The narrow_val is a literal byte that we want to output (#1894) */
+                            wc = ENCODE_DIRECT_BASE + narrow_val % 256;
                         }
                         else
                         {
@@ -3494,7 +3494,6 @@ static int builtin_fg(parser_t &parser, wchar_t **argv)
             append_format(stderr_buffer,
                           _(L"%ls: There are no suitable jobs\n"),
                           argv[0]);
-            builtin_print_help(parser, argv[0], stderr_buffer);
         }
     }
     else if (argv[2] != 0)
@@ -4015,7 +4014,7 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
         const wcstring src = str2wcstring(&txt.at(0), txt.size());
         parse_node_tree_t parse_tree;
         parse_error_list_t errors;
-        bool success = parse_tree_from_string(src, parse_flag_none, &parse_tree, &errors);
+        bool success = parse_tree_from_string(src, parse_flag_include_comments, &parse_tree, &errors);
         if (! success)
         {
             stdout_buffer.append(L"Parsing failed:\n");
@@ -4028,7 +4027,7 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
             stdout_buffer.append(L"(Reparsed with continue after error)\n");
             parse_tree.clear();
             errors.clear();
-            parse_tree_from_string(src, parse_flag_continue_after_error, &parse_tree, &errors);
+            parse_tree_from_string(src, parse_flag_continue_after_error | parse_flag_include_comments, &parse_tree, &errors);
         }
         const wcstring dump = parse_dump_tree(parse_tree, src);
         stdout_buffer.append(dump);
@@ -4172,7 +4171,8 @@ static int internal_help(const wchar_t *cmd)
 int builtin_run(parser_t &parser, const wchar_t * const *argv, const io_chain_t &io)
 {
     int (*cmd)(parser_t &parser, const wchar_t * const *argv)=0;
-    real_io = &io;
+    
+    scoped_push<const io_chain_t*> set_real_io(&real_io, &io);
 
     CHECK(argv, STATUS_BUILTIN_ERROR);
     CHECK(argv[0], STATUS_BUILTIN_ERROR);

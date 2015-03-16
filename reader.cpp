@@ -45,6 +45,8 @@ commence.
 
 #if HAVE_NCURSES_H
 #include <ncurses.h>
+#elif HAVE_NCURSES_CURSES_H
+#include <ncurses/curses.h>
 #else
 #include <curses.h>
 #endif
@@ -941,6 +943,9 @@ void reader_write_title(const wcstring &cmd)
             return;
         }
 
+        if (contains(term, L"dumb"))
+            return;
+
         if (strstr(n, "tty") || strstr(n, "/vc/"))
             return;
     }
@@ -1608,7 +1613,6 @@ static void clear_pager()
 static void select_completion_in_direction(enum selection_direction_t dir)
 {
     assert(data != NULL);
-    /* Note: this will probably trigger reader_selected_completion_changed, which will cause us to update stuff */
     bool selection_changed = data->pager.select_next_completion_in_direction(dir, data->current_page_rendering);
     if (selection_changed)
     {
@@ -1891,8 +1895,12 @@ static bool handle_completions(const std::vector<completion_t> &comp, bool conti
                     break;
             }
         }
+        
+        /* Determine if we use the prefix. We use it if it's non-empty and it will actually make the command line longer. It may make the command line longer by virtue of not using REPLACE_TOKEN (so it always appends to the command line), or by virtue of replacing the token but being longer than it. */
+        bool use_prefix = common_prefix.size() > (will_replace_token ? tok.size() : 0);
+        assert(! use_prefix || ! common_prefix.empty());
 
-        if (! common_prefix.empty())
+        if (use_prefix)
         {
             /* We got something. If more than one completion contributed, then it means we have a prefix; don't insert a space after it */
             if (prefix_is_partial_completion)
@@ -1901,7 +1909,7 @@ static bool handle_completions(const std::vector<completion_t> &comp, bool conti
             success = true;
         }
 
-        if (continue_after_prefix_insertion || common_prefix.empty())
+        if (continue_after_prefix_insertion || ! use_prefix)
         {
             /* We didn't get a common prefix, or we want to print the list anyways. */
             size_t len, prefix_start = 0;
@@ -2510,7 +2518,7 @@ void set_env_cmd_duration(struct timeval *after, struct timeval *before)
     }
 
     swprintf(buf, 16, L"%d", (secs * 1000) + (usecs / 1000));
-    env_set(ENV_CMD_DURATION, buf, ENV_EXPORT);
+    env_set(ENV_CMD_DURATION, buf, ENV_UNEXPORT);
 }
 
 void reader_run_command(parser_t &parser, const wcstring &cmd)
@@ -2899,7 +2907,11 @@ static void handle_end_loop()
             job_iterator_t jobs;
             while ((j = jobs.next()))
             {
-                if (! job_is_completed(j))
+                /* Send SIGHUP only to foreground processes.
+
+                   See https://github.com/fish-shell/fish-shell/issues/1771
+                 */
+                if (! job_is_completed(j) && job_get_flag(j, JOB_FOREGROUND))
                 {
                     job_signal(j, SIGHUP);
                 }
@@ -4158,36 +4170,6 @@ int reader_has_pager_contents()
     return ! data->current_page_rendering.screen_data.empty();
 }
 
-void reader_selected_completion_changed(pager_t *pager)
-{
-    /* Only interested in the top level pager */
-    if (data == NULL || pager != &data->pager)
-        return;
-
-    const completion_t *completion = pager->selected_completion(data->current_page_rendering);
-
-    /* Update the cursor and command line */
-    size_t cursor_pos = data->cycle_cursor_pos;
-    wcstring new_cmd_line;
-
-    if (completion == NULL)
-    {
-        new_cmd_line = data->cycle_command_line;
-    }
-    else
-    {
-        new_cmd_line = completion_apply_to_command_line(completion->completion, completion->flags, data->cycle_command_line, &cursor_pos, false);
-    }
-    reader_set_buffer_maintaining_pager(new_cmd_line, cursor_pos);
-
-    /* Since we just inserted a completion, don't immediately do a new autosuggestion */
-    data->suppress_autosuggestion = true;
-
-    /* Trigger repaint (see #765) */
-    reader_repaint_needed();
-}
-
-
 /**
    Read non-interactively.  Read input from stdin without displaying
    the prompt, using syntax highlighting. This is used for reading
@@ -4243,7 +4225,7 @@ static int read_ni(int fd, const io_chain_t &io)
             acc.insert(acc.end(), buff, buff + c);
         }
 
-        const wcstring str = acc.empty() ? wcstring() : str2wcstring(&acc.at(0), acc.size());
+        wcstring str = acc.empty() ? wcstring() : str2wcstring(&acc.at(0), acc.size());
         acc.clear();
 
         if (fclose(in_stream))
@@ -4252,6 +4234,12 @@ static int read_ni(int fd, const io_chain_t &io)
                   _(L"Error while closing input stream"));
             wperror(L"fclose");
             res = 1;
+        }
+
+        /* Swallow a BOM (#1518) */
+        if (! str.empty() && str.at(0) == UTF8_BOM_WCHAR)
+        {
+            str.erase(0, 1);
         }
 
         parse_error_list_t errors;

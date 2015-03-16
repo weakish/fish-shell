@@ -24,6 +24,8 @@
 
 #if HAVE_NCURSES_H
 #include <ncurses.h>
+#elif HAVE_NCURSES_CURSES_H
+#include <ncurses/curses.h>
 #else
 #include <curses.h>
 #endif
@@ -330,14 +332,6 @@ void input_function_set_status(bool status)
     input_function_status = status;
 }
 
-/**
-    Returns the nth argument for a given input function
-*/
-wchar_t input_function_get_arg(int index)
-{
-    return input_function_args[index];
-}
-
 /* Helper function to compare the lengths of sequences */
 static bool length_is_greater_than(const input_mapping_t &m1, const input_mapping_t &m2)
 {
@@ -533,7 +527,7 @@ void input_destroy()
 
     input_common_destroy();
 
-    if (fish_del_curterm(cur_term) == ERR)
+    if (del_curterm(cur_term) == ERR)
     {
         debug(0, _(L"Error while closing terminfo"));
     }
@@ -613,7 +607,7 @@ static void input_mapping_execute(const input_mapping_t &m, bool allow_commands)
         }
     }
 
-    input_set_bind_mode(m.sets_mode.c_str());
+    input_set_bind_mode(m.sets_mode);
 }
 
 

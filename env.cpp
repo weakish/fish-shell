@@ -21,6 +21,8 @@
 
 #if HAVE_NCURSES_H
 #include <ncurses.h>
+#elif HAVE_NCURSES_CURSES_H
+#include <ncurses/curses.h>
 #else
 #include <curses.h>
 #endif
@@ -609,8 +611,6 @@ int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode)
     bool has_changed_new = false;
     int done=0;
 
-    int is_universal = 0;
-
     if (val && contains(key, L"PWD", L"HOME"))
     {
         /* Canoncalize our path; if it changes, recurse and try again. */
@@ -696,8 +696,6 @@ int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode)
                 mark_changed_exported();
             }
         }
-        is_universal = 1;
-
     }
     else
     {
@@ -762,7 +760,6 @@ int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode)
 
                 uvars()->set(key, val, exportv);
                 env_universal_barrier();
-                is_universal = 1;
 
                 done = 1;
 
@@ -811,18 +808,15 @@ int env_set(const wcstring &key, const wchar_t *val, env_mode_flags_t var_mode)
         }
     }
 
-    if (!is_universal)
-    {
-        event_t ev = event_t::variable_event(key);
-        ev.arguments.reserve(3);
-        ev.arguments.push_back(L"VARIABLE");
-        ev.arguments.push_back(L"SET");
-        ev.arguments.push_back(key);
+    event_t ev = event_t::variable_event(key);
+    ev.arguments.reserve(3);
+    ev.arguments.push_back(L"VARIABLE");
+    ev.arguments.push_back(L"SET");
+    ev.arguments.push_back(key);
 
-        //  debug( 1, L"env_set: fire events on variable %ls", key );
-        event_fire(&ev);
-        //  debug( 1, L"env_set: return from event firing" );
-    }
+    //  debug( 1, L"env_set: fire events on variable %ls", key );
+    event_fire(&ev);
+    //  debug( 1, L"env_set: return from event firing" );
 
     react_to_variable_change(key);
 
@@ -897,7 +891,6 @@ int env_remove(const wcstring &key, int var_mode)
             ev.arguments.push_back(L"VARIABLE");
             ev.arguments.push_back(L"ERASE");
             ev.arguments.push_back(key);
-
             event_fire(&ev);
 
             erased = 1;
@@ -912,6 +905,11 @@ int env_remove(const wcstring &key, int var_mode)
         if (erased)
         {
             env_universal_barrier();
+            event_t ev = event_t::variable_event(key);
+            ev.arguments.push_back(L"VARIABLE");
+            ev.arguments.push_back(L"ERASE");
+            ev.arguments.push_back(key);
+            event_fire(&ev);
         }
     }
 
@@ -978,7 +976,6 @@ env_var_t env_get_string(const wcstring &key, env_mode_flags_t mode)
         scoped_lock lock(env_lock);
 
         env_node_t *env = search_local ? top : global_env;
-        wcstring result;
 
         while (env != NULL)
         {

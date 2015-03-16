@@ -297,6 +297,12 @@ static void test_format(void)
         format_long_safe(buff1, j);
         sprintf(buff2, "%d", j);
         do_test(! strcmp(buff1, buff2));
+        
+        wchar_t wbuf1[128], wbuf2[128];
+        format_long_safe(wbuf1, j);
+        swprintf(wbuf2, 128, L"%d", j);
+        do_test(! wcscmp(wbuf1, wbuf2));
+
     }
 
     long q = LONG_MIN;
@@ -304,7 +310,6 @@ static void test_format(void)
     format_long_safe(buff1, q);
     sprintf(buff2, "%ld", q);
     do_test(! strcmp(buff1, buff2));
-
 }
 
 /**
@@ -459,10 +464,10 @@ static void test_tok()
     say(L"Test destruction of broken tokenizer");
     {
 
-        const wchar_t *str = L"string <redirection  2>&1 'nested \"quoted\" '(string containing subshells ){and,brackets}$as[$well (as variable arrays)] not_a_redirect^ ^ ^^is_a_redirect";
+        const wchar_t *str = L"string <redirection  2>&1 'nested \"quoted\" '(string containing subshells ){and,brackets}$as[$well (as variable arrays)] not_a_redirect^ ^ ^^is_a_redirect Compress_Newlines\n  \n\t\n   \nInto_Just_One";
         const int types[] =
         {
-            TOK_STRING, TOK_REDIRECT_IN, TOK_STRING, TOK_REDIRECT_FD, TOK_STRING, TOK_STRING, TOK_STRING, TOK_REDIRECT_OUT, TOK_REDIRECT_APPEND, TOK_STRING, TOK_END
+            TOK_STRING, TOK_REDIRECT_IN, TOK_STRING, TOK_REDIRECT_FD, TOK_STRING, TOK_STRING, TOK_STRING, TOK_REDIRECT_OUT, TOK_REDIRECT_APPEND, TOK_STRING, TOK_STRING, TOK_END, TOK_STRING, TOK_END
         };
 
         say(L"Test correct tokenization");
@@ -527,7 +532,7 @@ static void test_iothread(void)
     double start = timef();
     for (int i=0; i < iterations; i++)
     {
-        int thread_count = iothread_perform(test_iothread_thread_call, (void (*)(int *, int))NULL, int_ptr);
+        int thread_count = iothread_perform(test_iothread_thread_call, int_ptr);
         max_achieved_thread_count = std::max(max_achieved_thread_count, thread_count);
     }
 
@@ -692,7 +697,37 @@ static void test_parser()
     {
         err(L"Bad escape in nested command substitution not reported as error");
     }
+    
+    if (! parse_util_detect_errors(L"false & ; and cat"))
+    {
+        err(L"'and' command after background not reported as error");
+    }
 
+    if (! parse_util_detect_errors(L"true & ; or cat"))
+    {
+        err(L"'or' command after background not reported as error");
+    }
+    
+    if (parse_util_detect_errors(L"true & ; not cat"))
+    {
+        err(L"'not' command after background falsely reported as error");
+    }
+
+    
+    if (! parse_util_detect_errors(L"if true & ; end"))
+    {
+        err(L"backgrounded 'if' conditional not reported as error");
+    }
+
+    if (! parse_util_detect_errors(L"if false; else if true & ; end"))
+    {
+        err(L"backgrounded 'else if' conditional not reported as error");
+    }
+
+    if (! parse_util_detect_errors(L"while true & ; end"))
+    {
+        err(L"backgrounded 'while' conditional not reported as error");
+    }
 
     say(L"Testing basic evaluation");
 #if 0
@@ -744,10 +779,10 @@ static int signal_main(test_cancellation_info_t *info)
 
 static void test_1_cancellation(const wchar_t *src)
 {
-    shared_ptr<io_buffer_t> out_buff(io_buffer_t::create(STDOUT_FILENO));
+    shared_ptr<io_buffer_t> out_buff(io_buffer_t::create(STDOUT_FILENO, io_chain_t()));
     const io_chain_t io_chain(out_buff);
     test_cancellation_info_t ctx = {pthread_self(), 0.25 /* seconds */ };
-    iothread_perform(signal_main, (void (*)(test_cancellation_info_t *, int))NULL, &ctx);
+    iothread_perform(signal_main, &ctx);
     parser_t::principal_parser().eval(src, io_chain, TOP);
     out_buff->read();
     if (out_buff->out_buffer_size() != 0)
@@ -2495,7 +2530,7 @@ static void test_universal()
     const int threads = 16;
     for (int i=0; i < threads; i++)
     {
-        iothread_perform(test_universal_helper, (void (*)(int *, int))NULL, new int(i));
+        iothread_perform(test_universal_helper, new int(i));
     }
     iothread_drain_all();
     

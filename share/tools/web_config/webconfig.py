@@ -11,10 +11,8 @@ IS_PY2 = sys.version_info[0] == 2
 if IS_PY2:
     import SimpleHTTPServer
     import SocketServer
-    try:
-        from urllib.parse import parse_qs
-    except ImportError:
-        from cgi import parse_qs
+    from urlparse import parse_qs
+
 else:
     import http.server as SimpleHTTPServer
     import socketserver as SocketServer
@@ -39,7 +37,7 @@ def run_fish_cmd(text):
     # ensure that fish is using UTF-8
     ctype = os.environ.get("LC_ALL", os.environ.get("LC_CTYPE", os.environ.get("LANG")))
     env = None
-    if re.search(r"\.utf-?8$", ctype, flags=re.I) is None:
+    if ctype is None or re.search(r"\.utf-?8$", ctype, flags=re.I) is None:
         # override LC_CTYPE with en_US.UTF-8
         # We're assuming this locale exists.
         # Fish makes the same assumption in config.fish
@@ -687,16 +685,11 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         return result
 
     def do_get_abbreviations(self):
-        out, err = run_fish_cmd('abbr -s')
-        lines = (x for x in out.rstrip().split('\n'))
-        # Turn the output into something we can use
-        abbrout = (line[len('abbr -a '):].strip('\'') for line in lines)
-        abbrs = [x.split('=') for x in abbrout]
+        out, err = run_fish_cmd('echo -n -s $fish_user_abbreviations\x1e')
 
-        if abbrs[0][0]:
-            result = [{'word': x, 'phrase': y} for x, y in abbrs]
-        else:
-            result = []
+        lines = (x for x in out.rstrip().split('\x1e'))
+        abbrs = (re.split('[ =]', x, maxsplit=1) for x in lines if x)
+        result = [{'word': x, 'phrase': y} for x, y in abbrs]
         return result
 
     def do_remove_abbreviation(self, abbreviation):
@@ -707,7 +700,7 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             return True
 
     def do_save_abbreviation(self, abbreviation):
-        out, err = run_fish_cmd('abbr -a \'%s=%s\'' % (abbreviation['word'], abbreviation['phrase']))
+        out, err = run_fish_cmd('abbr -a \'%s %s\'' % (abbreviation['word'], abbreviation['phrase']))
         if err:
             return err
         else:
@@ -793,10 +786,10 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         elif ctype == 'application/x-www-form-urlencoded':
             length = int(self.headers['content-length'])
             url_str = self.rfile.read(length).decode('utf-8')
-            postvars = cgi.parse_qs(url_str, keep_blank_values=1)
+            postvars = parse_qs(url_str, keep_blank_values=1)
         elif ctype == 'application/json':
             length = int(self.headers['content-length'])
-            url_str = self.rfile.read(length).decode('utf-8')
+            url_str = self.rfile.read(length).decode(pdict['charset'])
             postvars = json.loads(url_str)
         else:
             postvars = {}
@@ -823,8 +816,8 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             else:
                 output = ["Unable to delete history item"]
         elif p == '/set_prompt/':
-            what = postvars.get('what')
-            if self.do_set_prompt_function(what[0]):
+            what = postvars.get('fish_prompt')
+            if self.do_set_prompt_function(what):
                 output = ["OK"]
             else:
                 output = ["Unable to set prompt"]

@@ -7,9 +7,6 @@
 /* Define to 1 if you have the `backtrace_symbols' function. */
 #define HAVE_BACKTRACE_SYMBOLS 1
 
-/* del_curterm is broken, redefine it to a no-op to avoid a double-free bug */
-/* #undef HAVE_BROKEN_DEL_CURTERM */
-
 /* Define to 1 one if the implemented fwprintf is broken */
 /* #undef HAVE_BROKEN_FWPRINTF */
 
@@ -18,6 +15,10 @@
 
 /* Define to 1 if you have the `dcgettext' function. */
 /* #undef HAVE_DCGETTEXT */
+
+/* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
+   */
+#define HAVE_DIRENT_H 1
 
 /* Define to 1 if you have the <execinfo.h> header file. */
 #define HAVE_EXECINFO_H 1
@@ -58,14 +59,23 @@
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
 
+/* Define to 1 if you have the `mkostemp' function. */
+/* #undef HAVE_MKOSTEMP */
+
 /* Define to 1 if you have the nan function */
 #define HAVE_NAN 1
+
+/* Define to 1 if you have the <ncurses/curses.h> header file. */
+/* #undef HAVE_NCURSES_CURSES_H */
 
 /* Define to 1 if you have the <ncurses.h> header file. */
 #define HAVE_NCURSES_H 1
 
 /* Define to 1 if you have the <ncurses/term.h> header file. */
 /* #undef HAVE_NCURSES_TERM_H */
+
+/* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
+/* #undef HAVE_NDIR_H */
 
 /* Define to 1 if realpath accepts null for its second argument. */
 #define HAVE_REALPATH_NULL 1
@@ -94,11 +104,31 @@
 /* Define to 1 if you have the <stropts.h> header file. */
 /* #undef HAVE_STROPTS_H */
 
+/* Define to 1 if `d_type' is a member of `struct dirent'. */
+#define HAVE_STRUCT_DIRENT_D_TYPE 1
+
+/* Define to 1 if `st_mtimespec.tv_nsec' is a member of `struct stat'. */
+#define HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC 1
+
+/* Define to 1 if `st_mtim.tv_nsec' is a member of `struct stat'. */
+/* #undef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC */
+
 /* Define to 1 if you have the `sysconf' function. */
 #define HAVE_SYSCONF 1
 
+/* Define to 1 if you have the <sys/dir.h> header file, and it defines `DIR'.
+   */
+/* #undef HAVE_SYS_DIR_H */
+
+/* Define to 1 if the sys_errlist array is available. */
+#define HAVE_SYS_ERRLIST 1
+
 /* Define to 1 if you have the <sys/ioctl.h> header file. */
 #define HAVE_SYS_IOCTL_H 1
+
+/* Define to 1 if you have the <sys/ndir.h> header file, and it defines `DIR'.
+   */
+/* #undef HAVE_SYS_NDIR_H */
 
 /* Define to 1 if you have the <sys/resource.h> header file. */
 #define HAVE_SYS_RESOURCE_H 1
@@ -173,8 +203,17 @@
 /* Define to 1 if you have the file `/proc/self/stat'. */
 /* #undef HAVE__PROC_SELF_STAT */
 
+/* Define to 1 if the _sys_errs array is available. */
+/* #undef HAVE__SYS__ERRS */
+
 /* Define to 1 if the __environ symbol is exported. */
 /* #undef HAVE___ENVIRON */
+
+/* Define to 1 to disable ncurses macros that conflict with the STL */
+#define NCURSES_NOMACROS 1
+
+/* Define to 1 to disable curses macros that conflict with the STL */
+#define NOMACROS 1
 
 /* Define to the address where bug reports for this package should be sent. */
 #define PACKAGE_BUGREPORT "fish-users@lists.sf.net"
@@ -183,7 +222,7 @@
 #define PACKAGE_NAME "fish"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "fish 2.1.0"
+#define PACKAGE_STRING "fish 2.1.2-git"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "fish"
@@ -192,7 +231,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.1.0"
+#define PACKAGE_VERSION "2.1.2-git"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1

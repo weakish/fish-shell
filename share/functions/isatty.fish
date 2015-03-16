@@ -1,27 +1,30 @@
-function isatty -d "Test if a file or file descriptor is a tty."
 
-# Use `command test` because `builtin test` doesn't open the regular fd's.
+function isatty -d "Tests if a file descriptor is a tty"
+	set -l fd 0
+	if count $argv >/dev/null
+		switch $argv[1]
 
-  switch "$argv"
+			case -h --h --he --hel --help
+				__fish_print_help isatty
+				return 0
 
-    case '-h*' '--h*'
-      __fish_print_help isatty
+			case stdin ''
+				set fd 0
 
-    case ''
-      command test -c /dev/stdin
+			case stdout
+				set fd 1
 
-    case '*'
-      if test -e "$argv" # The eval here is needed for symlinks. Unsure why.
-        command test -c "$argv"; and eval tty 0>"$argv" >/dev/null
+			case stderr
+				set fd 2
 
-      else if test -e /dev/"$argv"
-         command test -c /dev/"$argv"; and tty 0>/dev/"$argv" >/dev/null
+			case '*'
+				set fd $argv[1]
 
-      else if test -e /dev/fd/"$argv"
-         command test -c /dev/fd/"$argv"; and tty 0>/dev/fd/"$argv" >/dev/null
+		end
+	end
 
-      else
-         return 1
-    end
-  end
+	# Use `command test` because `builtin test` doesn't open the regular fd's.
+	# See https://github.com/fish-shell/fish-shell/issues/1228
+	command test -t "$fd"
+
 end

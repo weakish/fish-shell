@@ -25,59 +25,6 @@ function __fish_config_interactive -d "Initializations that should be performed 
 		set userdatadir $XDG_DATA_HOME
 	end
 
-	# Migrate old (pre 1.22.0) init scripts if they exist
-	if not set -q __fish_init_1_22_0
-
-		if test -f ~/.fish_history -o -f ~/.fish -o -d ~/.fish.d -a ! -d $configdir/fish
-
-			# Perform upgrade of configuration file hierarchy
-
-			if not test -d $configdir
-				command mkdir $configdir >/dev/null
-			end
-
-			if test -d $configdir
-				if command mkdir $configdir/fish
-
-					# These files are sometimes overwritten to by fish, so
-					# we want backups of them in case something goes wrong
-
-					cp ~/.fishd.(hostname)    $configdir/fish/fishd.(hostname).backup
-					cp ~/.fish_history        $configdir/fish/fish_history.backup
-
-					# Move the files
-
-					mv ~/.fish_history        $configdir/fish/fish_history
-					mv ~/.fish                $configdir/fish/config.fish
-					mv ~/.fish_inputrc        $configdir/fish/fish_inputrc
-					mv ~/.fish.d/functions    $configdir/fish/functions
-					mv ~/.fish.d/completions  $configdir/fish/completions
-
-					#
-					# Move the fishd stuff from another shell to avoid concurrency problems
-					#
-
-					/bin/sh -c mv\ \~/.fishd.(hostname)\ $configdir/fish/fishd.(hostname)\;kill\ -9\ (echo %fishd)
-
-					# Update paths to point to new configuration locations
-
-					set fish_function_path (printf "%s\n" $fish_function_path|sed -e "s|/usr/local/etc/fish.d/|/usr/local/etc/fish/|")
-					set fish_complete_path (printf "%s\n" $fish_complete_path|sed -e "s|/usr/local/etc/fish.d/|/usr/local/etc/fish/|")
-
-					set fish_function_path (printf "%s\n" $fish_function_path|sed -e "s|$HOME/.fish.d/|$configdir/fish/|")
-					set fish_complete_path (printf "%s\n" $fish_complete_path|sed -e "s|$HOME/.fish.d/|$configdir/fish/|")
-
-					printf (_ "\nWARNING\n\nThe location for fish configuration files has changed to %s.\nYour old files have been moved to this location.\nYou can change to a different location by changing the value of the variable \$XDG_CONFIG_HOME.\n\n") $configdir
-
-				end ^/dev/null
-			end
-		end
-
-		# Make sure this is only done once
-		set -U __fish_init_1_22_0
-
-	end
-
 	#
 	# If we are starting up for the first time, set various defaults
 	#
@@ -242,10 +189,10 @@ function __fish_config_interactive -d "Initializations that should be performed 
 
 
 	# Notify vte-based terminals when $PWD changes (issue #906)
-	if test "$VTE_VERSION" -ge 3405
+	if test "$VTE_VERSION" -ge 3405 -o "$TERM_PROGRAM" = "Apple_Terminal"
 		function __update_vte_cwd --on-variable PWD --description 'Notify VTE of change to $PWD'
 			status --is-command-substitution; and return
-			printf '\033]7;file://%s\a' (pwd | __fish_urlencode)
+			printf '\033]7;file://%s%s\a' (hostname) (pwd | __fish_urlencode)
 		end
 	end
 
@@ -270,17 +217,34 @@ function __fish_config_interactive -d "Initializations that should be performed 
 		# Check for Fedora's handler
 		else if test -f /usr/libexec/pk-command-not-found
 			function __fish_command_not_found_handler --on-event fish_command_not_found
-				/usr/libexec/pk-command-not-found -- $argv
+				/usr/libexec/pk-command-not-found $argv
 			end
 		# Check in /usr/lib, this is where modern Ubuntus place this command
 		else if test -f /usr/lib/command-not-found
 			function __fish_command_not_found_handler --on-event fish_command_not_found
 				/usr/lib/command-not-found -- $argv
 			end
+		# Check for NixOS handler
+		else if test -f /run/current-system/sw/bin/command-not-found
+			function __fish_command_not_found_handler --on-event fish_command_not_found
+				/run/current-system/sw/bin/command-not-found $argv
+			end
 		# Ubuntu Feisty places this command in the regular path instead
 		else if type -q -p command-not-found
 			function __fish_command_not_found_handler --on-event fish_command_not_found
 				command-not-found -- $argv
+			end
+		# pkgfile is an optional, but official, package on Arch Linux
+		# it ships with example handlers for bash and zsh, so we'll follow that format
+		else if type -p -q pkgfile
+			function __fish_command_not_found_handler --on-event fish_command_not_found
+				set -l __packages (pkgfile --binaries --verbose -- $argv ^/dev/null)
+				if test $status -eq 0
+					printf "%s may be found in the following packages:\n" "$argv"
+					printf "  %s\n" $__packages
+				else
+					__fish_default_command_not_found_handler $argv
+				end
 			end
 		# Use standard fish command not found handler otherwise
 		else
