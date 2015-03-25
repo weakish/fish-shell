@@ -849,7 +849,7 @@ bool reader_data_t::expand_abbreviation_as_necessary(size_t cursor_backtrack)
 /** Sorts and remove any duplicate completions in the list. */
 static void sort_and_make_unique(std::vector<completion_t> &l)
 {
-    sort(l.begin(), l.end(), completion_t::is_alphabetically_less_than);
+    sort(l.begin(), l.end(), completion_t::is_naturally_less_than);
     l.erase(std::unique(l.begin(), l.end(), completion_t::is_alphabetically_equal_to), l.end());
 }
 
@@ -1124,8 +1124,6 @@ static bool command_ends_paging(wchar_t c, bool focused_on_search_field)
             /* These commands always end paging */
         case R_HISTORY_SEARCH_BACKWARD:
         case R_HISTORY_SEARCH_FORWARD:
-        case R_BEGINNING_OF_HISTORY:
-        case R_END_OF_HISTORY:
         case R_HISTORY_TOKEN_SEARCH_BACKWARD:
         case R_HISTORY_TOKEN_SEARCH_FORWARD:
         case R_ACCEPT_AUTOSUGGESTION:
@@ -1142,6 +1140,8 @@ static bool command_ends_paging(wchar_t c, bool focused_on_search_field)
         case R_NULL:
         case R_REPAINT:
         case R_SUPPRESS_AUTOSUGGESTION:
+        case R_BEGINNING_OF_HISTORY:
+        case R_END_OF_HISTORY:
         default:
             return false;
 
@@ -2918,7 +2918,11 @@ static void handle_end_loop()
             job_iterator_t jobs;
             while ((j = jobs.next()))
             {
-                if (! job_is_completed(j))
+                /* Send SIGHUP only to foreground processes.
+
+                   See https://github.com/fish-shell/fish-shell/issues/1771
+                 */
+                if (! job_is_completed(j) && job_get_flag(j, JOB_FOREGROUND))
                 {
                     job_signal(j, SIGHUP);
                 }
@@ -3169,9 +3173,16 @@ const wchar_t *reader_readline(int nchars)
                             break;
                     }
 
-                    insert_string(&data->command_line, arr, true);
+                    editable_line_t *el = data->active_edit_line();
+                    insert_string(el, arr, true);
+                    
+                    /* End paging upon inserting into the normal command line */
+                    if (el == &data->command_line)
+                    {
+                        clear_pager();
+                    }
+                    last_char = c;
                     reader_save_last_snapshot(data);
-
                 }
             }
 
@@ -3795,21 +3806,30 @@ const wchar_t *reader_readline(int nchars)
 
             case R_BEGINNING_OF_HISTORY:
             {
-                const editable_line_t *el = &data->command_line;
-                data->history_search = history_search_t(*data->history, el->text, HISTORY_SEARCH_TYPE_PREFIX);
-                data->history_search.go_to_beginning();
-                if (! data->history_search.is_at_end())
+                if (data->is_navigating_pager_contents())
                 {
-                    wcstring new_text = data->history_search.current_string();
-                    set_command_line_and_position(&data->command_line, new_text, new_text.size());
+                        select_completion_in_direction(direction_page_north);
+                } else {
+                    const editable_line_t *el = &data->command_line;
+                    data->history_search = history_search_t(*data->history, el->text, HISTORY_SEARCH_TYPE_PREFIX);
+                    data->history_search.go_to_beginning();
+                    if (! data->history_search.is_at_end())
+                    {
+                        wcstring new_text = data->history_search.current_string();
+                        set_command_line_and_position(&data->command_line, new_text, new_text.size());
+                    }
                 }
-
                 break;
             }
 
             case R_END_OF_HISTORY:
             {
-                data->history_search.go_to_end();
+                if (data->is_navigating_pager_contents())
+                {
+                    select_completion_in_direction(direction_page_south);
+                } else {
+                    data->history_search.go_to_end();
+                }
                 break;
             }
 
