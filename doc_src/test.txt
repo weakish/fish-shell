@@ -72,7 +72,7 @@ The following operators are available to compare and examine numbers:
 
 - `NUM1 -le NUM2` returns true if `NUM1` is less than or equal to `NUM2`.
 
-Note that only integers are supported. For more complex mathematical operations, including fractions, the `env` program may be useful. Consult the documentation for your operating system.
+Note that only integers are supported. For more complex mathematical operations, use `math` instead. For example, `[ (math '3.0 == 3.0') -eq 1 ]`.
 
 Expressions can be combined using the following operators:
 
