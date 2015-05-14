@@ -93,6 +93,13 @@ Use the `env` command.
 
 `env SOME_VAR=1 command`
 
+Note that `env` is an external program, so `command` should be
+executables. Fish built in commands will not work. However, since
+`fish` itself is an executable which accepts environment variables,
+we can usually use `fish -c` instead:
+
+`env SOME_VAR=1 fish -c 'built_in_command_or_saved_function'`
+
 You can also declare a local variable in a block:
 
 \fish{cli-dark}
